@@ -14,46 +14,40 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal"
-            Margin="0,0,0,10">
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
 
             <Button Width="120"
             Height="35"
             Margin="0,0,10,0"
-            Click="AddFiles_Click">
-                Add Files
-            </Button>
+            Command="{Binding AddFilesCommand}"
+            Content="Add Files" />
 
             <TextBlock VerticalAlignment="Center"
-               Margin="10,0,5,0">
-        Find:
-            </TextBlock>
+               Margin="10,0,5,0"
+               Text="Find:" />
 
-            <TextBox x:Name="FindTextBox"
-             Width="180"
-             Margin="0,0,10,0"/>
+            <TextBox Width="180"
+             Margin="0,0,10,0"
+             Text="{Binding FindText, UpdateSourceTrigger=PropertyChanged}" />
 
             <TextBlock VerticalAlignment="Center"
-               Margin="0,0,5,0">
-        Replace:
-            </TextBlock>
+               Margin="0,0,5,0"
+               Text="Replace:" />
 
-            <TextBox x:Name="ReplaceTextBox"
-             Width="180"
-             Margin="0,0,10,0"/>
+            <TextBox Width="180"
+             Margin="0,0,10,0"
+             Text="{Binding ReplaceText, UpdateSourceTrigger=PropertyChanged}" />
 
             <Button Width="120"
             Height="35"
             Margin="0,0,10,0"
-            Click="Preview_Click">
-                Preview
-            </Button>
+            Command="{Binding PreviewCommand}"
+            Content="Preview" />
 
             <Button Width="120"
-        Height="35"
-        Click="Rename_Click">
-                Rename
-            </Button>
+            Height="35"
+            Command="{Binding RenameCommand}"
+            Content="Rename" />
 
         </StackPanel>
 

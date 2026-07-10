@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <Folder Include="Commands\" />
-    <Folder Include="Rules\" />
+    <Folder Include="PipelinePacks\" />
   </ItemGroup>
 
 </Project>

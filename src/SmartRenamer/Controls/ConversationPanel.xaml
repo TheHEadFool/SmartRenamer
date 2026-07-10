@@ -1,0 +1,58 @@
+﻿<UserControl x:Class="SmartRenamer.Controls.ConversationPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Margin="10">
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Conversation -->
+
+        <ListBox
+            ItemsSource="{Binding Conversation.Messages}"
+            BorderThickness="0">
+
+            <ListBox.ItemTemplate>
+
+                <DataTemplate>
+
+                    <Border Margin="0,5"
+                            Padding="10"
+                            CornerRadius="10"
+                            Background="#EFEFEF">
+
+                        <TextBlock
+                            Text="{Binding Text}"
+                            TextWrapping="Wrap"/>
+
+                    </Border>
+
+                </DataTemplate>
+
+            </ListBox.ItemTemplate>
+
+        </ListBox>
+
+        <!-- User Input -->
+
+        <TextBox
+            Grid.Row="1"
+            Margin="0,10,0,5"
+            Text="{Binding UserInput,
+                           UpdateSourceTrigger=PropertyChanged}" />
+
+        <!-- Continue -->
+
+        <Button
+            Grid.Row="2"
+            Height="36"
+            Content="Continue"
+            Command="{Binding SendCommand}" />
+
+    </Grid>
+
+</UserControl>

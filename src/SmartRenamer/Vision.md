@@ -39,3 +39,17 @@ Support files wherever they live.
 The user always remains in control.
 
 The Guide never asks users to make technical decisions. It asks questions they can confidently answer, explains why the answers matter, and translates those answers into technical solutions
+
+Progressive Disclosure
+
+The Guide should reveal only what the user needs right now.
+
+Not all options.
+
+Not all settings.
+
+Not every technology.
+
+Just the next useful thing.
+
+That's exactly how a good mentor teaches.

@@ -29,3 +29,22 @@ Cloud Providers
 Phase 7
 
 Plugin SDK
+
+# Version 1
+
+## ✔ Completed
+
+- Workflow Engine
+- Guide Engine
+- Conversation Panel
+- Folder Summary
+
+## 🚧 In Progress
+
+- Folder Scanner
+
+## Next
+
+- Folder Picker
+- Project Discovery
+- Workflow Suggestions

@@ -12,7 +12,7 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="250"/>
             <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="300"/>
+            <ColumnDefinition Width="350"/>
         </Grid.ColumnDefinitions>
 
         <!-- Building Blocks -->
@@ -22,20 +22,11 @@
 
             <StackPanel Margin="10">
 
-                <Button Content="🔤 Find &amp; Replace"
-                        Margin="0,0,0,5"/>
-
-                <Button Content="📁 Move Files"
-                        Margin="0,0,0,5"/>
-
-                <Button Content="📷 Read EXIF"
-                        Margin="0,0,0,5"/>
-
-                <Button Content="🤖 AI Describe"
-                        Margin="0,0,0,5"/>
-
-                <Button Content="🔢 Regex"
-                        Margin="0,0,0,5"/>
+                <Button Content="🔤 Find &amp; Replace" Margin="0,0,0,5"/>
+                <Button Content="📁 Move Files" Margin="0,0,0,5"/>
+                <Button Content="📷 Read EXIF" Margin="0,0,0,5"/>
+                <Button Content="🤖 AI Describe" Margin="0,0,0,5"/>
+                <Button Content="🔢 Regex"/>
 
             </StackPanel>
 
@@ -53,14 +44,8 @@
                   Grid.Column="2"
                   Margin="5">
 
-            <StackPanel Margin="10">
-
-                <TextBlock
-                    FontSize="14"
-                    TextWrapping="Wrap"
-                    Text="Welcome to SmartRenamer.&#10;&#10;I'm your Guide.&#10;&#10;Tell me what you're trying to accomplish, and we'll build a workflow together."/>
-
-            </StackPanel>
+            <controls:ConversationPanel
+                DataContext="{Binding Guide}" />
 
         </GroupBox>
 

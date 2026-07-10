@@ -1,88 +1,68 @@
 ﻿<Window x:Class="SmartRenamer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d"
+        xmlns:controls="clr-namespace:SmartRenamer.Controls"
         Title="SmartRenamer"
-        Height="700"
-        Width="1100"
+        Height="800"
+        Width="1300"
         WindowStartupLocation="CenterScreen">
 
     <Grid Margin="10">
 
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="250"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="300"/>
+        </Grid.ColumnDefinitions>
 
-        <StackPanel Orientation="Horizontal"
-                    Margin="0,0,0,10">
+        <!-- Building Blocks -->
 
-            <Button Width="120"
-                    Height="35"
-                    Margin="0,0,10,0"
-                    Command="{Binding AddFilesCommand}"
-                    Content="Add Files"/>
+        <GroupBox Header="Building Blocks"
+                  Margin="5">
 
-            <TextBlock Text="Find:"
-                       VerticalAlignment="Center"
-                       Margin="10,0,5,0"/>
+            <StackPanel Margin="10">
 
-            <TextBox Width="180"
-                     Margin="0,0,10,0"
-                     Text="{Binding FindText, UpdateSourceTrigger=PropertyChanged}"/>
+                <Button Content="🔤 Find &amp; Replace"
+                        Margin="0,0,0,5"/>
 
-            <TextBlock Text="Replace:"
-                       VerticalAlignment="Center"
-                       Margin="0,0,5,0"/>
+                <Button Content="📁 Move Files"
+                        Margin="0,0,0,5"/>
 
-            <TextBox Width="180"
-                     Margin="0,0,10,0"
-                     Text="{Binding ReplaceText, UpdateSourceTrigger=PropertyChanged}"/>
+                <Button Content="📷 Read EXIF"
+                        Margin="0,0,0,5"/>
 
-            <Button Width="120"
-                    Height="35"
-                    Margin="0,0,10,0"
-                    Command="{Binding PreviewCommand}"
-                    Content="Preview"/>
+                <Button Content="🤖 AI Describe"
+                        Margin="0,0,0,5"/>
 
-            <Button Width="120"
-                    Height="35"
-                    Command="{Binding RenameCommand}"
-                    Content="Rename"/>
+                <Button Content="🔢 Regex"
+                        Margin="0,0,0,5"/>
 
-        </StackPanel>
+            </StackPanel>
 
-        <DataGrid Grid.Row="1"
-                  ItemsSource="{Binding Files}"
-                  AutoGenerateColumns="False"
-                  CanUserAddRows="False">
+        </GroupBox>
 
-            <DataGrid.Columns>
+        <!-- Workflow -->
 
-                <DataGridTextColumn Header="Current Name"
-                                    Binding="{Binding CurrentName}"
-                                    Width="*"/>
+        <controls:WorkflowCanvas
+            Grid.Column="1"
+            Margin="5"/>
 
-                <DataGridTextColumn Header="New Name"
-                                    Binding="{Binding NewName}"
-                                    Width="*"/>
+        <!-- Guide -->
 
-                <DataGridTextColumn Header="Status"
-                                    Binding="{Binding Status}"
-                                    Width="150"/>
+        <GroupBox Header="Guide"
+                  Grid.Column="2"
+                  Margin="5">
 
-            </DataGrid.Columns>
+            <StackPanel Margin="10">
 
-        </DataGrid>
+                <TextBlock
+                    FontSize="14"
+                    TextWrapping="Wrap"
+                    Text="Welcome to SmartRenamer.&#10;&#10;I'm your Guide.&#10;&#10;Tell me what you're trying to accomplish, and we'll build a workflow together."/>
 
-        <StatusBar Grid.Row="2">
-            <StatusBarItem>
-                <TextBlock Text="Ready"/>
-            </StatusBarItem>
-        </StatusBar>
+            </StackPanel>
+
+        </GroupBox>
 
     </Grid>
 

@@ -1,6 +1,7 @@
 ﻿<UserControl x:Class="SmartRenamer.Controls.ConversationPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:cards="clr-namespace:SmartRenamer.Controls.ConversationCards">
 
     <Grid Margin="10">
 
@@ -12,22 +13,30 @@
 
         <!-- Conversation -->
 
-        <ListBox
-            ItemsSource="{Binding Conversation.Messages}"
-            BorderThickness="0">
+        <ListBox Grid.Row="0"
+                 ItemsSource="{Binding Conversation.Messages}"
+                 BorderThickness="0"
+                 Background="Transparent">
 
             <ListBox.ItemTemplate>
 
                 <DataTemplate>
 
-                    <Border Margin="0,5"
+                    <Border Margin="5"
                             Padding="10"
                             CornerRadius="10"
-                            Background="#EFEFEF">
+                            Background="#EEEEEE">
 
-                        <TextBlock
-                            Text="{Binding Text}"
-                            TextWrapping="Wrap"/>
+                        <StackPanel>
+
+                            <TextBlock FontWeight="Bold"
+                                       Text="Guide"/>
+
+                            <TextBlock Margin="0,5,0,0"
+                                       Text="{Binding Text}"
+                                       TextWrapping="Wrap"/>
+
+                        </StackPanel>
 
                     </Border>
 
@@ -37,21 +46,26 @@
 
         </ListBox>
 
-        <!-- User Input -->
+        <!-- Temporary Folder Picker Card -->
 
-        <TextBox
+        <cards:FolderPickerCard
             Grid.Row="1"
-            Margin="0,10,0,5"
-            Text="{Binding UserInput,
-                           UpdateSourceTrigger=PropertyChanged}" />
+            Margin="0,10,0,10"/>
 
-        <!-- Continue -->
+        <!-- Input -->
 
-        <Button
-            Grid.Row="2"
-            Height="36"
-            Content="Continue"
-            Command="{Binding SendCommand}" />
+        <DockPanel Grid.Row="2">
+
+            <TextBox Width="250"
+                     Text="{Binding UserInput,
+                                    UpdateSourceTrigger=PropertyChanged}" />
+
+            <Button Margin="10,0,0,0"
+                    Width="90"
+                    Content="Continue"
+                    Command="{Binding SendCommand}" />
+
+        </DockPanel>
 
     </Grid>
 

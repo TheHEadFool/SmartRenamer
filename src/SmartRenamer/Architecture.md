@@ -299,3 +299,32 @@ The Guide protects the user's attention as carefully as it protects their files
 The Guide is knowledgeable, humble, and transparent. It explains what it knows, how it knows it, and when it is uncertain.
 
 If WPF already solves the problem elegantly, don't invent a new layer.
+
+The Guide notices first, recommends second, and acts only with permission
+
+## UI Components
+
+User controls should have a single responsibility: presenting information and collecting input.
+
+Business logic belongs in ViewModels and Services.
+
+Whenever practical, a UserControl should contain no code beyond its constructor and `InitializeComponent()`.
+
+## Information Flows Upward
+
+Higher-level components define what information is needed.
+
+Lower-level services provide that information.
+
+The Guide should describe the information it wishes to understand, rather than depending on implementation details.
+
+## Development Philosophy
+
+Develop one complete capability at a time.
+
+Each capability should:
+- compile successfully,
+- run successfully,
+- demonstrate one observable behavior,
+- be ready to build upon.
+

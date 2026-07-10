@@ -60,3 +60,9 @@ That's exactly how a good mentor teaches.
 - Every action should be reversible.
 - The conversation is the primary interface.
 - Software should teach while it works.
+
+## Identity
+
+The application is evolving from a file renaming utility into an intelligent file organization assistant.
+
+Its primary value is understanding a project before suggesting actions.

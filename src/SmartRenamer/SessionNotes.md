@@ -34,3 +34,15 @@ Major Decisions
 - Projects before files.
 - Support local and cloud data equally.
 - Build confidence rather than automation.
+
+Today we shifted from building infrastructure to building complete end-to-end features.
+
+Future work will be organized around user-visible capabilities rather than internal components.
+
+## Lesson Learned
+
+When compiler errors point to duplicate class definitions, search the solution before changing code.
+
+Using **Ctrl+Shift+F** to locate duplicate class declarations quickly identified an accidental copy/paste error that would have been difficult to diagnose by inspection alone.
+
+Following the evidence is faster than guessing.

@@ -7,32 +7,29 @@ namespace SmartRenamer.Guide.Models
         public ObservableCollection<GuideMessage> Messages { get; }
             = new();
 
-        public void Add(GuideMessage message)
+        public void AddMessage(GuideMessage message)
         {
             Messages.Add(message);
         }
 
         public void AddGuideMessage(string text)
         {
-            Add(new GuideMessage
+            Messages.Add(new GuideMessage
             {
                 IsGuide = true,
-                Text = text
-            });
-        }
-
-        public void AddFriendMessage(string text)
-        {
-            Add(new GuideMessage
-            {
-                IsGuide = false,
-                Text = text
+                Text = text,
+                MessageType = GuideMessageType.Text
             });
         }
 
         public void AddUserMessage(string text)
         {
-            AddFriendMessage(text);
+            Messages.Add(new GuideMessage
+            {
+                IsGuide = false,
+                Text = text,
+                MessageType = GuideMessageType.Text
+            });
         }
     }
 }

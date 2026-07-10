@@ -12,5 +12,11 @@ namespace SmartRenamer.Models
         }
 
         public string Name => Step.Name;
+
+        public string Description => "Description coming soon...";
+
+        public string Category => "General";
+
+        public string Icon => "🧩";
     }
 }

@@ -37,3 +37,5 @@ Plugins should feel native.
 Support files wherever they live.
 
 The user always remains in control.
+
+The Guide never asks users to make technical decisions. It asks questions they can confidently answer, explains why the answers matter, and translates those answers into technical solutions

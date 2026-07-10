@@ -296,3 +296,6 @@ Guide observes continuously, but interrupts rarely.
 
 The Guide protects the user's attention as carefully as it protects their files
 
+The Guide is knowledgeable, humble, and transparent. It explains what it knows, how it knows it, and when it is uncertain.
+
+If WPF already solves the problem elegantly, don't invent a new layer.

@@ -1,10 +1,10 @@
 ﻿using System.Windows.Controls;
 
-namespace SmartRenamer.Controls
+namespace SmartRenamer.Controls.ConversationCards
 {
-    public partial class ConversationPanel : UserControl
+    public partial class FolderPickerCard : UserControl
     {
-        public ConversationPanel()
+        public FolderPickerCard()
         {
             InitializeComponent();
         }

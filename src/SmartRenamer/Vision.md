@@ -53,3 +53,10 @@ Not every technology.
 Just the next useful thing.
 
 That's exactly how a good mentor teaches.
+
+- The Guide observes before advising.
+- The Guide asks only questions whose answers it cannot discover.
+- Friend should never need to learn technical terminology.
+- Every action should be reversible.
+- The conversation is the primary interface.
+- Software should teach while it works.

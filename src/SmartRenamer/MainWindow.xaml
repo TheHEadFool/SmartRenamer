@@ -1,6 +1,9 @@
 ﻿<Window x:Class="SmartRenamer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
         Title="SmartRenamer"
         Height="700"
         Width="1100"
@@ -14,75 +17,71 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+        <StackPanel Orientation="Horizontal"
+                    Margin="0,0,0,10">
 
             <Button Width="120"
-            Height="35"
-            Margin="0,0,10,0"
-            Command="{Binding AddFilesCommand}"
-            Content="Add Files" />
+                    Height="35"
+                    Margin="0,0,10,0"
+                    Command="{Binding AddFilesCommand}"
+                    Content="Add Files"/>
 
-            <TextBlock VerticalAlignment="Center"
-               Margin="10,0,5,0"
-               Text="Find:" />
+            <TextBlock Text="Find:"
+                       VerticalAlignment="Center"
+                       Margin="10,0,5,0"/>
 
             <TextBox Width="180"
-             Margin="0,0,10,0"
-             Text="{Binding FindText, UpdateSourceTrigger=PropertyChanged}" />
+                     Margin="0,0,10,0"
+                     Text="{Binding FindText, UpdateSourceTrigger=PropertyChanged}"/>
 
-            <TextBlock VerticalAlignment="Center"
-               Margin="0,0,5,0"
-               Text="Replace:" />
+            <TextBlock Text="Replace:"
+                       VerticalAlignment="Center"
+                       Margin="0,0,5,0"/>
 
             <TextBox Width="180"
-             Margin="0,0,10,0"
-             Text="{Binding ReplaceText, UpdateSourceTrigger=PropertyChanged}" />
+                     Margin="0,0,10,0"
+                     Text="{Binding ReplaceText, UpdateSourceTrigger=PropertyChanged}"/>
 
             <Button Width="120"
-            Height="35"
-            Margin="0,0,10,0"
-            Command="{Binding PreviewCommand}"
-            Content="Preview" />
+                    Height="35"
+                    Margin="0,0,10,0"
+                    Command="{Binding PreviewCommand}"
+                    Content="Preview"/>
 
             <Button Width="120"
-            Height="35"
-            Command="{Binding RenameCommand}"
-            Content="Rename" />
+                    Height="35"
+                    Command="{Binding RenameCommand}"
+                    Content="Rename"/>
 
         </StackPanel>
 
         <DataGrid Grid.Row="1"
-          ItemsSource="{Binding Files}"
-          AutoGenerateColumns="False">
+                  ItemsSource="{Binding Files}"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False">
 
             <DataGrid.Columns>
 
                 <DataGridTextColumn Header="Current Name"
-                            Binding="{Binding CurrentName}"
-                            Width="*" />
+                                    Binding="{Binding CurrentName}"
+                                    Width="*"/>
 
                 <DataGridTextColumn Header="New Name"
-                            Binding="{Binding NewName}"
-                            Width="*" />
+                                    Binding="{Binding NewName}"
+                                    Width="*"/>
 
                 <DataGridTextColumn Header="Status"
-                            Binding="{Binding Status}"
-                            Width="150" />
+                                    Binding="{Binding Status}"
+                                    Width="150"/>
 
             </DataGrid.Columns>
 
         </DataGrid>
 
         <StatusBar Grid.Row="2">
-
             <StatusBarItem>
-
-                <TextBlock>
-                    Ready
-                </TextBlock>
-
+                <TextBlock Text="Ready"/>
             </StatusBarItem>
-
         </StatusBar>
 
     </Grid>

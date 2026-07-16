@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
@@ -17,6 +18,18 @@ namespace SmartRenamer.Services
             ".tiff",
             ".heic",
             ".webp"
+        };
+
+        private static readonly string[] RawExtensions =
+        {
+            ".cr2",
+            ".cr3",
+            ".nef",
+            ".arw",
+            ".dng",
+            ".orf",
+            ".rw2",
+            ".raf"
         };
 
         private static readonly string[] VideoExtensions =
@@ -51,7 +64,7 @@ namespace SmartRenamer.Services
             if (!Directory.Exists(folderPath))
                 return summary;
 
-            var files = Directory
+            List<string> files = Directory
                 .EnumerateFiles(folderPath, "*.*", SearchOption.AllDirectories)
                 .ToList();
 
@@ -61,6 +74,10 @@ namespace SmartRenamer.Services
                 .EnumerateDirectories(folderPath, "*", SearchOption.AllDirectories)
                 .Count();
 
+            summary.HasSubfolders = summary.FolderCount > 0;
+
+            HashSet<string> extensions = new(StringComparer.OrdinalIgnoreCase);
+
             foreach (string file in files)
             {
                 FileInfo info = new(file);
@@ -69,30 +86,41 @@ namespace SmartRenamer.Services
 
                 string extension = info.Extension.ToLowerInvariant();
 
+                if (extensions.Add(extension))
+                    summary.Extensions.Add(extension);
+
                 if (ImageExtensions.Contains(extension))
+                {
                     summary.ImageCount++;
-
+                    summary.HasExifImages = true;
+                }
+                else if (RawExtensions.Contains(extension))
+                {
+                    summary.ImageCount++;
+                    summary.HasRawPhotos = true;
+                    summary.HasExifImages = true;
+                }
                 else if (VideoExtensions.Contains(extension))
+                {
                     summary.VideoCount++;
-
+                    summary.HasVideos = true;
+                }
                 else if (DocumentExtensions.Contains(extension))
+                {
                     summary.DocumentCount++;
+                }
             }
 
             if (files.Any())
             {
-                DateTime oldest =
-                    files.Min(File.GetCreationTime);
+                DateTime oldest = files.Min(File.GetCreationTime);
+                DateTime newest = files.Max(File.GetCreationTime);
 
-                DateTime newest =
-                    files.Max(File.GetCreationTime);
-
-                summary.OldestFileDate =
-                    oldest.ToShortDateString();
-
-                summary.NewestFileDate =
-                    newest.ToShortDateString();
+                summary.OldestFileDate = oldest.ToShortDateString();
+                summary.NewestFileDate = newest.ToShortDateString();
             }
+
+            summary.Extensions.Sort();
 
             return summary;
         }

@@ -8,6 +8,8 @@ namespace SmartRenamer.Services
 
         private readonly FolderScanner folderScanner = new();
 
+        private readonly ProjectAnalyzer projectAnalyzer = new();
+
         public ProjectContext? Investigate()
         {
             string? folder = folderPicker.PickFolder();
@@ -17,10 +19,16 @@ namespace SmartRenamer.Services
 
             FolderSummary summary = folderScanner.Scan(folder);
 
-            return new ProjectContext
+            ProjectContext context = new()
             {
                 Folder = summary
             };
+
+            // Let the analyzer determine the project type,
+            // observations, and recommended capabilities.
+            projectAnalyzer.Analyze(context);
+
+            return context;
         }
     }
 }

@@ -2,6 +2,8 @@
 
 SmartRenamer should feel like working alongside a trusted friend who is exceptionally good at organizing digital information—and who enjoys helping you become just as good.
 
+Scout should understand the user's goal before suggesting actions.
+
 SmartRenamer is not simply a file renaming application.
 
 It is a collaborative workspace for organizing digital information.
@@ -66,3 +68,7 @@ That's exactly how a good mentor teaches.
 The application is evolving from a file renaming utility into an intelligent file organization assistant.
 
 Its primary value is understanding a project before suggesting actions.
+
+Capabilities represent things Friend knows how to do. Users may assemble them manually, but the long-term goal is for Friend to automatically select and arrange the necessary capabilities based on the user's intent.
+
+Scout remembers successful workflows so Friend never has to repeat themselves

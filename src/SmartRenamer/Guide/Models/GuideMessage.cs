@@ -1,52 +1,49 @@
-﻿using SmartRenamer.Infrastructure;
+﻿using System.Windows;
+using SmartRenamer.Infrastructure;
 
 namespace SmartRenamer.Guide.Models
 {
-    public enum GuideMessageType
-    {
-        Text,
-        FolderPicker,
-        WorkflowSuggestion,
-        Warning,
-        Success
-    }
-
+    /// <summary>
+    /// Represents one item in the conversation timeline.
+    /// A message may be plain text, or it may contain a rich UI card.
+    /// </summary>
     public class GuideMessage
     {
         /// <summary>
-        /// True if this message came from the Guide.
-        /// False if it came from the Friend.
+        /// True if the message came from Guide.
+        /// False if it came from the user.
         /// </summary>
         public bool IsGuide { get; set; }
 
         /// <summary>
-        /// Convenience property for the UI.
+        /// Display name of the speaker.
+        /// Eventually this will come from the user's chosen Guide name.
         /// </summary>
-        public string Speaker => IsGuide ? "Guide" : "Friend";
+        public string Speaker => IsGuide ? "Guide" : "You";
 
         /// <summary>
-        /// The text shown in the conversation.
+        /// Optional text shown in the conversation.
         /// </summary>
         public string Text { get; set; } = string.Empty;
 
         /// <summary>
-        /// Determines what kind of Guide Card (if any) accompanies this message.
+        /// Optional rich content such as a WelcomeCard,
+        /// FolderPickerCard, or ProjectSummaryCard.
         /// </summary>
-        public GuideMessageType MessageType { get; set; }
-            = GuideMessageType.Text;
+        public FrameworkElement? Card { get; set; }
 
         /// <summary>
-        /// Optional text shown on a Guide Card button.
+        /// Optional action text.
         /// </summary>
         public string? ActionText { get; set; }
 
         /// <summary>
-        /// Optional command executed by a Guide Card.
+        /// Optional action command.
         /// </summary>
         public RelayCommand? ActionCommand { get; set; }
 
         /// <summary>
-        /// Optional data associated with the message.
+        /// Optional payload associated with this message.
         /// </summary>
         public object? Payload { get; set; }
     }

@@ -1,18 +1,27 @@
-﻿using SmartRenamer.Guide;
+﻿using System;
+using System.Collections.Generic;
+using SmartRenamer.Guide;
 using SmartRenamer.Guide.Models;
+using SmartRenamer.Guide.Thinking;
 using SmartRenamer.Infrastructure;
+using SmartRenamer.Models;
 
 namespace SmartRenamer.ViewModels.Guide
 {
     public class GuideViewModel : ObservableObject
     {
-        private readonly GuideEngine guideEngine = new();
-
         private readonly GuideInvestigator guideInvestigator = new();
 
-        private ConversationStage stage = ConversationStage.WaitingForGoal;
+        private readonly ScoutThoughtBuilder thoughtBuilder = new();
+
+        private readonly ScoutConversationEngine conversationEngine = new();
+
+        private ConversationStage stage =
+            ConversationStage.Greeting;
 
         public GuideConversation Conversation { get; } = new();
+
+        public event EventHandler<WorkflowResult>? ProjectCreated;
 
         private string userInput = "";
 
@@ -24,18 +33,30 @@ namespace SmartRenamer.ViewModels.Guide
 
         public RelayCommand SendCommand { get; }
 
-        public RelayCommand ChooseFolderCommand { get; }
-
         public GuideViewModel()
         {
             SendCommand = new RelayCommand(Send);
 
-            ChooseFolderCommand = new RelayCommand(ChooseFolder);
-
-            Conversation.AddGuideMessage("Welcome back!");
+            Conversation.AddGuideMessage("Hi, I'm Scout.");
 
             Conversation.AddGuideMessage(
-                "What would you like to work on today?");
+                "I'll help organize your project.");
+
+            AskNextQuestion();
+        }
+
+        private void AskNextQuestion()
+        {
+            List<ScoutThought> thoughts =
+                thoughtBuilder.Build(new ProjectContext());
+
+            ScoutQuestion? question =
+                conversationEngine.GetNextQuestion(thoughts);
+
+            if (question != null)
+            {
+                Conversation.AddGuideMessage(question.Text);
+            }
         }
 
         private void Send()
@@ -43,55 +64,101 @@ namespace SmartRenamer.ViewModels.Guide
             if (string.IsNullOrWhiteSpace(UserInput))
                 return;
 
-            Conversation.AddUserMessage(UserInput);
+            string answer = UserInput.Trim();
+
+            Conversation.AddUserMessage(answer);
+
+            UserInput = "";
+
+            //-------------------------------------------------
+            // Let Scout understand the answer.
+            //-------------------------------------------------
+
+            conversationEngine.ProcessAnswer(answer);
+
+            //-------------------------------------------------
+            // Conversation Flow
+            //-------------------------------------------------
 
             switch (stage)
             {
-                case ConversationStage.WaitingForGoal:
+                case ConversationStage.Greeting:
 
-                    guideEngine.RecordUserResponse(UserInput);
+                    AskNextQuestion();
+
+                    Conversation.AddGuideMessage("");
 
                     Conversation.AddGuideMessage(
-                        "Great! I'll take a quick look before we decide what to do.");
+                        "When you're ready, I'll investigate the folder.");
 
-                    Conversation.AddMessage(new GuideMessage
-                    {
-                        IsGuide = true,
-                        MessageType = GuideMessageType.FolderPicker
-                    });
+                    Conversation.AddGuideMessage(
+                        "Just type Go.");
 
-                    stage = ConversationStage.WaitingForFolder;
+                    stage = ConversationStage.ChooseFolder;
 
                     break;
 
-                case ConversationStage.WaitingForFolder:
+                case ConversationStage.ChooseFolder:
 
-                    Conversation.AddGuideMessage(
-                        "Choose the folder using the card above.");
+                    if (answer.Equals(
+                        "go",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        Conversation.AddGuideMessage(
+                            "Opening the folder browser...");
+
+                        ChooseFolder();
+                    }
+                    else
+                    {
+                        AskNextQuestion();
+                    }
+
+                    break;
+
+                case ConversationStage.ReviewPlan:
+
+                    AskNextQuestion();
 
                     break;
             }
-
-            UserInput = "";
         }
 
         private void ChooseFolder()
         {
-            var project = guideInvestigator.Investigate();
+            WorkflowResult? result =
+                guideInvestigator.Investigate();
 
-            if (project == null)
+            if (result == null)
             {
                 Conversation.AddGuideMessage(
                     "No folder was selected.");
 
+                stage = ConversationStage.Greeting;
+
                 return;
             }
 
-            Conversation.AddGuideMessage(
-                guideInvestigator.Summarize(project));
+            ProjectCreated?.Invoke(this, result);
+
+            Conversation.AddGuideMessage("");
 
             Conversation.AddGuideMessage(
-                "What would you like to organize first?");
+                "I've finished looking through your folder.");
+
+            Conversation.AddGuideMessage("");
+
+            Conversation.AddGuideMessage(
+                guideInvestigator.Summarize(result));
+
+            Conversation.AddGuideMessage("");
+
+            Conversation.AddGuideMessage(
+                "Now I'd like to understand one more thing before I recommend anything.");
+
+            stage = ConversationStage.ReviewPlan;
+
+            AskNextQuestion();
         }
     }
 }

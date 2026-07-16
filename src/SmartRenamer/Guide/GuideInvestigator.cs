@@ -1,44 +1,78 @@
-﻿using SmartRenamer.Models;
+﻿using System.Text;
+using SmartRenamer.Models;
 using SmartRenamer.Services;
 
 namespace SmartRenamer.Guide
 {
     /// <summary>
-    /// Helps the Guide understand a project by asking the
-    /// ProjectInvestigator to examine it and then translating
-    /// the results into observations Friend can understand.
+    /// Connects Scout to the Intelligence Engine.
+    /// Scout doesn't investigate folders directly.
+    /// Scout asks the workflow to investigate,
+    /// analyze, and prepare an organization plan.
     /// </summary>
     public class GuideInvestigator
     {
-        private readonly ProjectInvestigator projectInvestigator = new();
+        private readonly ProjectWorkflow workflow = new();
 
         /// <summary>
-        /// Investigates a project selected by Friend.
+        /// Runs the complete intelligence workflow.
         /// </summary>
-        public ProjectContext? Investigate()
+        public WorkflowResult? Investigate()
         {
-            return projectInvestigator.Investigate();
+            return workflow.Execute();
         }
 
         /// <summary>
-        /// Converts technical project information into
+        /// Converts the workflow results into
         /// conversational language.
         /// </summary>
-        public string Summarize(ProjectContext context)
+        public string Summarize(WorkflowResult result)
         {
-            if (context == null)
+            if (result == null || result.Project == null)
             {
-                return "I wasn't able to investigate the project.";
+                return "I wasn't able to investigate that project.";
             }
 
-            FolderSummary folder = context.Folder;
+            ProjectContext context = result.Project;
 
-            return
-                $"I found {folder.ImageCount:N0} images, " +
-                $"{folder.VideoCount:N0} videos, " +
-                $"{folder.DocumentCount:N0} documents " +
-                $"across {folder.FolderCount:N0} folders.\n\n" +
-                "I think I have a good understanding of what we're working with.";
+            StringBuilder summary = new();
+
+            summary.AppendLine("I spent a moment looking through your folder.");
+            summary.AppendLine();
+
+            summary.AppendLine($"Project Type: {context.ProjectType}");
+            summary.AppendLine($"Confidence: {context.Confidence}%");
+            summary.AppendLine();
+
+            summary.AppendLine("Here's what I found:");
+
+            foreach (ProjectObservation observation in context.Observations)
+            {
+                summary.AppendLine($"• {observation.Description}");
+            }
+
+            if (context.RecommendedCapabilities.Count > 0)
+            {
+                summary.AppendLine();
+                summary.AppendLine("I recommend:");
+
+                foreach (string capability in context.RecommendedCapabilities)
+                {
+                    summary.AppendLine($"✓ {capability}");
+                }
+            }
+
+            summary.AppendLine();
+
+            summary.AppendLine(
+                $"I've already prepared a preliminary organization plan containing {result.Preview.Count:N0} file(s).");
+
+            summary.AppendLine();
+
+            summary.AppendLine(
+                "Would you like to preview my recommendations?");
+
+            return summary.ToString();
         }
     }
 }

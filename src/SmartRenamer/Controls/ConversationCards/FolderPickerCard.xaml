@@ -23,7 +23,8 @@
                     Height="36"
                     HorizontalAlignment="Left"
                     Content="Choose Folder"
-                    Command="{Binding ChooseFolderCommand}"/>
+                    Command="{Binding RelativeSource={RelativeSource AncestorType=UserControl},
+                                      Path=Command}"/>
 
         </StackPanel>
 

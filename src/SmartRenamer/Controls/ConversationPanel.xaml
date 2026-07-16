@@ -1,71 +1,221 @@
 ﻿<UserControl x:Class="SmartRenamer.Controls.ConversationPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:cards="clr-namespace:SmartRenamer.Controls.ConversationCards">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <Grid Margin="10">
+    <UserControl.Resources>
 
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+        <Style x:Key="RoundedSendButton"
+               TargetType="Button">
 
-        <!-- Conversation -->
+            <Setter Property="Foreground"
+                    Value="White"/>
 
-        <ListBox Grid.Row="0"
-                 ItemsSource="{Binding Conversation.Messages}"
-                 BorderThickness="0"
-                 Background="Transparent">
+            <Setter Property="Background"
+                    Value="#2563EB"/>
 
-            <ListBox.ItemTemplate>
+            <Setter Property="BorderBrush"
+                    Value="#1D4ED8"/>
 
-                <DataTemplate>
+            <Setter Property="BorderThickness"
+                    Value="1"/>
 
-                    <Border Margin="5"
-                            Padding="10"
-                            CornerRadius="10"
-                            Background="#EEEEEE">
+            <Setter Property="Cursor"
+                    Value="Hand"/>
 
-                        <StackPanel>
+            <Setter Property="FontWeight"
+                    Value="SemiBold"/>
 
-                            <TextBlock FontWeight="Bold"
-                                       Text="Guide"/>
+            <Setter Property="Template">
 
-                            <TextBlock Margin="0,5,0,0"
-                                       Text="{Binding Text}"
-                                       TextWrapping="Wrap"/>
+                <Setter.Value>
 
-                        </StackPanel>
+                    <ControlTemplate TargetType="Button">
 
-                    </Border>
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10">
 
-                </DataTemplate>
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
 
-            </ListBox.ItemTemplate>
+                        </Border>
 
-        </ListBox>
+                        <ControlTemplate.Triggers>
 
-        <!-- Temporary Folder Picker Card -->
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
 
-        <cards:FolderPickerCard
-            Grid.Row="1"
-            Margin="0,10,0,10"/>
+                                <Setter TargetName="border"
+                                        Property="Background"
+                                        Value="#3B82F6"/>
 
-        <!-- Input -->
+                            </Trigger>
 
-        <DockPanel Grid.Row="2">
+                            <Trigger Property="IsPressed"
+                                     Value="True">
 
-            <TextBox Width="250"
-                     Text="{Binding UserInput,
-                                    UpdateSourceTrigger=PropertyChanged}" />
+                                <Setter TargetName="border"
+                                        Property="Background"
+                                        Value="#1E40AF"/>
 
-            <Button Margin="10,0,0,0"
-                    Width="90"
-                    Content="Continue"
-                    Command="{Binding SendCommand}" />
+                            </Trigger>
 
-        </DockPanel>
+                            <Trigger Property="IsEnabled"
+                                     Value="False">
+
+                                <Setter TargetName="border"
+                                        Property="Opacity"
+                                        Value="0.5"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+
+            </Setter>
+
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid Background="{StaticResource BackgroundBrush}">
+
+        <Border Margin="8"
+                Background="White"
+                BorderBrush="#D8DEE8"
+                BorderThickness="1"
+                CornerRadius="24">
+
+            <Grid>
+
+                <Grid.RowDefinitions>
+
+                    <RowDefinition Height="Auto"/>
+
+                    <RowDefinition Height="*"/>
+
+                    <RowDefinition Height="60"/>
+
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Background="#2563EB"
+                        CornerRadius="24,24,0,0"
+                        Padding="18">
+
+                    <StackPanel>
+
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            FontSize="22"
+                            FontWeight="Bold"
+                            Foreground="White"
+                            Text="Guide"/>
+
+                        <TextBlock
+                            Margin="0,6,0,0"
+                            HorizontalAlignment="Center"
+                            FontSize="13"
+                            Foreground="#DCE9FF"
+                            Text="Your Friendly Neighborhood File Organizer"/>
+
+                    </StackPanel>
+
+                </Border>
+
+                <ListBox
+                    x:Name="ConversationList"
+                    Grid.Row="1"
+                    Margin="10"
+                    BorderThickness="0"
+                    Background="Transparent"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                    ItemsSource="{Binding Conversation.Messages}">
+
+                    <ListBox.ItemTemplate>
+
+                        <DataTemplate>
+
+                            <Border Margin="0,0,0,12"
+                                    Padding="14"
+                                    Background="#EEF5FF"
+                                    CornerRadius="12">
+
+                                <StackPanel>
+
+                                    <TextBlock
+                                        FontWeight="SemiBold"
+                                        Text="{Binding Speaker}"/>
+
+                                    <TextBlock
+                                        Margin="0,8,0,0"
+                                        Text="{Binding Text}"
+                                        TextWrapping="Wrap"/>
+
+                                </StackPanel>
+
+                            </Border>
+
+                        </DataTemplate>
+
+                    </ListBox.ItemTemplate>
+
+                </ListBox>
+
+                <Border Grid.Row="2"
+                        Background="White"
+                        BorderBrush="#E5E7EB"
+                        BorderThickness="1,0,0,0"
+                        Padding="10">
+
+                    <Grid>
+
+                        <Grid.ColumnDefinitions>
+
+                            <ColumnDefinition Width="*"/>
+
+                            <ColumnDefinition Width="10"/>
+
+                            <ColumnDefinition Width="72"/>
+
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox
+                            x:Name="InputBox"
+                            Grid.Column="0"
+                            Height="36"
+                            Padding="8"
+                            VerticalContentAlignment="Center"
+                            AcceptsReturn="False"
+                            TextWrapping="NoWrap"
+                            KeyDown="InputBox_KeyDown"
+                            Text="{Binding UserInput,
+                                           UpdateSourceTrigger=PropertyChanged}" />
+
+                        <Button
+                            x:Name="SendButton"
+                            Grid.Column="2"
+                            Width="68"
+                            Height="32"
+                            VerticalAlignment="Center"
+                            Content="Send"
+                            Style="{StaticResource RoundedSendButton}"
+                            Command="{Binding SendCommand}"/>
+
+                    </Grid>
+
+                </Border>
+
+            </Grid>
+
+        </Border>
 
     </Grid>
 

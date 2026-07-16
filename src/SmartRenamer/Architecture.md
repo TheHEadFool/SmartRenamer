@@ -328,3 +328,38 @@ Each capability should:
 - demonstrate one observable behavior,
 - be ready to build upon.
 
+## ProjectContext is the Single Source of Truth
+
+All project analysis is accumulated in ProjectContext.
+
+Capabilities do not talk directly to the Guide.
+
+Each capability contributes observations, recommendations, warnings, or metadata to ProjectContext.
+
+Friend (GuideInvestigator) translates ProjectContext into natural conversation.
+
+This allows new capabilities to be added without changing Friend's conversational logic.
+
+### ProjectAnalyzer
+
+ProjectAnalyzer interprets the raw data collected by FolderScanner.
+
+It determines:
+
+- ProjectType
+- Observations
+- RecommendedCapabilities
+
+It never communicates directly with the Guide or UI.
+
+Its sole responsibility is enriching ProjectContext.
+
+## CapabilityFactory
+
+CapabilityFactory converts recommendation names into executable capability objects.
+
+ProjectAnalyzer recommends capabilities by name.
+
+CapabilityFactory creates the corresponding WorkflowStep.
+
+This keeps ProjectAnalyzer independent of implementation classes and allows new capabilities to be added with minimal changes.

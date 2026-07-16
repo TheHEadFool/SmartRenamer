@@ -2,6 +2,9 @@
 
 namespace SmartRenamer.Guide.Models
 {
+    /// <summary>
+    /// Stores the conversation timeline between the user and Guide.
+    /// </summary>
     public class GuideConversation
     {
         public ObservableCollection<GuideMessage> Messages { get; }
@@ -17,8 +20,7 @@ namespace SmartRenamer.Guide.Models
             Messages.Add(new GuideMessage
             {
                 IsGuide = true,
-                Text = text,
-                MessageType = GuideMessageType.Text
+                Text = text
             });
         }
 
@@ -27,8 +29,7 @@ namespace SmartRenamer.Guide.Models
             Messages.Add(new GuideMessage
             {
                 IsGuide = false,
-                Text = text,
-                MessageType = GuideMessageType.Text
+                Text = text
             });
         }
     }

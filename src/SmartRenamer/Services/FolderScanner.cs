@@ -65,10 +65,14 @@ namespace SmartRenamer.Services
                 return summary;
 
             List<string> files = Directory
-                .EnumerateFiles(folderPath, "*.*", SearchOption.AllDirectories)
-                .ToList();
+    .EnumerateFiles(folderPath, "*.*", SearchOption.AllDirectories)
+    .ToList();
 
-            summary.FileCount = files.Count;
+            // Store every discovered file so Scout can
+            // build previews without scanning again.
+            summary.Files.AddRange(files);
+
+            summary.FileCount = summary.Files.Count;
 
             summary.FolderCount = Directory
                 .EnumerateDirectories(folderPath, "*", SearchOption.AllDirectories)

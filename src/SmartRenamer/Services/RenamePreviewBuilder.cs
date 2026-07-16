@@ -1,13 +1,14 @@
 ﻿using System.Collections.Generic;
-using System.IO;
+using SmartRenamer.Capabilities.TextReplacement;
+using SmartRenamer.Interfaces;
 using SmartRenamer.Models;
 using SmartRenamer.Models.Rename;
 
 namespace SmartRenamer.Services
 {
     /// <summary>
-    /// Generates a preview of every filename before
-    /// anything is actually renamed.
+    /// Generates a rename preview using one of
+    /// Scout's rename capabilities.
     /// </summary>
     public class RenamePreviewBuilder
     {
@@ -18,23 +19,26 @@ namespace SmartRenamer.Services
             if (context.Folder == null)
                 return preview;
 
-            int number = 1;
+            //-------------------------------------------------
+            // Temporary:
+            // Until Scout begins passing capabilities through
+            // the workflow, demonstrate the capability using
+            // underscore replacement.
+            //-------------------------------------------------
 
-            foreach (string file in context.Folder.Files)
-            {
-                string extension = Path.GetExtension(file);
+            IRenameCapability capability =
+                new TextReplacementCapability();
 
-                RenamePreview item = new RenamePreview
+            TextReplacementRequest request =
+                new TextReplacementRequest
                 {
-                    FullPath = file,
-                    CurrentName = Path.GetFileName(file),
-                    NewName = $"File {number:000}{extension}"
+                    FindText = "_",
+                    ReplaceWith = " "
                 };
 
-                preview.Add(item);
-
-                number++;
-            }
+            preview = capability.BuildPreview(
+                context.Folder.Files,
+                request);
 
             return preview;
         }

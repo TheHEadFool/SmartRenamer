@@ -391,3 +391,122 @@ Instead they should think
 "I asked Scout to organize it."
 
 That is the vision.
+
+# Capability Pipeline
+
+Every capability must implement the same lifecycle.
+
+```
+Investigate
+      ↓
+Discover
+      ↓
+Recommend
+      ↓
+Preview
+      ↓
+Refine
+      ↓
+Approve
+      ↓
+Execute
+      ↓
+Undo
+      ↓
+Learn
+```
+
+The pipeline never changes.
+
+Only the capability changes.
+
+---
+
+# Capability Independence
+
+Capabilities must be independent.
+
+A capability may:
+
+- investigate the project
+- produce recommendations
+- generate previews
+- execute work
+- create undo transactions
+
+A capability must never:
+
+- control the conversation
+- modify another capability
+- directly manipulate the user interface
+
+Scout coordinates capabilities.
+
+Capabilities perform work.
+
+---
+
+# The Scout Promise
+
+Every operation Scout performs follows the same experience.
+
+The user will always experience:
+
+1. Scout understands the goal.
+2. Scout investigates.
+3. Scout explains what was discovered.
+4. Scout recommends improvements.
+5. Scout previews every change.
+6. Scout asks for approval.
+7. Scout performs the work.
+8. Scout offers Undo.
+
+Whether Scout is renaming five files or downloading five hundred book covers, the experience should always feel familiar.
+
+---
+
+# Long-Term Vision
+
+Scout should continue learning throughout the life of the project.
+
+Adding a new capability should never require redesigning Scout.
+
+Instead, Scout simply learns a new skill.
+
+Examples include:
+
+• Rename files
+
+• Download ebook covers
+
+• Add book summaries
+
+• Add EPUB metadata
+
+• Build Plex libraries
+
+• Organize photographs
+
+• Detect duplicates
+
+• Identify damaged files
+
+• OCR scanned documents
+
+• Organize tax records
+
+• Suggest folder structures
+
+• Learn user preferences
+
+The architecture should allow Scout to continue growing for years without becoming more complicated.
+
+---
+
+# Final Principle
+
+The goal is not to build the world's best file renamer.
+
+The goal is to build the world's most helpful file organization assistant.
+
+Renaming files is simply one capability Scout has learned.

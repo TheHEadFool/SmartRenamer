@@ -70,3 +70,7 @@ Conversations = user-facing dialogue
 Those should never be mixed.
 
 Every commit must make Friend noticeably more successful than before.
+
+Memory stores facts.
+
+Engines make decisions.

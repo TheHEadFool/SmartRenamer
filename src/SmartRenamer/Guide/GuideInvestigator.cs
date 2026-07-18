@@ -8,7 +8,7 @@ namespace SmartRenamer.Guide
     /// Connects Scout to the Intelligence Engine.
     /// Scout doesn't investigate folders directly.
     /// Scout asks the workflow to investigate,
-    /// analyze, and prepare an organization plan.
+    /// analyze, and prepare a rename preview.
     /// </summary>
     public class GuideInvestigator
     {
@@ -30,47 +30,76 @@ namespace SmartRenamer.Guide
         {
             if (result == null || result.Project == null)
             {
-                return "I wasn't able to investigate that project.";
+                return "I wasn't able to analyze that folder.";
             }
 
             ProjectContext context = result.Project;
 
             StringBuilder summary = new();
 
-            summary.AppendLine("I spent a moment looking through your folder.");
+            summary.AppendLine("I've finished analyzing your folder.");
             summary.AppendLine();
 
-            summary.AppendLine($"Project Type: {context.ProjectType}");
-            summary.AppendLine($"Confidence: {context.Confidence}%");
-            summary.AppendLine();
+            int renameCount = result.Preview.Count;
 
-            summary.AppendLine("Here's what I found:");
-
-            foreach (ProjectObservation observation in context.Observations)
+            if (renameCount == 0)
             {
-                summary.AppendLine($"• {observation.Description}");
+                summary.AppendLine(
+                    "I didn't find any filenames that need changing.");
+            }
+            else if (renameCount == 1)
+            {
+                summary.AppendLine(
+                    "I found 1 filename that could be improved.");
+            }
+            else
+            {
+                summary.AppendLine(
+                    $"I found {renameCount:N0} filenames that could be improved.");
+            }
+
+            summary.AppendLine();
+
+            if (context.Observations.Count > 0)
+            {
+                summary.AppendLine("Here's what I noticed:");
+
+                foreach (ProjectObservation observation in context.Observations)
+                {
+                    summary.AppendLine($"• {observation.Description}");
+                }
+
+                summary.AppendLine();
             }
 
             if (context.RecommendedCapabilities.Count > 0)
             {
-                summary.AppendLine();
-                summary.AppendLine("I recommend:");
+                summary.AppendLine("My recommendations:");
 
                 foreach (string capability in context.RecommendedCapabilities)
                 {
-                    summary.AppendLine($"✓ {capability}");
+                    summary.AppendLine($"• {capability}");
                 }
+
+                summary.AppendLine();
             }
 
-            summary.AppendLine();
-
-            summary.AppendLine(
-                $"I've already prepared a preliminary organization plan containing {result.Preview.Count:N0} file(s).");
-
-            summary.AppendLine();
-
-            summary.AppendLine(
-                "Would you like to preview my recommendations?");
+            if (renameCount == 0)
+            {
+                summary.AppendLine(
+                    "There isn't anything I'd recommend renaming right now.");
+            }
+            else
+            {
+                summary.AppendLine(
+                    "I've already prepared a preview of the proposed filename changes.");
+                summary.AppendLine();
+                summary.AppendLine(
+                    "We can refine those changes together before anything is renamed.");
+                summary.AppendLine();
+                summary.AppendLine(
+                    "What would you like me to do?");
+            }
 
             return summary.ToString();
         }

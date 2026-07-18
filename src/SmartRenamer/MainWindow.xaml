@@ -57,54 +57,73 @@
             </Grid.ColumnDefinitions>
 
             <!-- ================================================= -->
-            <!-- OPTIONS -->
+            <!-- Scout Suggestions -->
             <!-- ================================================= -->
 
             <Border Grid.Column="0"
-                    Style="{StaticResource CardBorder}">
+        Style="{StaticResource CardBorder}">
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
 
                     <StackPanel Margin="15">
 
                         <TextBlock
-                            FontSize="22"
-                            FontWeight="Bold"
-                            Text="Options"/>
+                FontSize="22"
+                FontWeight="Bold"
+                Text="Scout Suggestions"/>
 
                         <TextBlock
-                            Margin="0,6,0,20"
-                            Foreground="{StaticResource SecondaryTextBrush}"
-                            Text="Scout recommends these options based on what it learned."/>
+                Margin="0,6,0,20"
+                Foreground="{StaticResource SecondaryTextBrush}"
+                Text="Based on what I discovered, here are my recommendations."/>
 
                         <ItemsControl
-                            ItemsSource="{Binding Workspace.Recommendations}">
+                ItemsSource="{Binding Workspace.Recommendations}">
 
                             <ItemsControl.ItemTemplate>
 
                                 <DataTemplate>
 
-                                    <Button
-                                        Margin="0,0,0,12"
-                                        Padding="12"
-                                        HorizontalContentAlignment="Left">
+                                    <Border
+                            Margin="0,0,0,15"
+                            Padding="14"
+                            CornerRadius="10"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            Background="#F8FAFD">
 
                                         <StackPanel>
 
-                                            <TextBlock
-                                                FontWeight="SemiBold"
-                                                Text="{Binding Title}"/>
+                                            <!-- Title -->
 
                                             <TextBlock
-                                                Margin="0,4,0,0"
-                                                FontSize="12"
-                                                Foreground="Gray"
-                                                Text="{Binding Description}"
-                                                TextWrapping="Wrap"/>
+                                    FontSize="16"
+                                    FontWeight="SemiBold"
+                                    Text="{Binding Title}" />
+
+                                            <!-- Description -->
+
+                                            <TextBlock
+                                    Margin="0,8,0,12"
+                                    Foreground="{StaticResource SecondaryTextBrush}"
+                                    Text="{Binding Description}"
+                                    TextWrapping="Wrap"/>
+
+                                            <!-- Action -->
+
+                                            <Button
+    HorizontalAlignment="Right"
+    Padding="14,6"
+    Visibility="{Binding HasAction,
+                         Converter={StaticResource BooleanToVisibilityConverter}}"
+    Content="{Binding ActionText}"
+    Command="{Binding DataContext.ExecuteRecommendationCommand,
+                      RelativeSource={RelativeSource AncestorType=Window}}"
+    CommandParameter="{Binding}" />
 
                                         </StackPanel>
 
-                                    </Button>
+                                    </Border>
 
                                 </DataTemplate>
 
@@ -117,7 +136,6 @@
                 </ScrollViewer>
 
             </Border>
-
             <!-- ================================================= -->
             <!-- Workspace -->
             <!-- ================================================= -->
@@ -194,46 +212,62 @@
 
                     <StackPanel Grid.Row="5">
 
-                        <TextBlock
-                            FontSize="20"
-                            FontWeight="SemiBold"
-                            Text="Recommended Workflow"/>
+                        <DockPanel LastChildFill="False">
 
-                        <ItemsControl
-                            Margin="0,15,0,0"
-                            ItemsSource="{Binding Workspace.Recommendations}">
+                            <TextBlock
+            FontSize="20"
+            FontWeight="SemiBold"
+            Text="Rename Preview"/>
 
-                            <ItemsControl.ItemTemplate>
+                            <Border
+            Margin="10,0,0,0"
+            Padding="8,2"
+            Background="#D9EEF8"
+            CornerRadius="10"
+            DockPanel.Dock="Right">
 
-                                <DataTemplate>
+                                <TextBlock
+                FontWeight="SemiBold"
+                Text="{Binding Workspace.RenameCount,
+                               StringFormat={}{0} file(s)}"/>
 
-                                    <Border
-                                        Margin="0,0,0,10"
-                                        Padding="12"
-                                        Background="#EAFBF1"
-                                        CornerRadius="10">
+                            </Border>
 
-                                        <StackPanel>
+                        </DockPanel>
 
-                                            <TextBlock
-                                                FontWeight="Bold"
-                                                Text="{Binding Title}"/>
+                        <Border
+        Margin="0,15,0,0"
+        BorderBrush="#D8D8D8"
+        BorderThickness="1"
+        CornerRadius="8">
 
-                                            <TextBlock
-                                                Margin="0,5,0,0"
-                                                Foreground="Gray"
-                                                Text="{Binding Description}"
-                                                TextWrapping="Wrap"/>
+                            <DataGrid
+            AutoGenerateColumns="False"
+            CanUserAddRows="False"
+            CanUserDeleteRows="False"
+            CanUserResizeRows="False"
+            HeadersVisibility="Column"
+            IsReadOnly="True"
+            GridLinesVisibility="Horizontal"
+            ItemsSource="{Binding Workspace.RenamePreview}">
 
-                                        </StackPanel>
+                                <DataGrid.Columns>
 
-                                    </Border>
+                                    <DataGridTextColumn
+                    Header="Current Name"
+                    Width="*"
+                    Binding="{Binding CurrentName}" />
 
-                                </DataTemplate>
+                                    <DataGridTextColumn
+                    Header="New Name"
+                    Width="*"
+                    Binding="{Binding NewName}" />
 
-                            </ItemsControl.ItemTemplate>
+                                </DataGrid.Columns>
 
-                        </ItemsControl>
+                            </DataGrid>
+
+                        </Border>
 
                     </StackPanel>
 

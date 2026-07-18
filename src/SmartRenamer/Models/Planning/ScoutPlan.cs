@@ -42,6 +42,24 @@ namespace SmartRenamer.Models.Planning
         public string OrganizationStrategy { get; set; } = "";
 
         /// <summary>
+        /// Optional text placed before each filename.
+        /// Example:
+        /// "Vacation 2026 -"
+        /// </summary>
+        public string FilenamePrefix { get; set; } = "";
+
+        /// <summary>
+        /// Optional text placed after each filename.
+        /// Example:
+        /// "- Edited"
+        /// </summary>
+        public string FilenameSuffix { get; set; } = "";
+
+        /// <summary>
+        /// True if the original filename should be preserved.
+        /// </summary>
+        public bool KeepOriginalFilename { get; set; } = true;
+        /// <summary>
         /// Human-readable explanation of the naming strategy.
         /// Example:
         /// "Readable names with dates"

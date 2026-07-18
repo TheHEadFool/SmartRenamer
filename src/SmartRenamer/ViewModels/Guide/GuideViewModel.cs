@@ -1,10 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using SmartRenamer.Guide;
+﻿using SmartRenamer.Guide;
 using SmartRenamer.Guide.Models;
 using SmartRenamer.Guide.Thinking;
 using SmartRenamer.Infrastructure;
 using SmartRenamer.Models;
+using SmartRenamer.Models.Rename;
+using SmartRenamer.Services;
+using System;
+using System.Collections.Generic;
 
 namespace SmartRenamer.ViewModels.Guide
 {
@@ -23,6 +25,13 @@ namespace SmartRenamer.ViewModels.Guide
 
         public event EventHandler<WorkflowResult>? ProjectCreated;
 
+        // Raised when the user approves Scout's proposed plan.
+        public event EventHandler? PlanApproved;
+
+        // Remembers the most recent workflow so Scout
+        // can execute it after the user approves.
+        private WorkflowResult? currentWorkflow;
+
         private string userInput = "";
 
         public string UserInput
@@ -38,9 +47,7 @@ namespace SmartRenamer.ViewModels.Guide
             SendCommand = new RelayCommand(Send);
 
             Conversation.AddGuideMessage("Hi, I'm Scout.");
-
-            Conversation.AddGuideMessage(
-                "I'll help organize your project.");
+            Conversation.AddGuideMessage("I'll help organize your project.");
 
             AskNextQuestion();
         }
@@ -70,55 +77,108 @@ namespace SmartRenamer.ViewModels.Guide
 
             UserInput = "";
 
-            //-------------------------------------------------
-            // Let Scout understand the answer.
-            //-------------------------------------------------
-
             conversationEngine.ProcessAnswer(answer);
-
-            //-------------------------------------------------
-            // Conversation Flow
-            //-------------------------------------------------
 
             switch (stage)
             {
                 case ConversationStage.Greeting:
 
-                    AskNextQuestion();
-
                     Conversation.AddGuideMessage("");
 
                     Conversation.AddGuideMessage(
-                        "When you're ready, I'll investigate the folder.");
+                        "Opening the folder browser...");
 
-                    Conversation.AddGuideMessage(
-                        "Just type Go.");
-
-                    stage = ConversationStage.ChooseFolder;
+                    ChooseFolder();
 
                     break;
 
                 case ConversationStage.ChooseFolder:
 
-                    if (answer.Equals(
-                        "go",
-                        StringComparison.OrdinalIgnoreCase))
-                    {
-                        Conversation.AddGuideMessage(
-                            "Opening the folder browser...");
-
-                        ChooseFolder();
-                    }
-                    else
-                    {
-                        AskNextQuestion();
-                    }
+                    // This stage is no longer used because Scout
+                    // automatically opens the folder browser.
 
                     break;
 
                 case ConversationStage.ReviewPlan:
 
-                    AskNextQuestion();
+                    switch (conversationEngine.GetIntent(answer))
+                    {
+                        case ConversationIntent.Approve:
+
+                            if (currentWorkflow == null)
+                            {
+                                Conversation.AddGuideMessage(
+                                    "I don't have a preview to rename.");
+
+                                break;
+                            }
+
+                            Conversation.AddGuideMessage("");
+                            Conversation.AddGuideMessage(
+                                "Great! I'll start applying the changes.");
+
+                            PlanApproved?.Invoke(this, EventArgs.Empty);
+
+                            break;
+
+                        case ConversationIntent.Help:
+
+                            Conversation.AddGuideMessage("");
+
+                            Conversation.AddGuideMessage(
+                                "Here's what I'm doing:");
+
+                            Conversation.AddGuideMessage(
+                                "• I investigated your folder.");
+
+                            Conversation.AddGuideMessage(
+                                "• I created a preview so nothing changes until you approve it.");
+
+                            Conversation.AddGuideMessage(
+                                "• If you'd like something different, just tell me how you'd like the filenames changed.");
+
+                            Conversation.AddGuideMessage(
+                                "Nothing will be renamed until you approve the preview.");
+
+                            break;
+
+                        case ConversationIntent.Refine:
+
+                            Conversation.AddGuideMessage("");
+
+                            Conversation.AddGuideMessage(
+                                "I understand what you'd like to change.");
+
+                            Conversation.AddGuideMessage(
+                                "Refining the preview isn't available yet.");
+
+                            Conversation.AddGuideMessage(
+                                "That's the next capability I'll learn.");
+
+                            break;
+
+                        case ConversationIntent.Cancel:
+
+                            Conversation.AddGuideMessage("");
+
+                            Conversation.AddGuideMessage(
+                                "No problem.");
+
+                            Conversation.AddGuideMessage(
+                                "We can continue whenever you're ready.");
+
+                            break;
+
+                        default:
+
+                            Conversation.AddGuideMessage(
+                                "I'm not sure what you'd like me to do.");
+
+                            Conversation.AddGuideMessage(
+                                "You can approve the preview, ask me to explain it, ask me to change it, or cancel.");
+
+                            break;
+                    }
 
                     break;
             }
@@ -139,7 +199,12 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
             }
 
+            // Remember the workflow for later execution.
+            currentWorkflow = result;
+
             ProjectCreated?.Invoke(this, result);
+
+            conversationEngine.InvestigationCompleted();
 
             Conversation.AddGuideMessage("");
 
@@ -153,12 +218,9 @@ namespace SmartRenamer.ViewModels.Guide
 
             Conversation.AddGuideMessage("");
 
-            Conversation.AddGuideMessage(
-                "Now I'd like to understand one more thing before I recommend anything.");
+            AskNextQuestion();
 
             stage = ConversationStage.ReviewPlan;
-
-            AskNextQuestion();
         }
     }
 }

@@ -46,3 +46,5 @@ When compiler errors point to duplicate class definitions, search the solution b
 Using **Ctrl+Shift+F** to locate duplicate class declarations quickly identified an accidental copy/paste error that would have been difficult to diagnose by inspection alone.
 
 Following the evidence is faster than guessing.
+
+Scout always drives the experience.

@@ -1,7 +1,8 @@
 ﻿using System.Collections.ObjectModel;
 using SmartRenamer.Infrastructure;
 using SmartRenamer.Models;
-using SmartRenamer.Models.Analysis;
+using SmartRenamer.Models.Recommendations;
+using SmartRenamer.Models.Rename;
 
 namespace SmartRenamer.ViewModels.Workspace
 {
@@ -38,15 +39,27 @@ namespace SmartRenamer.ViewModels.Workspace
         public ObservableCollection<Recommendation> Recommendations { get; }
             = new();
 
+        public ObservableCollection<RenamePreview> RenamePreview { get; }
+            = new();
+
+        public int RenameCount => RenamePreview.Count;
+
+        public bool HasRenamePreview => RenamePreview.Count > 0;
+
         public void Load(WorkflowResult result)
         {
             if (result == null)
                 return;
 
+            //------------------------------------------
+            // Project Summary
+            //------------------------------------------
+
             Title = result.Project.ProjectType;
 
-            Description =
-                $"Confidence: {result.Project.Confidence}%";
+            //------------------------------------------
+            // Observations
+            //------------------------------------------
 
             Observations.Clear();
 
@@ -55,28 +68,50 @@ namespace SmartRenamer.ViewModels.Workspace
                 Observations.Add(observation.Description);
             }
 
+            //------------------------------------------
+            // Scout Recommendations
+            //------------------------------------------
+
             Recommendations.Clear();
 
-            if (result.Project.Profile != null)
-            {
-                foreach (Recommendation recommendation in result.Project.Profile.Recommendations)
-                {
-                    Recommendations.Add(recommendation);
-                }
+            NextStep = "Waiting for Scout...";
 
-                if (Recommendations.Count > 0)
-                {
-                    NextStep = Recommendations[0].Title;
-                }
-                else
-                {
-                    NextStep = "Review Project";
-                }
+            //------------------------------------------
+            // Rename Preview
+            //------------------------------------------
+
+            RenamePreview.Clear();
+
+            foreach (RenamePreview preview in result.Preview)
+            {
+                if (!preview.WillRename)
+                    continue;
+
+                RenamePreview.Add(preview);
+            }
+
+            //------------------------------------------
+            // Summary
+            //------------------------------------------
+
+            if (RenamePreview.Count == 0)
+            {
+                Description =
+                    "Scout analyzed this folder and didn't find any filenames that need changing.";
+            }
+            else if (RenamePreview.Count == 1)
+            {
+                Description =
+                    "Scout analyzed this folder and found 1 filename that could be improved.";
             }
             else
             {
-                NextStep = "Review Project";
+                Description =
+                    $"Scout analyzed this folder and found {RenamePreview.Count} filenames that could be improved.";
             }
+
+            OnPropertyChanged(nameof(RenameCount));
+            OnPropertyChanged(nameof(HasRenamePreview));
         }
     }
 }

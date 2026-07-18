@@ -1,5 +1,4 @@
-﻿
-namespace SmartRenamer.Guide
+﻿namespace SmartRenamer.Guide
 {
     /// <summary>
     /// Represents where Scout currently is
@@ -46,6 +45,14 @@ namespace SmartRenamer.Guide
         /// Scout presents its proposed plan.
         /// </summary>
         ReviewPlan,
+
+        /// <summary>
+        /// Scout and the user are discussing
+        /// the rename preview. The user can
+        /// refine the proposed changes before
+        /// anything is renamed.
+        /// </summary>
+        PreviewConversation,
 
         /// <summary>
         /// Scout is ready to execute.

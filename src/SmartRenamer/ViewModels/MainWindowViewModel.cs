@@ -1,14 +1,26 @@
-﻿using System.Collections.ObjectModel;
-using SmartRenamer.Capabilities;
+﻿using SmartRenamer.Capabilities;
+using SmartRenamer.Guide;
 using SmartRenamer.Infrastructure;
 using SmartRenamer.Models;
+using SmartRenamer.Models.Recommendations;
+using SmartRenamer.Models.Rename;
+using SmartRenamer.Services;
 using SmartRenamer.ViewModels.Guide;
 using SmartRenamer.ViewModels.Workspace;
+using System;
+using System.Collections.ObjectModel;
+using System.Windows;
 
 namespace SmartRenamer.ViewModels
 {
     public class MainWindowViewModel : ObservableObject
     {
+        private WorkflowResult? currentWorkflow;
+
+        private readonly SmartRenamer.Guide.RecommendationBuilder recommendationBuilder = new();
+
+        private readonly RenameService renameService = new();
+
         public ObservableCollection<RenameItem> Files { get; } = new();
 
         public GuideViewModel Guide { get; } = new();
@@ -23,23 +35,114 @@ namespace SmartRenamer.ViewModels
 
         public RelayCommand RenameCommand { get; }
 
+        public RelayCommand ExecuteRecommendationCommand { get; }
+
         public MainWindowViewModel()
         {
             AddFilesCommand = new RelayCommand(AddFiles);
             PreviewCommand = new RelayCommand(Preview);
             RenameCommand = new RelayCommand(Rename);
 
+            ExecuteRecommendationCommand =
+                new RelayCommand(ExecuteRecommendation);
+
             Pipeline.AddStep(
                 new WorkflowStep(
                     new ChooseFolderStep()));
 
             Guide.ProjectCreated += Guide_ProjectCreated;
+            Guide.PlanApproved += Guide_PlanApproved;
         }
 
         private void Guide_ProjectCreated(object? sender,
                                           WorkflowResult result)
         {
+            currentWorkflow = result;
+
             Workspace.Load(result);
+
+            Workspace.Recommendations.Clear();
+
+            foreach (Recommendation recommendation
+                in recommendationBuilder.Build(result))
+            {
+                Workspace.Recommendations.Add(recommendation);
+            }
+        }
+
+        private void Guide_PlanApproved(object? sender, EventArgs e)
+        {
+            if (currentWorkflow == null)
+            {
+                MessageBox.Show(
+                    "No active project.",
+                    "Scout");
+
+                return;
+            }
+
+            RenameResult result =
+                renameService.Execute(currentWorkflow);
+
+            if (result.Success)
+            {
+                MessageBox.Show(
+                    $"Finished! Renamed {result.FilesRenamed:N0} file(s).",
+                    "Rename Complete");
+
+                ProjectWorkflow workflow = new();
+
+                currentWorkflow =
+                    workflow.Execute(currentWorkflow.Project);
+
+                Workspace.Load(currentWorkflow);
+
+                Workspace.Recommendations.Clear();
+
+                foreach (Recommendation recommendation
+                    in recommendationBuilder.Build(currentWorkflow))
+                {
+                    Workspace.Recommendations.Add(recommendation);
+                }
+            }
+            else
+            {
+                MessageBox.Show(
+                    $"Renamed {result.FilesRenamed:N0} file(s).\n\n" +
+                    string.Join("\n", result.Errors),
+                    "Rename Complete");
+            }
+        }
+
+        private void ExecuteRecommendation(object? parameter)
+        {
+            if (parameter is not Recommendation recommendation)
+                return;
+
+            switch (recommendation.ActionId)
+            {
+                case "ReviewPreview":
+                    MessageBox.Show(
+                        $"Scout is ready to review {Workspace.RenameCount} proposed filename change(s).",
+                        "Scout");
+                    break;
+
+                case "RenameFiles":
+                    Guide_PlanApproved(this, EventArgs.Empty);
+                    break;
+
+                case "ExplainChanges":
+                    MessageBox.Show(
+                        "Explanation mode isn't implemented yet.",
+                        "Scout");
+                    break;
+
+                default:
+                    MessageBox.Show(
+                        $"Unknown action: {recommendation.ActionId}",
+                        "Scout");
+                    break;
+            }
         }
 
         private void AddFiles()

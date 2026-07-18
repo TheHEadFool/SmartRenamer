@@ -1,4 +1,5 @@
-﻿using SmartRenamer.Models;
+﻿using SmartRenamer.Capabilities.TextReplacement;
+using SmartRenamer.Models;
 using SmartRenamer.Models.Planning;
 
 namespace SmartRenamer.Services
@@ -16,6 +17,9 @@ namespace SmartRenamer.Services
 
         private readonly RenamePreviewBuilder previewBuilder = new();
 
+        /// <summary>
+        /// Starts a new workflow by asking the user to choose a folder.
+        /// </summary>
         public WorkflowResult? Execute()
         {
             ProjectContext? context = investigator.Investigate();
@@ -23,12 +27,22 @@ namespace SmartRenamer.Services
             if (context == null)
                 return null;
 
+            return Execute(context);
+        }
+
+        /// <summary>
+        /// Rebuilds the workflow using an existing project.
+        /// This is used after renaming so the preview refreshes.
+        /// </summary>
+        public WorkflowResult Execute(ProjectContext context)
+        {
             analyzer.Analyze(context);
 
             ScoutPlan plan = planner.Build(context);
 
-            var preview = previewBuilder.Build(context);
+            var preview = previewBuilder.Build(context, plan);
 
+            plan.RenamePreview.Clear();
             plan.RenamePreview.AddRange(preview);
 
             return new WorkflowResult

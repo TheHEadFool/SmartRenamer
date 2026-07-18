@@ -36,6 +36,8 @@ namespace SmartRenamer.Guide.Thinking
 
         public TextReplacementRequest? TextReplacement { get; set; }
 
+        //new
+        public bool InvestigationComplete { get; set; }
         //-------------------------------------------------
         // Conversation Memory
         //-------------------------------------------------

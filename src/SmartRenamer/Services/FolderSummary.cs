@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using SmartRenamer.Models;
 
 namespace SmartRenamer.Services
 {
@@ -33,11 +34,14 @@ namespace SmartRenamer.Services
         //----------------------------------------------------
 
         /// <summary>
-        /// Every file discovered during investigation.
-        /// This allows the planner to produce previews
-        /// without scanning the folder again.
+        /// Legacy file list used by existing rename code.
         /// </summary>
         public List<string> Files { get; } = new();
+
+        /// <summary>
+        /// Rich file information used by Scout.
+        /// </summary>
+        public List<FileContext> FileContexts { get; } = new();
 
         /// <summary>
         /// Unique file extensions discovered.

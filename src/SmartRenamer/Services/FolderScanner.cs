@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using SmartRenamer.Models;
 
 namespace SmartRenamer.Services
 {
@@ -65,14 +66,36 @@ namespace SmartRenamer.Services
                 return summary;
 
             List<string> files = Directory
-    .EnumerateFiles(folderPath, "*.*", SearchOption.AllDirectories)
-    .ToList();
+                .EnumerateFiles(folderPath, "*.*", SearchOption.AllDirectories)
+                .ToList();
 
-            // Store every discovered file so Scout can
-            // build previews without scanning again.
+            //-------------------------------------------------
+            // Legacy support
+            //-------------------------------------------------
+
             summary.Files.AddRange(files);
 
-            summary.FileCount = summary.Files.Count;
+            //-------------------------------------------------
+            // Scout file contexts
+            //-------------------------------------------------
+
+            foreach (string file in files)
+            {
+                FileInfo info = new(file);
+
+                summary.FileContexts.Add(new FileContext
+                {
+                    OriginalFullPath = file,
+                    CurrentFullPath = file,
+                    OriginalName = info.Name,
+                    CurrentName = info.Name,
+                    DestinationFolder = "",
+                    DestinationName = info.Name,
+                    Status = "Discovered"
+                });
+            }
+
+            summary.FileCount = files.Count;
 
             summary.FolderCount = Directory
                 .EnumerateDirectories(folderPath, "*", SearchOption.AllDirectories)
@@ -80,7 +103,8 @@ namespace SmartRenamer.Services
 
             summary.HasSubfolders = summary.FolderCount > 0;
 
-            HashSet<string> extensions = new(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> extensions =
+                new(StringComparer.OrdinalIgnoreCase);
 
             foreach (string file in files)
             {

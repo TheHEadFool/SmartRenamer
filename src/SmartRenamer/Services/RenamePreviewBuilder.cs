@@ -8,8 +8,7 @@ using SmartRenamer.Models.Rename;
 namespace SmartRenamer.Services
 {
     /// <summary>
-    /// Generates a rename preview using Scout's
-    /// current plan.
+    /// Generates a preview of Scout's planned actions.
     /// </summary>
     public class RenamePreviewBuilder
     {
@@ -19,23 +18,45 @@ namespace SmartRenamer.Services
         {
             List<RenamePreview> preview = new();
 
-            if (context.Folder == null)
+            if (context?.Folder == null)
                 return preview;
 
+            // New path:
+            // If FileContexts are available, build the preview directly
+            // from them so Scout can preview organization as well as
+            // filename changes.
+            if (context.Folder.FileContexts.Count > 0)
+            {
+                foreach (FileContext file in context.Folder.FileContexts)
+                {
+                    preview.Add(new RenamePreview
+                    {
+                        FullPath = file.CurrentFullPath,
+                        CurrentName = file.CurrentName,
+                        NewName = file.DestinationName,
+                        DestinationFolder = file.DestinationFolder,
+                        DestinationPath = string.IsNullOrWhiteSpace(file.DestinationFolder)
+                            ? ""
+                            : System.IO.Path.Combine(
+                                file.DestinationFolder,
+                                file.DestinationName)
+                    });
+                }
+
+                return preview;
+            }
+
+            // Legacy path:
+            // Continue supporting the existing rename workflow until
+            // every pipeline produces FileContexts.
             IRenameCapability capability =
                 new TextReplacementCapability();
 
-            // Temporary:
-            // Until Scout can build filenames directly,
-            // continue using the existing text replacement
-            // capability.
             TextReplacementRequest request = new();
 
-            preview = capability.BuildPreview(
+            return capability.BuildPreview(
                 context.Folder.Files,
                 request);
-
-            return preview;
         }
     }
 }

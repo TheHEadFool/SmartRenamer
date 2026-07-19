@@ -20,7 +20,7 @@ namespace SmartRenamer.ViewModels
         private readonly SmartRenamer.Guide.RecommendationBuilder recommendationBuilder = new();
 
         private readonly RenameService renameService = new();
-
+        private readonly ScoutService scoutService = new();
         public ObservableCollection<RenameItem> Files { get; } = new();
 
         public GuideViewModel Guide { get; } = new();
@@ -82,7 +82,7 @@ namespace SmartRenamer.ViewModels
             }
 
             RenameResult result =
-                renameService.Execute(currentWorkflow);
+    scoutService.Execute(currentWorkflow);
 
             if (result.Success)
             {

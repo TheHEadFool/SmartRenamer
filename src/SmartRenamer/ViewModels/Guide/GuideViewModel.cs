@@ -199,28 +199,23 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
             }
 
-            // Remember the workflow for later execution.
+            // Save the workflow.
             currentWorkflow = result;
 
+            // Send it to the Workspace.
             ProjectCreated?.Invoke(this, result);
 
-            conversationEngine.InvestigationCompleted();
-
-            Conversation.AddGuideMessage("");
+            Conversation.AddGuideMessage(
+                $"DEBUG: Observations = {result.Project.Observations.Count}");
 
             Conversation.AddGuideMessage(
-                "I've finished looking through your folder.");
-
-            Conversation.AddGuideMessage("");
+                $"DEBUG: Preview Items = {result.Preview.Count}");
 
             Conversation.AddGuideMessage(
-                guideInvestigator.Summarize(result));
+                $"DEBUG: Recommendations loaded.");
 
-            Conversation.AddGuideMessage("");
-
-            AskNextQuestion();
-
-            stage = ConversationStage.ReviewPlan;
+            // Stop here temporarily.
         }
     }
 }
+

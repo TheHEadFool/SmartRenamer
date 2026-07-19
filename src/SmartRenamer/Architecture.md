@@ -363,3 +363,55 @@ ProjectAnalyzer recommends capabilities by name.
 CapabilityFactory creates the corresponding WorkflowStep.
 
 This keeps ProjectAnalyzer independent of implementation classes and allows new capabilities to be added with minimal changes.
+
+Capabilities decide. Execution executes.
+
+Capabilities may analyze files, detect patterns, and propose actions.
+
+Execution services never make decisions. They only perform an approved ScoutPlan.
+
+User
+               │
+               ▼
+            Guide
+               │
+               ▼
+      ProjectAnalyzer
+               │
+               ▼
+        ProjectContext
+               │
+               ▼
+        Scout Planner
+               │
+               ▼
+          ScoutPlan
+               │
+               ▼
+     Execution Services
+               │
+               ▼
+          File System
+
+          ### Relative Destinations
+
+Capabilities do not move files.
+
+Capabilities recommend a relative destination path for each asset.
+
+Examples:
+
+Photos\2026\July
+Music\Artist\Album
+Documents\Taxes\2025
+Hotel California
+
+Execution combines:
+
+Destination Root
++
+Relative Destination
++
+Destination Name
+
+to produce the final file location.

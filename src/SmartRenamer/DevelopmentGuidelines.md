@@ -74,3 +74,5 @@ Every commit must make Friend noticeably more successful than before.
 Memory stores facts.
 
 Engines make decisions.
+
+Each execution service should be understandable in under two minutes.

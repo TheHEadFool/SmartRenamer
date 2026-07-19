@@ -206,7 +206,6 @@
                             Height="32"
                             VerticalAlignment="Center"
                             Content="Send"
-                            Style="{StaticResource RoundedSendButton}"
                             Command="{Binding SendCommand}"/>
 
                     </Grid>

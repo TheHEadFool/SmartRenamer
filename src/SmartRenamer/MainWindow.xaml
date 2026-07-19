@@ -115,7 +115,7 @@
     HorizontalAlignment="Right"
     Padding="14,6"
     Visibility="{Binding HasAction,
-                         Converter={StaticResource BooleanToVisibilityConverter}}"
+             Converter={StaticResource BooleanToVisibilityConverter}}"
     Content="{Binding ActionText}"
     Command="{Binding DataContext.ExecuteRecommendationCommand,
                       RelativeSource={RelativeSource AncestorType=Window}}"
@@ -210,9 +210,14 @@
 
                     </StackPanel>
 
-                    <StackPanel Grid.Row="5">
+                    <Grid Grid.Row="5">
 
-                        <DockPanel LastChildFill="False">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Grid.Row="0" LastChildFill="False">
 
                             <TextBlock
             FontSize="20"
@@ -236,6 +241,7 @@
                         </DockPanel>
 
                         <Border
+        Grid.Row="1"
         Margin="0,15,0,0"
         BorderBrush="#D8D8D8"
         BorderThickness="1"
@@ -249,6 +255,8 @@
             HeadersVisibility="Column"
             IsReadOnly="True"
             GridLinesVisibility="Horizontal"
+            ScrollViewer.VerticalScrollBarVisibility="Auto"
+            ScrollViewer.HorizontalScrollBarVisibility="Auto"
             ItemsSource="{Binding Workspace.RenamePreview}">
 
                                 <DataGrid.Columns>
@@ -269,7 +277,7 @@
 
                         </Border>
 
-                    </StackPanel>
+                    </Grid>
 
                 </Grid>
 

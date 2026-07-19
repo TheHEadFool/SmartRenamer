@@ -73,3 +73,37 @@ NumberFilesCapability
 RemoveTextCapability
 ChangeCaseCapability
 MusicRenameCapability
+
+Phase 1 — Build the Engine (where we are now)
+✅ Analyze folders
+✅ Generate observations
+✅ Build recommendations
+✅ Preview renames
+⬜ Rename files
+⬜ Create organized copies
+⬜ Organize by date
+⬜ Organize by media type
+⬜ Organize by document type
+⬜ Find duplicate files
+⬜ Detect empty folders
+⬜ Detect very large files
+⬜ Detect old unused files
+⬜ Remove illegal filename characters
+⬜ Fix capitalization
+⬜ Remove double spaces
+⬜ Explain every recommendation
+Phase 2 — Intelligence
+Confidence scoring
+Multiple organization strategies
+AI-assisted filename suggestions
+Learn user preferences
+Undo history
+Batch approval/rejection
+Phase 3 — Polish
+Redesigned UI
+Animations
+Icons
+Better layouts
+Drag-and-drop workflows
+Keyboard shortcuts
+Themes

@@ -1,6 +1,7 @@
 ﻿<Application x:Class="SmartRenamer.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:System="clr-namespace:System.Windows;assembly=PresentationFramework"
              StartupUri="MainWindow.xaml">
 
     <Application.Resources>
@@ -12,6 +13,9 @@
                 <ResourceDictionary Source="Themes/AppTheme.xaml"/>
 
             </ResourceDictionary.MergedDictionaries>
+
+            <BooleanToVisibilityConverter 
+                x:Key="BooleanToVisibilityConverter"/>
 
         </ResourceDictionary>
 

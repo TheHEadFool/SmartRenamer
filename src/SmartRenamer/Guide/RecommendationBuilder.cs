@@ -17,15 +17,27 @@ namespace SmartRenamer.Guide
             if (workflow == null)
                 return recommendations;
 
-            int renameCount = workflow.Preview.Count(p => p.WillRename);
+            int changeCount = workflow.Preview.Count(p => p.HasChanges);
 
-            if (renameCount > 0)
+            if (changeCount == 0)
+            {
+                recommendations.Add(new Recommendation
+                {
+                    ActionId = "AnalyzeAnotherFolder",
+                    Capability = "Analysis",
+                    Title = "Everything Looks Good",
+                    Description = "I didn't find any filenames that need changing.",
+                    ActionText = "Analyze Another Folder",
+                    Priority = 100
+                });
+            }
+            else
             {
                 recommendations.Add(new Recommendation
                 {
                     Capability = "Analysis",
-                    Title = "Everything Looks Good",
-                    Description = "I didn't find any filenames that need changing.",
+                    Title = "Ready to Rename",
+                    Description = $"Scout found {changeCount} filename(s) that can be renamed.",
                     Priority = 100
                 });
 
@@ -47,18 +59,6 @@ namespace SmartRenamer.Guide
                     Description = "I'll explain why each filename was recommended for renaming.",
                     ActionText = "Explain",
                     Priority = 80
-                });
-            }
-            else
-            {
-                recommendations.Add(new Recommendation
-                {
-                    ActionId = "AnalyzeAnotherFolder",
-                    Capability = "Analysis",
-                    Title = "Everything Looks Good",
-                    Description = "I didn't find any filenames that need changing.",
-                    ActionText = "Analyze Another Folder",
-                    Priority = 100
                 });
             }
 

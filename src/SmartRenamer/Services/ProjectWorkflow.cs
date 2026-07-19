@@ -17,6 +17,8 @@ namespace SmartRenamer.Services
 
         private readonly RenamePreviewBuilder previewBuilder = new();
 
+        private readonly CapabilityFactory capabilityFactory = new();
+
         /// <summary>
         /// Starts a new workflow by asking the user to choose a folder.
         /// </summary>
@@ -37,6 +39,21 @@ namespace SmartRenamer.Services
         public WorkflowResult Execute(ProjectContext context)
         {
             analyzer.Analyze(context);
+
+            // Execute the recommended capabilities on every discovered file.
+            foreach (string capabilityName in context.RecommendedCapabilities)
+            {
+                WorkflowStep? workflowStep =
+                    capabilityFactory.Create(capabilityName);
+
+                if (workflowStep == null)
+                    continue;
+
+                foreach (FileContext file in context.Folder.FileContexts)
+                {
+                    workflowStep.Step.Execute(file);
+                }
+            }
 
             ScoutPlan plan = planner.Build(context);
 

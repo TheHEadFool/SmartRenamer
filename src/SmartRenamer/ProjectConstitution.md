@@ -298,3 +298,7 @@ Working software is valuable.
 I think this is especially important because we're both enthusiastic designers. It's easy to get excited about a cleaner architecture. This rule reminds us to respect code that's already delivering value.
 
 Working software has priority over elegant architecture.
+
+Capabilities discover facts. The planner makes decisions. The executor performs actions.
+
+Observe → Reason → Act.

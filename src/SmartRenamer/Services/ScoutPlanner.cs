@@ -2,6 +2,8 @@
 using SmartRenamer.Models;
 using SmartRenamer.Models.Planning;
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 namespace SmartRenamer.Services
@@ -27,40 +29,63 @@ namespace SmartRenamer.Services
             plan.RenameFiles = false;
 
             plan.DestinationFolder =
-                System.IO.Path.GetFileName(context.Folder.FolderPath) + " Organized";
+                Path.GetFileName(context.Folder.FolderPath) + " Organized";
 
             plan.OrganizationStrategy =
-                "Organize photos by capture date.";
+                "Group related assets that share the same filename.";
 
             plan.NamingStrategy =
-    "Improve filenames when high-confidence suggestions are available.";
+                "Improve filenames when high-confidence suggestions are available.";
 
-            // NEW: Decide where each photo belongs.
             FilenameAnalysisEngine filenameEngine = new();
+
+            //---------------------------------------------------------
+            // Build a lookup of files that share the same base name.
+            //---------------------------------------------------------
+
+            Dictionary<string, int> baseNameCounts =
+                context.Folder.FileContexts
+                    .GroupBy(f => Path.GetFileNameWithoutExtension(f.CurrentName))
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.Count(),
+                        StringComparer.OrdinalIgnoreCase);
+
+            //---------------------------------------------------------
+            // Build Scout's plan.
+            //---------------------------------------------------------
+
             foreach (FileContext file in context.Folder.FileContexts)
             {
                 FilenameAnalysisResult analysis =
                     filenameEngine.Analyze(file.CurrentName);
 
-                file.DestinationName = analysis.Suggestions
-                    .Where(s => s.Confidence == SuggestionConfidence.High)
-                    .Select(s => s.ProposedName)
-                    .FirstOrDefault()
+                file.DestinationName =
+                    analysis.Suggestions
+                        .Where(s => s.Confidence == SuggestionConfidence.High)
+                        .Select(s => s.ProposedName)
+                        .FirstOrDefault()
                     ?? file.CurrentName;
 
-                if (file.Variables.TryGetValue("CaptureDate", out object? value) &&
-                    value is DateTime captureDate)
+                string baseName =
+                    Path.GetFileNameWithoutExtension(file.CurrentName);
+
+                //-----------------------------------------------------
+                // Group related assets into a common folder.
+                //-----------------------------------------------------
+
+                if (baseNameCounts.TryGetValue(baseName, out int count) &&
+                    count > 1)
                 {
-                    file.DestinationFolder = System.IO.Path.Combine(
-                        plan.DestinationFolder,
-                        captureDate.Year.ToString(),
-                        $"{captureDate:yyyy-MM MMMM}");
+                    file.DestinationFolder =
+                        Path.Combine(
+                            plan.DestinationFolder,
+                            baseName);
                 }
                 else
                 {
-                    file.DestinationFolder = System.IO.Path.Combine(
-                        plan.DestinationFolder,
-                        "Unknown Date");
+                    file.DestinationFolder =
+                        plan.DestinationFolder;
                 }
             }
 
@@ -70,21 +95,25 @@ namespace SmartRenamer.Services
             plan.FilesToCopy = context.Folder.FileContexts.Count;
             plan.FilesToDelete = 0;
 
-            // Count the unique folders Scout intends to create.
-            plan.FoldersToCreate = context.Folder.FileContexts
-                .Select(f => f.DestinationFolder)
-                .Where(f => !string.IsNullOrWhiteSpace(f))
-                .Distinct()
-                .Count();
+            plan.FoldersToCreate =
+                context.Folder.FileContexts
+                    .Select(f => f.DestinationFolder)
+                    .Where(f => !string.IsNullOrWhiteSpace(f))
+                    .Distinct()
+                    .Count();
+
+            plan.Reasoning.Clear();
 
             plan.Reasoning.Add(
-                "Scout organized photos using their capture date when available.");
+                "Scout grouped related assets that share the same filename.");
 
             plan.Reasoning.Add(
                 "Original files remain untouched.");
 
+            plan.Recommendations.Clear();
+
             plan.Recommendations.Add(
-                "Review the destination folders before copying files.");
+                "Review the proposed organization before copying files.");
 
             return plan;
         }

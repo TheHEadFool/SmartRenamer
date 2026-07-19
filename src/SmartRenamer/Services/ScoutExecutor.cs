@@ -37,9 +37,22 @@ namespace SmartRenamer.Services
                 }
 
                 string destination =
-                    Path.Combine(
-                        scoutFolder,
-                        item.NewName);
+                    string.IsNullOrWhiteSpace(item.DestinationFolder)
+                        ? Path.Combine(
+                            scoutFolder,
+                            item.NewName)
+                        : Path.Combine(
+                            scoutFolder,
+                            item.DestinationFolder,
+                            item.NewName);
+
+                string? destinationDirectory =
+    Path.GetDirectoryName(destination);
+
+                if (!string.IsNullOrWhiteSpace(destinationDirectory))
+                {
+                    Directory.CreateDirectory(destinationDirectory);
+                }
 
                 File.Copy(
                     item.FullPath,
@@ -52,8 +65,6 @@ namespace SmartRenamer.Services
             result.Success = result.FilesRenamed > 0;
 
             return result;
-
-
         }
     }
 }

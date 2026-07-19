@@ -15,7 +15,10 @@ namespace SmartRenamer.Services.Intelligence
 
         public IntelligenceEngine()
         {
-            // Capabilities will be registered here.
+            foreach (ICapability capability in CapabilityRegistry.Create())
+            {
+                Register(capability);
+            }
         }
 
         public void Register(ICapability capability)

@@ -23,6 +23,12 @@ namespace SmartRenamer.Models.Rename
         public int FilesSkipped { get; set; }
 
         /// <summary>
+        /// Full path to the organized folder created by Scout.
+        /// Null if the operation failed.
+        /// </summary>
+        public string? OutputFolder { get; set; }
+
+        /// <summary>
         /// Records every successful rename.
         /// Used later to support Undo.
         /// </summary>

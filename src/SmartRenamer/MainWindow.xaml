@@ -57,7 +57,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- ================================================= -->
-            <!-- Scout Suggestions -->
+            <!-- Scout Observations -->
             <!-- ================================================= -->
 
             <Border Grid.Column="0"
@@ -70,66 +70,65 @@
                         <TextBlock
                 FontSize="22"
                 FontWeight="Bold"
-                Text="Scout Suggestions"/>
+                Text="Scout Observations"/>
 
                         <TextBlock
                 Margin="0,6,0,20"
                 Foreground="{StaticResource SecondaryTextBrush}"
-                Text="Based on what I discovered, here are my recommendations."/>
+                Text="Here's what I noticed while exploring your project."/>
 
-                        <ItemsControl
-                ItemsSource="{Binding Workspace.Recommendations}">
+                        <Border
+                Padding="16"
+                CornerRadius="12"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                Background="#F8FAFD">
 
-                            <ItemsControl.ItemTemplate>
+                            <StackPanel>
 
-                                <DataTemplate>
+                                <TextBlock
+                        FontSize="18"
+                        FontWeight="SemiBold"
+                        Text="Related Files"/>
 
-                                    <Border
-                            Margin="0,0,0,15"
-                            Padding="14"
-                            CornerRadius="10"
-                            BorderBrush="{StaticResource BorderBrush}"
-                            BorderThickness="1"
-                            Background="#F8FAFD">
+                                <TextBlock
+                        Margin="0,12,0,0"
+                        TextWrapping="Wrap"
+                        Foreground="{StaticResource SecondaryTextBrush}"
+                        Text="Scout found files that appear to belong together."/>
 
-                                        <StackPanel>
+                                <TextBlock
+                        Margin="0,12,0,20"
+                        TextWrapping="Wrap"
+                        Text="Based on what I discovered, I recommend organizing them into a consistent structure while preserving your original files."/>
 
-                                            <!-- Title -->
+                                <ItemsControl
+                        ItemsSource="{Binding Workspace.Recommendations}">
 
-                                            <TextBlock
-                                    FontSize="16"
-                                    FontWeight="SemiBold"
-                                    Text="{Binding Title}" />
+                                    <ItemsControl.ItemTemplate>
 
-                                            <!-- Description -->
-
-                                            <TextBlock
-                                    Margin="0,8,0,12"
-                                    Foreground="{StaticResource SecondaryTextBrush}"
-                                    Text="{Binding Description}"
-                                    TextWrapping="Wrap"/>
-
-                                            <!-- Action -->
+                                        <DataTemplate>
 
                                             <Button
-    HorizontalAlignment="Right"
-    Padding="14,6"
-    Visibility="{Binding HasAction,
-             Converter={StaticResource BooleanToVisibilityConverter}}"
-    Content="{Binding ActionText}"
-    Command="{Binding DataContext.ExecuteRecommendationCommand,
-                      RelativeSource={RelativeSource AncestorType=Window}}"
-    CommandParameter="{Binding}" />
+                                    Margin="0,0,0,10"
+                                    Padding="14,8"
+                                    HorizontalAlignment="Stretch"
+                                    Visibility="{Binding HasAction,
+                                        Converter={StaticResource BooleanToVisibilityConverter}}"
+                                    Content="{Binding ActionText}"
+                                    Command="{Binding DataContext.ExecuteRecommendationCommand,
+                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}" />
 
-                                        </StackPanel>
+                                        </DataTemplate>
 
-                                    </Border>
+                                    </ItemsControl.ItemTemplate>
 
-                                </DataTemplate>
+                                </ItemsControl>
 
-                            </ItemsControl.ItemTemplate>
+                            </StackPanel>
 
-                        </ItemsControl>
+                        </Border>
 
                     </StackPanel>
 

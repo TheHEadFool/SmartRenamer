@@ -25,6 +25,9 @@ namespace SmartRenamer.Services
 
             Directory.CreateDirectory(scoutFolder);
 
+            // Tell the UI where the organized copy lives.
+            result.OutputFolder = scoutFolder;
+
             foreach (RenamePreview item in preview)
             {
                 if (!File.Exists(item.FullPath))
@@ -47,12 +50,17 @@ namespace SmartRenamer.Services
                             item.NewName);
 
                 string? destinationDirectory =
-    Path.GetDirectoryName(destination);
+                    Path.GetDirectoryName(destination);
 
                 if (!string.IsNullOrWhiteSpace(destinationDirectory))
                 {
                     Directory.CreateDirectory(destinationDirectory);
                 }
+
+                System.Diagnostics.Debug.WriteLine($"SOURCE      : {item.FullPath}");
+                System.Diagnostics.Debug.WriteLine($"GROUP       : {item.DestinationFolder}");
+                System.Diagnostics.Debug.WriteLine($"NEW NAME    : {item.NewName}");
+                System.Diagnostics.Debug.WriteLine($"DESTINATION : {destination}");
 
                 File.Copy(
                     item.FullPath,

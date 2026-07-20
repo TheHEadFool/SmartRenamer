@@ -1,5 +1,7 @@
 ﻿# SmartRenamer Vision
 
+"Scout has a draft. Friend has the final say."
+
 SmartRenamer should feel like working alongside a trusted friend who is exceptionally good at organizing digital information—and who enjoys helping you become just as good.
 
 Scout should understand the user's goal before suggesting actions.
@@ -72,3 +74,56 @@ Its primary value is understanding a project before suggesting actions.
 Capabilities represent things Friend knows how to do. Users may assemble them manually, but the long-term goal is for Friend to automatically select and arrange the necessary capabilities based on the user's intent.
 
 Scout remembers successful workflows so Friend never has to repeat themselves
+
+## Conversational Interaction
+
+Scout communicates through conversations rather than dialogs.
+
+Friend observes.
+
+Guide explains.
+
+Scout recommends.
+
+Friend chooses.
+
+Scout executes.
+
+Scout reports the outcome.
+
+Friend chooses what happens next.
+
+Scout should never assume the user's next action when multiple reasonable choices exist.
+
+### The Observation Box
+
+Friend presents observations as a collection of indexed cards.
+
+Each tab represents something Scout noticed.
+
+Selecting a tab reveals:
+
+- What Scout observed
+- Why it matters
+- What Scout recommends
+- The available actions
+
+Capabilities add new observation cards rather than new windows or menus.
+
+The Observation Box becomes the primary way Scout communicates with the user.
+
+### The Observation Box
+
+The Observation Box is Scout's primary workspace.
+
+It is not a list of tools.
+
+It is a living collection of observations.
+
+Observations appear, disappear, merge, split, and reorder themselves as Friend changes focus.
+
+Users do not choose capabilities.
+
+Users respond to observations.
+
+Scout's intelligence is expressed through what it notices, not through the tools it exposes.

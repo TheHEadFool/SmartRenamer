@@ -257,3 +257,43 @@ Instead ask:
 "What new capability is Scout learning?"
 
 If the answer cannot be expressed as a capability that follows this architecture, the design should be reconsidered before implementation.
+
+# Capability Philosophy
+
+Capabilities discover facts.
+
+They never:
+
+- rename files
+- move files
+- create folders
+- ask the user questions
+
+Capabilities only enrich ProjectContext.
+
+Examples:
+
+PhotoMetadataCapability
+
+Produces:
+
+CaptureDate
+GPS
+Camera
+
+RelatedAssetCapability
+
+Produces:
+
+RelatedGroup
+
+MusicMetadataCapability
+
+Produces:
+
+Artist
+Album
+Track
+Genre
+
+The Planner decides how those facts are used.

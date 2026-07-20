@@ -1,10 +1,27 @@
 ﻿This document overrides all design discussions until Version 0.1 is complete.
 
+The purpose of this Constitution is not to produce elegant code.
+
+Its purpose is to produce working software that users can trust.
+
+When elegance and progress conflict, progress wins.
+
+When assumptions and evidence conflict, evidence wins.
+
+When architecture and a working feature conflict, the working feature wins.
+
+Architecture should emerge from demonstrated success, not anticipated need.
+
 how you (ChatGPT) and I work together.
 
 Inspect Before Invent
 
-Rule 1: Feature Lock
+We are building trust before intelligence.
+
+A user should trust Scout with every file
+long before Scout becomes exceptionally smart.
+
+## Rule 1: Feature Lock
 
 Once we start a feature, we are not allowed to switch features until it is demonstrably working.
 
@@ -21,7 +38,7 @@ Until it works:
 
 Everything that isn't required to finish that feature goes onto a backlog.
 
-Rule 2: One Success Criterion
+## Rule 2: One Success Criterion
 
 Every feature has exactly one definition of done.
 
@@ -37,7 +54,7 @@ Not "the architecture is future-proof."
 
 If the user can't do the thing, we're not done.
 
-Rule 3: Bug Fix Exception Only
+## Rule 3: Bug Fix Exception Only
 
 While implementing a feature, we are only allowed to touch unrelated code if:
 
@@ -48,7 +65,7 @@ Otherwise:
 
 Backlog.
 
-Rule 4: Visible Progress
+## Rule 4: Visible Progress
 
 Every coding session ends with something you can see.
 
@@ -74,7 +91,7 @@ Never:
 
 "We now have a better abstraction."
 
-Rule 5: Refactoring Moratorium
+## Rule 5: Refactoring Moratorium
 
 This is the important one.
 
@@ -102,7 +119,70 @@ backlog:
 
 □ Pipeline cleanup
 
-Rule 6: The Feature Test
+## Rule 5A: Follow the Data Before Changing the Design
+
+When debugging, never redesign a feature until the first incorrect value
+has been located.
+
+Trace the data from its origin to its destination.
+
+For every bug, identify:
+
+- where the value is created
+- where it is transformed
+- where it first becomes incorrect
+
+Fix the earliest incorrect stage.
+
+Never compensate downstream.
+
+Examples
+
+Good
+
+Observe
+    ↓
+ProjectContext
+    ↓
+Planner
+    ↓
+Preview
+    ↓
+Executor
+
+Determine where the value first becomes incorrect.
+
+Bad
+
+"The planner must be wrong."
+
+"The executor must be wrong."
+
+"Let's invent a new algorithm."
+
+Assumptions are slower than evidence.
+
+## Rule 5B: Replace Complete Files
+
+When changing an existing class,
+replace the complete source file whenever practical.
+
+Avoid editing fragments.
+
+Reasons
+
+- prevents missing braces
+- prevents missing using statements
+- prevents partial edits
+- preserves formatting
+- makes code review easier
+
+Exceptions
+
+Very small localized changes
+(one or two lines)
+
+## Rule 6: The Feature Test
 
 Before suggesting any code change, ask one question:
 
@@ -134,7 +214,7 @@ Better models.
 
 Those become backlog items.
 
-Rule 7: One Implementation
+## Rule 7: One Implementation
 
 Once we choose an implementation for the active feature, we don't revisit alternatives unless it fails to meet the success criterion.
 
@@ -151,7 +231,7 @@ Not Allowed:
 
 Those ideas go into the backlog.
 
-Rule 8: The Simplest Thing That Works
+## Rule 8: The Simplest Thing That Works
 
 Every feature is implemented with the smallest amount of code that satisfies the success criterion.
 
@@ -173,7 +253,7 @@ enough to make the feature work.
 
 We can improve it after Version 0.1.
 
-Rule 9: No Premature Generalization
+## Rule 9: No Premature Generalization
 
 Never build for hypothetical future features.
 
@@ -190,7 +270,7 @@ CopyFiles()
 
 If a second feature later needs the same code, then extract the common parts.
 
-Rule 10: Finish Before Optimizing
+## Rule 10: Finish Before Optimizing
 
 Version 0.1 is allowed to be:
 
@@ -200,7 +280,7 @@ inefficient
 
 It is not allowed to be unfinished.
 
-Rule 11: Every Feature Must Be Demonstrable
+## Rule 11: Every Feature Must Be Demonstrable
 
 When we say a feature is complete, we should be able to demonstrate it in less than one minute.
 
@@ -216,7 +296,7 @@ Done.
 
 If we can't demonstrate it, it probably isn't finished.
 
-Rule 12: Preserve User Trust
+## Rule 12: Preserve User Trust
 
 I think this one belongs because it's central to Scout's identity.
 
@@ -231,7 +311,7 @@ always preserve data
 
 This is already reflected in the "Organized Copy" approach, but I'd make it an explicit principle.
 
-Rule 13: Decisions Are Sticky
+## Rule 13: Decisions Are Sticky
 
 This one would have saved us several conversations.
 
@@ -283,7 +363,18 @@ That discovery came from following the data instead of our assumptions.
 
 This one is subtle.
 
-## Existing Code Gets the Benefit of the Doubt
+## Rule 14 Existing Code Earns the Benefit of the Doubt
+
+Working code should be considered correct until evidence proves otherwise.
+
+Before replacing existing code:
+
+- understand its responsibility
+- verify its inputs
+- verify its outputs
+- prove it is the source of the bug
+
+Never replace code simply because another implementation seems cleaner.
 
 Assume existing code has a reason for existing.
 
@@ -302,3 +393,136 @@ Working software has priority over elegant architecture.
 Capabilities discover facts. The planner makes decisions. The executor performs actions.
 
 Observe → Reason → Act.
+
+## Rule 15: Architecture Emerges
+
+Architecture should emerge from working features.
+
+We do not invent extension points, abstractions, or frameworks
+until at least one working feature demonstrates the need.
+
+When in doubt:
+
+Build the feature first.
+
+Generalize second.
+
+## Rule 16: Models Describe. Services Act.
+
+Models hold information.
+
+Services perform work.
+
+Models never execute services.
+
+Services may modify models.
+
+Never place business logic inside a model simply because the data lives there.
+
+Standard Debugging Workflow
+1.
+Reproduce the bug.
+
+↓
+
+2.
+Describe the expected behavior.
+
+↓
+
+3.
+Trace the data.
+
+↓
+
+4.
+Identify the first incorrect value.
+
+↓
+
+5.
+Fix only that stage.
+
+↓
+
+6.
+Rebuild.
+
+↓
+
+7.
+Retest.
+
+↓
+
+8.
+Only then consider refactoring.
+
+## Rule 17: Standard Debugging Workflow
+
+Every debugging session follows the same workflow.
+
+1. Reproduce the bug.
+2. Describe the expected behavior.
+3. Trace the data.
+4. Find the first incorrect value.
+5. Fix only that stage.
+6. Build.
+7. Test.
+8. Only then consider refactoring.
+
+Never redesign while debugging.
+
+## Rule 18: Debugging Philosophy
+
+Debugging is an investigation, not a redesign.
+
+During debugging:
+
+- Do not improve architecture.
+- Do not rename components.
+- Do not introduce abstractions.
+- Do not optimize.
+- Do not speculate.
+
+Only identify where the first incorrect value appears.
+
+Fix that stage.
+
+Then rebuild and retest.
+
+## Code Review Philosophy
+
+Whenever practical, review complete source files instead of isolated code
+fragments.
+
+Reviewing complete files preserves context and dramatically reduces copy/paste
+errors.
+
+## Scout observes before acting.
+
+Friend gathers information before presenting actions.
+
+Guide explains recommendations before execution.
+
+Every completed feature must leave the product demonstrably better.
+
+## Rule 19 – Capture Before Continuing
+
+If an idea does not belong to the current version, it must be recorded before development continues.
+
+Record the idea in the appropriate document (Backlog.md, Roadmap.md, DecisionLog.md, or Vision.md) and then immediately return focus to the active version.
+
+Rationale
+
+Great ideas should never interrupt progress. Capture them, trust the roadmap, and continue building the current feature.
+
+## Rule 20 – One Responsibility Per Layer
+
+Each architectural layer should represent exactly one concept.
+
+Capabilities discover facts.
+Observations present discoveries.
+Recommendations propose actions.
+Plans record decisions.
+Execution carries out the agreed plan.

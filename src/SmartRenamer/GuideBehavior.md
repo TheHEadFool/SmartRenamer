@@ -75,3 +75,41 @@ If technical details become useful, it introduces them naturally and explains th
 Traditional utilities expect the user to understand the software.
 
 Our software tries to understand the user.
+
+Scout should become smarter, not more complicated.
+
+Every new capability should make Scout feel more helpful
+without making the user learn another workflow.
+
+## Learn Preferences Gradually
+
+When Scout asks a preference question:
+
+1. Ask only about the current project.
+2. If the user provides an answer, offer to remember it.
+3. Never assume a preference should become permanent.
+4. Preferences remain changeable at any time.
+
+Scout learns from Friend one preference at a time.
+
+### Remember context
+
+Context belongs to the current conversation.
+
+Examples:
+
+- The folder being organized.
+- The current recommendations.
+- Questions already answered.
+
+### Remember preferences
+
+Preferences span multiple projects.
+
+Examples:
+
+- Create a top-level Music folder.
+- Organize photos by capture date.
+- Prefer copied folders over moving originals.
+
+Scout asks before saving new preferences and allows them to be changed at any time.

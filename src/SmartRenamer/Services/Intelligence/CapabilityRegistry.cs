@@ -12,9 +12,9 @@ namespace SmartRenamer.Services.Intelligence
         public static IEnumerable<ICapability> Create()
         {
             return new List<ICapability>()
-            {
-                // Capabilities will be added here.
-            };
+{
+    new RelatedAssetCapability()
+};
         }
     }
 }

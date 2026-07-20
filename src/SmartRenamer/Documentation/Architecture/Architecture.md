@@ -415,3 +415,73 @@ Relative Destination
 Destination Name
 
 to produce the final file location.
+
+## The Scout Pipeline
+
+Observe
+    ↓
+Reason
+    ↓
+Act
+
+### Observe
+
+The Observe phase discovers facts.
+
+Examples:
+
+- Folder scanning
+- EXIF metadata
+- Music metadata
+- Related assets
+- OCR
+- AI classification
+
+Observe never makes decisions.
+
+Its only responsibility is to enrich ProjectContext with facts.
+
+---
+
+### Reason
+
+The Planner consumes discovered facts and decides what Scout
+intends to do.
+
+Examples:
+
+- Destination folders
+- Rename suggestions
+- Folder structure
+- Recommendations
+
+Reason never copies, moves, renames or deletes files.
+
+---
+
+### Act
+
+The Executor performs the approved plan.
+
+Examples:
+
+- Copy
+- Move
+- Rename
+- Delete (future)
+
+The Executor never makes decisions.
+
+### Ownership
+
+Every stage owns one responsibility.
+
+Observe owns facts.
+
+Reason owns decisions.
+
+Act owns execution.
+
+A stage must never compensate for mistakes made by another stage.
+
+When a value is incorrect, fix the earliest stage responsible for producing it.

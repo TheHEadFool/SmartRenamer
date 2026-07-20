@@ -29,6 +29,9 @@ namespace SmartRenamer.Services
             {
                 foreach (FileContext file in context.Folder.FileContexts)
                 {
+                    System.Diagnostics.Debug.WriteLine(
+     $"PREVIEW: {file.CurrentName}  Folder='{file.DestinationFolder}'");
+
                     preview.Add(new RenamePreview
                     {
                         FullPath = file.CurrentFullPath,

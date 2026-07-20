@@ -26,7 +26,8 @@ namespace SmartRenamer.Guide
                     ActionId = "AnalyzeAnotherFolder",
                     Capability = "Analysis",
                     Title = "Everything Looks Good",
-                    Description = "I didn't find any filenames that need changing.",
+                    Description =
+                        "I didn't find any filenames that need organizing or standardizing.",
                     ActionText = "Analyze Another Folder",
                     Priority = 100
                 });
@@ -36,18 +37,24 @@ namespace SmartRenamer.Guide
                 recommendations.Add(new Recommendation
                 {
                     Capability = "Analysis",
-                    Title = "Ready to Rename",
-                    Description = $"Scout found {changeCount} filename(s) that can be renamed.",
+                    Title = "I Found Related Files",
+                    Description =
+                        $"I found {changeCount:N0} file(s) that appear to belong together.\n\n" +
+                        "They share similar names but use different extensions or naming styles.\n\n" +
+                        "I can organize them into a single folder while leaving your original files untouched.",
+                    EstimatedChanges = changeCount,
                     Priority = 100
                 });
 
                 recommendations.Add(new Recommendation
                 {
                     ActionId = "RenameFiles",
-                    Capability = "Rename",
-                    Title = "Rename Files",
-                    Description = "Apply the approved filename changes.",
-                    ActionText = "Rename",
+                    Capability = "Organization",
+                    Title = "Organize Related Assets",
+                    Description =
+                        "I'll create an organized copy of your project, group related files together, and preserve every original file.",
+                    ActionText = "Organize",
+                    EstimatedChanges = changeCount,
                     Priority = 90
                 });
 
@@ -55,8 +62,9 @@ namespace SmartRenamer.Guide
                 {
                     ActionId = "ExplainChanges",
                     Capability = "Guide",
-                    Title = "Explain These Changes",
-                    Description = "I'll explain why each filename was recommended for renaming.",
+                    Title = "Show Me Why",
+                    Description =
+                        "I'll explain why I made each recommendation before anything is changed.",
                     ActionText = "Explain",
                     Priority = 80
                 });

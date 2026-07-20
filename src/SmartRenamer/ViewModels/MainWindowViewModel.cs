@@ -82,13 +82,26 @@ namespace SmartRenamer.ViewModels
             }
 
             RenameResult result =
-    scoutService.Execute(currentWorkflow);
+                scoutService.Execute(currentWorkflow);
 
             if (result.Success)
             {
+                string message =
+                    "Scout successfully created an organized copy of your project.\n\n" +
+                    $"Files copied: {result.FilesRenamed:N0}\n\n";
+
+                if (!string.IsNullOrWhiteSpace(result.OutputFolder))
+                {
+                    message +=
+                        $"Location:\n{result.OutputFolder}\n\n";
+                }
+
+                message +=
+                    "Your original files were not modified.";
+
                 MessageBox.Show(
-                    $"Finished! Renamed {result.FilesRenamed:N0} file(s).",
-                    "Rename Complete");
+                    message,
+                    "Organization Complete");
 
                 ProjectWorkflow workflow = new();
 

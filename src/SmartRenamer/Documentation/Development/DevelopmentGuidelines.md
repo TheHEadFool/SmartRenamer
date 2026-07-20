@@ -76,3 +76,20 @@ Memory stores facts.
 Engines make decisions.
 
 Each execution service should be understandable in under two minutes.
+
+## Debugging
+
+During debugging:
+
+Do not improve the architecture.
+
+Do not improve naming.
+
+Do not introduce new abstractions.
+
+Do not optimize.
+
+Only locate the first incorrect value.
+
+Once the bug is fixed,
+evaluate whether improvements are still necessary.

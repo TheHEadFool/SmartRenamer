@@ -1,6 +1,6 @@
-﻿using SmartRenamer.Services.Naming;
-using SmartRenamer.Models;
+﻿using SmartRenamer.Models;
 using SmartRenamer.Models.Planning;
+using SmartRenamer.Services.Naming;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -40,19 +40,8 @@ namespace SmartRenamer.Services
             FilenameAnalysisEngine filenameEngine = new();
 
             //---------------------------------------------------------
-            // Build a lookup of files that share the same base name.
-            //---------------------------------------------------------
-
-            Dictionary<string, int> baseNameCounts =
-                context.Folder.FileContexts
-                    .GroupBy(f => Path.GetFileNameWithoutExtension(f.CurrentName))
-                    .ToDictionary(
-                        g => g.Key,
-                        g => g.Count(),
-                        StringComparer.OrdinalIgnoreCase);
-
-            //---------------------------------------------------------
-            // Build Scout's plan.
+            // PASS 1
+            // Determine the final filename for every file.
             //---------------------------------------------------------
 
             foreach (FileContext file in context.Folder.FileContexts)
@@ -66,26 +55,41 @@ namespace SmartRenamer.Services
                         .Select(s => s.ProposedName)
                         .FirstOrDefault()
                     ?? file.CurrentName;
+            }
 
+            //---------------------------------------------------------
+            // PASS 2
+            // Count files using their FINAL filenames.
+            //---------------------------------------------------------
+
+            Dictionary<string, int> baseNameCounts =
+                context.Folder.FileContexts
+                    .GroupBy(
+                        f => Path.GetFileNameWithoutExtension(f.DestinationName),
+                        StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.Count(),
+                        StringComparer.OrdinalIgnoreCase);
+
+            //---------------------------------------------------------
+            // PASS 3
+            // Assign destination folders.
+            //---------------------------------------------------------
+
+            foreach (FileContext file in context.Folder.FileContexts)
+            {
                 string baseName =
-                    Path.GetFileNameWithoutExtension(file.CurrentName);
-
-                //-----------------------------------------------------
-                // Group related assets into a common folder.
-                //-----------------------------------------------------
+                    Path.GetFileNameWithoutExtension(file.DestinationName);
 
                 if (baseNameCounts.TryGetValue(baseName, out int count) &&
                     count > 1)
                 {
-                    file.DestinationFolder =
-                        Path.Combine(
-                            plan.DestinationFolder,
-                            baseName);
+                    file.DestinationFolder = baseName;
                 }
                 else
                 {
-                    file.DestinationFolder =
-                        plan.DestinationFolder;
+                    file.DestinationFolder = "";
                 }
             }
 
@@ -99,7 +103,7 @@ namespace SmartRenamer.Services
                 context.Folder.FileContexts
                     .Select(f => f.DestinationFolder)
                     .Where(f => !string.IsNullOrWhiteSpace(f))
-                    .Distinct()
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count();
 
             plan.Reasoning.Clear();

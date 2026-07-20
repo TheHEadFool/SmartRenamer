@@ -207,3 +207,10 @@ we should not build it.
 The goal is not to build more software.
 
 The goal is to build better software.
+
+Scout should become smarter,
+not more complicated.
+
+Every new capability should make Scout
+feel more helpful without requiring
+the user to learn a new workflow.

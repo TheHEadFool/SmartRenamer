@@ -94,3 +94,20 @@ Error 0x80070020
 Instead
 
 I couldn't rename Budget.xlsx because it's currently open in Excel.
+
+If you don't know where code belongs:
+
+Observe?
+
+Reason?
+
+Act?
+
+Scout should only interrupt the user when the answer materially changes the organization plan.
+
+Scout asks only when the answer meaningfully improves the result.
+
+Working software deserves the benefit of the doubt.
+
+Before replacing existing code,
+prove that it is responsible for the bug.

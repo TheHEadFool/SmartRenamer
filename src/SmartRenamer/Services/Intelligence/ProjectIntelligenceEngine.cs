@@ -19,6 +19,7 @@ namespace SmartRenamer.Services.Intelligence
             analyzers.Add(new BookAnalyzer());
             analyzers.Add(new MusicAnalyzer());
             analyzers.Add(new DownloadAnalyzer());
+            analyzers.Add(new DocumentAnalyzer());
         }
 
         /// <summary>
@@ -32,6 +33,10 @@ namespace SmartRenamer.Services.Intelligence
             foreach (IProjectAnalyzer analyzer in analyzers)
             {
                 AnalysisResult result = analyzer.Analyze(context);
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"{analyzer.Name}: {result.Confidence}%");
+
                 results.Add(result);
             }
 

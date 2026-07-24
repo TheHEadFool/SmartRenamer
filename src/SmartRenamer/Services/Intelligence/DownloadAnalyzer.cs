@@ -32,8 +32,12 @@ namespace SmartRenamer.Services.Intelligence
             if (folder.VideoCount > 0)
                 score += 20;
 
-            if (folder.DocumentCount > 0)
+            if (folder.DocumentCount > 0 &&
+    folder.ImageCount > 0 &&
+    folder.VideoCount > 0)
+            {
                 score += 20;
+            }
 
             if (folder.FileCount > 100)
                 score += 20;

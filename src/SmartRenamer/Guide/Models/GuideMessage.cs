@@ -19,7 +19,7 @@ namespace SmartRenamer.Guide.Models
         /// Display name of the speaker.
         /// Eventually this will come from the user's chosen Guide name.
         /// </summary>
-        public string Speaker => IsGuide ? "Guide" : "You";
+        public string Speaker =>    IsGuide ? "Scout" : "You";
 
         /// <summary>
         /// Optional text shown in the conversation.

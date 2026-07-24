@@ -45,7 +45,7 @@
                 <StackPanel Margin="12,0,0,0">
 
                     <TextBlock
-                        Text="Guide"
+                        Text="Scout"
                         FontSize="18"
                         FontWeight="SemiBold"/>
 
@@ -81,7 +81,7 @@
                 Background="#F8F9FB">
 
                 <TextBlock
-                    Text="Guide is ready."
+                    Text="Scout is ready."
                     Foreground="#666"
                     FontStyle="Italic"/>
 

@@ -1,4 +1,5 @@
-﻿using SmartRenamer.Guide;
+﻿using SmartRenamer.Controls.ConversationCards;
+using SmartRenamer.Guide;
 using SmartRenamer.Guide.Models;
 using SmartRenamer.Guide.Thinking;
 using SmartRenamer.Infrastructure;
@@ -7,29 +8,23 @@ using SmartRenamer.Models.Rename;
 using SmartRenamer.Services;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SmartRenamer.ViewModels.Guide
 {
     public class GuideViewModel : ObservableObject
     {
         private readonly GuideInvestigator guideInvestigator = new();
-
         private readonly ScoutThoughtBuilder thoughtBuilder = new();
-
         private readonly ScoutConversationEngine conversationEngine = new();
 
-        private ConversationStage stage =
-            ConversationStage.Greeting;
+        private ConversationStage stage = ConversationStage.Greeting;
 
         public GuideConversation Conversation { get; } = new();
 
         public event EventHandler<WorkflowResult>? ProjectCreated;
-
-        // Raised when the user approves Scout's proposed plan.
         public event EventHandler? PlanApproved;
 
-        // Remembers the most recent workflow so Scout
-        // can execute it after the user approves.
         private WorkflowResult? currentWorkflow;
 
         private string userInput = "";
@@ -41,15 +36,21 @@ namespace SmartRenamer.ViewModels.Guide
         }
 
         public RelayCommand SendCommand { get; }
+        public RelayCommand BrowseFolderCommand { get; }
 
         public GuideViewModel()
         {
             SendCommand = new RelayCommand(Send);
+            BrowseFolderCommand = new RelayCommand(ChooseFolder);
 
-            Conversation.AddGuideMessage("Hi, I'm Scout.");
-            Conversation.AddGuideMessage("I'll help organize your project.");
-
-            AskNextQuestion();
+            Conversation.Messages.Add(new GuideMessage
+            {
+                IsGuide = true,
+                Card = new FolderPickerCard
+                {
+                    Command = BrowseFolderCommand
+                }
+            });
         }
 
         private void AskNextQuestion()
@@ -84,9 +85,7 @@ namespace SmartRenamer.ViewModels.Guide
                 case ConversationStage.Greeting:
 
                     Conversation.AddGuideMessage("");
-
-                    Conversation.AddGuideMessage(
-                        "Opening the folder browser...");
+                    Conversation.AddGuideMessage("Opening the folder browser...");
 
                     ChooseFolder();
 
@@ -186,36 +185,60 @@ namespace SmartRenamer.ViewModels.Guide
 
         private void ChooseFolder()
         {
-            WorkflowResult? result =
-                guideInvestigator.Investigate();
+            System.Diagnostics.Debug.WriteLine("ChooseFolder() called.");
+
+            WorkflowResult? result = guideInvestigator.Investigate();
 
             if (result == null)
             {
-                Conversation.AddGuideMessage(
-                    "No folder was selected.");
+                Conversation.AddGuideMessage("No folder was selected.");
 
                 stage = ConversationStage.Greeting;
 
                 return;
             }
 
-            // Save the workflow.
             currentWorkflow = result;
 
-            // Send it to the Workspace.
             ProjectCreated?.Invoke(this, result);
 
             Conversation.AddGuideMessage(
-                $"DEBUG: Observations = {result.Project.Observations.Count}");
+                "I had a chance to explore your folder.");
 
             Conversation.AddGuideMessage(
-                $"DEBUG: Preview Items = {result.Preview.Count}");
+                "Nothing has been changed. I was simply looking for patterns that might help us organize it better.");
+
+            ProjectObservation? firstObservation =
+                result.Project.Observations.FirstOrDefault();
+
+            if (firstObservation != null)
+            {
+                Conversation.AddGuideMessage(
+                    "Your files tell an interesting story.");
+
+                Conversation.AddGuideMessage(
+                    $"The first thing that caught my attention was {firstObservation.Title.ToLower()}.");
+
+                Conversation.AddGuideMessage(
+                    firstObservation.Description);
+            }
+
+            if (result.Project.Observations.Count > 1)
+            {
+                Conversation.AddGuideMessage(
+                    $"There {(result.Project.Observations.Count == 2 ? "is" : "are")} also {result.Project.Observations.Count - 1} other discovery{(result.Project.Observations.Count - 1 == 1 ? "" : "ies")} I'd like to show you.");
+            }
 
             Conversation.AddGuideMessage(
-                $"DEBUG: Recommendations loaded.");
+                $"Based on what I found, I prepared a safe preview with {result.Preview.Count} proposed change{(result.Preview.Count == 1 ? "" : "s")}.");
+
+            Conversation.AddGuideMessage(
+                "We'll be able to review every recommendation together before anything is changed.");
+
+            Conversation.AddGuideMessage(
+                "Select the first observation on the left and I'll explain why I think it's the best place to start.");
 
             // Stop here temporarily.
         }
     }
 }
-

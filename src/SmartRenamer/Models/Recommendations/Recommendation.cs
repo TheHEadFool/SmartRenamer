@@ -13,6 +13,11 @@ namespace SmartRenamer.Models.Recommendations
         public Guid Id { get; } = Guid.NewGuid();
 
         /// <summary>
+        /// Observation this recommendation belongs to.
+        /// </summary>
+        public Guid ObservationId { get; set; }
+
+        /// <summary>
         /// Stable action identifier used by Scout.
         /// Leave blank for informational recommendations.
         /// </summary>

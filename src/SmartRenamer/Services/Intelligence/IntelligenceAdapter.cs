@@ -42,17 +42,43 @@ namespace SmartRenamer.Services.Intelligence
 
             context.Observations.Clear();
 
+            // TODO:
+            // These default observations exist for backward compatibility.
+            // Eventually Scout should display observations produced directly
+            // by analyzers instead of generic placeholder messages.
+
             context.Observations.Add(new ProjectObservation
             {
+                Title = "Project Type",
                 Description =
-                    $"Detected project type: {profile.ProjectType}"
+                    $"Scout recognized this folder as a {profile.ProjectType} project.",
+
+                WhyItMatters =
+                    "Understanding the type of project helps Scout make smarter recommendations and avoid treating every folder the same.",
+
+                Severity = ObservationSeverity.Information
             });
 
             context.Observations.Add(new ProjectObservation
             {
+                Title = "Related Files",
                 Description =
-                    $"Confidence: {profile.Confidence}%"
+                    "Scout found files that appear to belong together and can be organized into a consistent structure.",
+
+                WhyItMatters =
+                    "Keeping related files together makes projects easier to understand, maintain, and locate in the future.",
+
+                Severity = ObservationSeverity.Suggestion
             });
+
+            //--------------------------------------------------
+            // Analyzer-specific observations
+            //--------------------------------------------------
+
+            foreach (ProjectObservation observation in profile.Observations)
+            {
+                context.Observations.Add(observation);
+            }
 
             context.RecommendedCapabilities.Clear();
 

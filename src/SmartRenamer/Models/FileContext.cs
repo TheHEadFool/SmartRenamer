@@ -57,6 +57,29 @@ namespace SmartRenamer.Models
 
         public Dictionary<string, object> Variables { get; } = new();
 
+        private string extension = "";
+
+        public string Extension
+        {
+            get => extension;
+            set => SetProperty(ref extension, value);
+        }
+
+        private string parentFolder = "";
+
+        public string ParentFolder
+        {
+            get => parentFolder;
+            set => SetProperty(ref parentFolder, value);
+        }
+
+        private string relativeFolder = "";
+
+        public string RelativeFolder
+        {
+            get => relativeFolder;
+            set => SetProperty(ref relativeFolder, value);
+        }
         public List<string> Warnings { get; } = new();
 
         public List<string> Errors { get; } = new();

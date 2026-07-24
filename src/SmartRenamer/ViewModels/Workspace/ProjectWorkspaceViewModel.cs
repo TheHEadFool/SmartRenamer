@@ -1,14 +1,27 @@
-﻿using System.Collections.ObjectModel;
-using SmartRenamer.Infrastructure;
+﻿using SmartRenamer.Infrastructure;
 using SmartRenamer.Models;
 using SmartRenamer.Models.Recommendations;
 using SmartRenamer.Models.Rename;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Windows.Input;
 
 namespace SmartRenamer.ViewModels.Workspace
 {
     public class ProjectWorkspaceViewModel : ObservableObject
     {
-        private string title = "Project Workspace";
+        public ProjectWorkspaceViewModel()
+        {
+            SelectObservationCommand = new RelayCommand(parameter =>
+            {
+                if (parameter is ProjectObservation observation)
+                {
+                    SelectObservation(observation);
+                }
+            });
+        }
+        private string title = "The Plan";
 
         public string Title
         {
@@ -33,9 +46,36 @@ namespace SmartRenamer.ViewModels.Workspace
             set => SetProperty(ref nextStep, value);
         }
 
-        public ObservableCollection<string> Observations { get; }
-            = new();
+        public ObservableCollection<ProjectObservation> Observations { get; }
+    = new();
+        public ICommand SelectObservationCommand { get; }
 
+        private ProjectObservation? selectedObservation;
+
+        public ProjectObservation? SelectedObservation
+        {
+            get => selectedObservation;
+
+            set
+            {
+                if (SetProperty(ref selectedObservation, value))
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Selected Observation: {value?.Title}");
+                }
+            }
+        }
+
+        public void SelectObservation(ProjectObservation observation)
+        {
+            if (observation == null)
+                return;
+
+            System.Diagnostics.Debug.WriteLine(
+                $"SelectObservation called: {observation.Title}");
+
+            SelectedObservation = observation;
+        }
         public ObservableCollection<Recommendation> Recommendations { get; }
             = new();
 
@@ -46,7 +86,9 @@ namespace SmartRenamer.ViewModels.Workspace
 
         public bool HasRenamePreview => RenamePreview.Count > 0;
 
-        public void Load(WorkflowResult result)
+        public void Load(
+    WorkflowResult result,
+    IEnumerable<Recommendation> recommendations)
         {
             if (result == null)
                 return;
@@ -55,27 +97,47 @@ namespace SmartRenamer.ViewModels.Workspace
             // Project Summary
             //------------------------------------------
 
-            Title = result.Project.ProjectType;
-
+            
             //------------------------------------------
             // Observations
             //------------------------------------------
 
             Observations.Clear();
 
-            foreach (ProjectObservation observation in result.Project.Observations)
+            SelectedObservation = null;
+
+            int recommendationCount = 0;
+
+            foreach (ProjectObservation observation in
+                result.Project.Observations
+                      .OrderByDescending(o => o.Priority)
+                      .ThenBy(o => o.Title))
             {
-                Observations.Add(observation.Description);
+                if (recommendationCount < 2)
+                {
+                    observation.IsRecommended = true;
+                    observation.IsSelected = true;
+                    recommendationCount++;
+                }
+                else
+                {
+                    observation.IsRecommended = false;
+                    observation.IsSelected = false;
+                }
+
+                observation.ActionTitle = $"Organize {observation.Title}";
+                observation.ActionDescription = observation.Description;
+
+                Observations.Add(observation);
             }
+
+            SelectedObservation = Observations.FirstOrDefault();
 
             //------------------------------------------
             // Scout Recommendations
             //------------------------------------------
 
-            Recommendations.Clear();
-
-            NextStep = "Waiting for Scout...";
-
+           
             //------------------------------------------
             // Rename Preview
             //------------------------------------------
@@ -112,6 +174,17 @@ namespace SmartRenamer.ViewModels.Workspace
 
             OnPropertyChanged(nameof(RenameCount));
             OnPropertyChanged(nameof(HasRenamePreview));
+
+            //------------------------------------------
+            // Recommendations
+            //------------------------------------------
+
+            Recommendations.Clear();
+
+            foreach (Recommendation recommendation in recommendations)
+            {
+                Recommendations.Add(recommendation);
+            }
         }
     }
 }

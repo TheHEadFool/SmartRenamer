@@ -21,6 +21,7 @@ namespace SmartRenamer.ViewModels
 
         private readonly RenameService renameService = new();
         private readonly ScoutService scoutService = new();
+        private readonly ScoutOperation operation = new();
         public ObservableCollection<RenameItem> Files { get; } = new();
 
         public GuideViewModel Guide { get; } = new();
@@ -28,6 +29,7 @@ namespace SmartRenamer.ViewModels
         public PipelineViewModel Pipeline { get; } = new();
 
         public ProjectWorkspaceViewModel Workspace { get; } = new();
+        public ScoutOperation Operation => operation;
 
         public RelayCommand AddFilesCommand { get; }
 
@@ -59,15 +61,9 @@ namespace SmartRenamer.ViewModels
         {
             currentWorkflow = result;
 
-            Workspace.Load(result);
-
-            Workspace.Recommendations.Clear();
-
-            foreach (Recommendation recommendation
-                in recommendationBuilder.Build(result))
-            {
-                Workspace.Recommendations.Add(recommendation);
-            }
+            Workspace.Load(
+    result,
+    recommendationBuilder.Build(result));
         }
 
         private void Guide_PlanApproved(object? sender, EventArgs e)
@@ -81,8 +77,20 @@ namespace SmartRenamer.ViewModels
                 return;
             }
 
+            operation.Title = "Organizing Files";
+            operation.Status = "Preparing an organized copy...";
+            operation.CurrentTask = "Scanning files...";
+            operation.State = ScoutOperationState.Running;
+
+            operation.CompletedSteps = 0;
+           
+
+            operation.CurrentFile = "Waiting...";
+
             RenameResult result =
-                scoutService.Execute(currentWorkflow);
+    scoutService.Execute(
+        currentWorkflow,
+        operation);
 
             if (result.Success)
             {
@@ -108,15 +116,9 @@ namespace SmartRenamer.ViewModels
                 currentWorkflow =
                     workflow.Execute(currentWorkflow.Project);
 
-                Workspace.Load(currentWorkflow);
-
-                Workspace.Recommendations.Clear();
-
-                foreach (Recommendation recommendation
-                    in recommendationBuilder.Build(currentWorkflow))
-                {
-                    Workspace.Recommendations.Add(recommendation);
-                }
+                Workspace.Load(
+    currentWorkflow,
+    recommendationBuilder.Build(currentWorkflow));
             }
             else
             {

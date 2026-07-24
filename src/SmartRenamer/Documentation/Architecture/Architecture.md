@@ -1,3 +1,12 @@
+# Architecture
+
+This document consolidates the architecture-related documents into a single reference while preserving source sections.
+
+
+---
+
+# Source: Architecture.md
+
 ﻿# SmartRenamer Architecture
 
 The Promise
@@ -485,3 +494,556 @@ Act owns execution.
 A stage must never compensate for mistakes made by another stage.
 
 When a value is incorrect, fix the earliest stage responsible for producing it.
+## 7/21/2026 
+UI
+│
+▼
+MainWindowViewModel
+│
+▼
+ScoutService
+│
+├── updates ScoutOperation
+│
+└── listens for progress from
+      │
+      ▼
+ScoutExecutor
+
+---
+
+# Source: Pipeline.md
+
+﻿# Scout Pipeline
+
+Scout processes every collection through the same pipeline.
+
+Folder
+
+↓
+
+Folder Investigation
+
+↓
+
+FolderSummary
+
+↓
+
+ProjectContext
+
+↓
+
+Analyzers
+
+↓
+
+Observations
+
+↓
+
+Planner
+
+↓
+
+Capabilities
+
+↓
+
+Guide
+
+↓
+
+Workspace
+
+Only the capabilities modify the file system.
+
+Every stage before that is read-only.
+
+---
+
+# Source: CapabilityArchitecture.md
+
+﻿# Capability Architecture
+
+## Purpose
+
+Scout is not a collection of tools.
+
+Scout is a growing collection of **capabilities**.
+
+Every time Scout learns something new, it gains a capability—not a new mode, screen, or wizard.
+
+The user should never need to know which capability is running.
+
+They simply describe their goal.
+
+Scout determines which capabilities can help.
+
+---
+
+# What is a Capability?
+
+A capability is a self-contained skill Scout has learned.
+
+Examples include:
+
+- Rename Files
+- Download Book Covers
+- Add Book Metadata
+- Organize Downloads
+- Detect Duplicate Files
+- Prepare Plex Libraries
+- Organize Music
+- Analyze Photos
+
+Every capability follows exactly the same lifecycle.
+
+```
+Investigate
+      ↓
+Discover
+      ↓
+Recommend
+      ↓
+Preview
+      ↓
+Conversation
+      ↓
+Execute
+      ↓
+Undo
+```
+
+This consistency allows Scout to grow without becoming more complicated.
+
+---
+
+# Capability Responsibilities
+
+Every capability is responsible for answering six questions.
+
+## 1. What did I discover?
+
+Examples
+
+- 18 filenames contain underscores.
+- 42 books are missing covers.
+- 7 duplicate movies were detected.
+
+---
+
+## 2. Why does it matter?
+
+Examples
+
+- Improves readability.
+- Makes ebook libraries easier to browse.
+- Prevents duplicate storage.
+
+Scout should always explain the value of the recommendation.
+
+---
+
+## 3. What can I do?
+
+A capability describes the improvement it can perform.
+
+Examples
+
+- Replace underscores with spaces.
+- Download missing covers.
+- Remove duplicate spaces.
+- Rename files to Plex format.
+
+---
+
+## 4. Can the work be previewed?
+
+Every capability must generate a preview before execution.
+
+Users should always understand what will change before Scout changes anything.
+
+---
+
+## 5. Can the work be executed?
+
+Execution performs the approved work.
+
+Capabilities never execute automatically without user approval.
+
+---
+
+## 6. Can the work be undone?
+
+Every capability must support Undo whenever technically possible.
+
+Undo is not an optional feature.
+
+Undo is part of every capability's lifecycle.
+
+---
+
+# Scout's Role
+
+Scout does not rename files.
+
+Scout does not download covers.
+
+Scout does not organize folders.
+
+Scout coordinates capabilities.
+
+Scout is responsible for:
+
+- Understanding the user's goal
+- Choosing appropriate capabilities
+- Presenting recommendations
+- Explaining recommendations
+- Managing the conversation
+- Building workflows
+- Confirming execution
+- Coordinating Undo
+
+Capabilities perform the work.
+
+Scout manages the experience.
+
+---
+
+# Recommendations
+
+Every capability returns one or more Recommendations.
+
+A Recommendation describes an opportunity for improvement.
+
+Examples
+
+- Rename 18 files
+- Download 42 covers
+- Add 27 summaries
+- Remove 5 duplicates
+
+Scout presents recommendations in priority order.
+
+Recommendations appear both:
+
+- in conversation
+- in the Recommendations panel
+
+The conversation and user interface always describe the same recommendations.
+
+---
+
+# Preview
+
+Scout never performs hidden work.
+
+Every capability generates a preview.
+
+The preview answers:
+
+What will change?
+
+Nothing should execute until the user approves.
+
+---
+
+# Execution
+
+Execution is performed only after approval.
+
+Approval may come from:
+
+- conversation
+- clicking a recommendation
+- selecting multiple recommendations
+
+All execution uses the same workflow.
+
+---
+
+# Undo
+
+Undo is considered part of execution—not an afterthought.
+
+Every successful execution creates a transaction.
+
+Transactions contain every change necessary to restore the previous state.
+
+Scout should always be able to say:
+
+"You can undo this operation."
+
+---
+
+# Learning
+
+Scout learns capabilities.
+
+Capabilities do not change Scout.
+
+As new capabilities are added, Scout automatically gains new skills because every capability follows the same architecture.
+
+No capability should require special conversation logic or a unique user interface.
+
+Every new capability should feel like Scout learned something new.
+
+---
+
+# Architecture Goal
+
+The goal of this architecture is to allow Scout to grow indefinitely.
+
+Whether Scout learns to:
+
+- rename files
+- organize photos
+- enrich ebook metadata
+- prepare Plex libraries
+- identify duplicate documents
+- analyze archives
+
+the user experience remains identical.
+
+The user simply talks to Scout.
+
+Scout selects the appropriate capabilities.
+
+Everything else follows the same lifecycle.
+
+# Design Rule
+
+When adding a new feature, never ask:
+
+"Where should this code go?"
+
+Instead ask:
+
+"What new capability is Scout learning?"
+
+If the answer cannot be expressed as a capability that follows this architecture, the design should be reconsidered before implementation.
+
+# Capability Philosophy
+
+Capabilities discover facts.
+
+They never:
+
+- rename files
+- move files
+- create folders
+- ask the user questions
+
+Capabilities only enrich ProjectContext.
+
+Examples:
+
+PhotoMetadataCapability
+
+Produces:
+
+CaptureDate
+GPS
+Camera
+
+RelatedAssetCapability
+
+Produces:
+
+RelatedGroup
+
+MusicMetadataCapability
+
+Produces:
+
+Artist
+Album
+Track
+Genre
+
+The Planner decides how those facts are used.
+
+---
+
+# Source: CapabilityPhilosophy.md
+
+﻿# Capability Philosophy
+
+Capabilities perform work.
+
+Capabilities never decide what should happen.
+
+Capabilities simply execute.
+
+Decision making belongs to:
+
+Analyzers
+
+Planner
+
+Guide
+
+Execution belongs to:
+
+Capabilities
+
+---
+
+# Source: ObservationPhilosophy.md
+
+﻿# Observation Philosophy
+
+Scout is fundamentally an observation engine.
+
+Everything begins with an observation.
+
+An Observation must satisfy three rules.
+
+1.
+
+It is true.
+
+2.
+
+It is useful.
+
+3.
+
+It can be explained.
+
+Recommendations are derived from observations.
+
+Capabilities are selected because of recommendations.
+
+The user should always be able to trace an action back to an observation.
+
+---
+
+# Source: FileContextPhilosophy.md
+
+﻿# FileContext Philosophy
+
+Scout does not classify files into subclasses.
+
+Instead, Scout continually enriches its understanding of a file.
+
+A FileContext always represents one file.
+
+New capabilities add knowledge rather than replacing the FileContext.
+
+Examples of future knowledge include:
+
+EXIF
+
+Music Metadata
+
+Git Repository Information
+
+PDF Information
+
+Office Metadata
+
+Archive Contents
+
+This allows Scout to understand file types that do not yet exist.
+
+Scout learns.
+
+It does not specialize.
+
+---
+
+# Source: AnalyzerContract.md
+
+﻿# Analyzer Contract
+
+Every Analyzer follows the same responsibilities.
+
+## Input
+
+ProjectContext
+
+## Reads
+
+FolderSummary
+
+FileContexts
+
+Project Goal
+
+## Produces
+
+ProjectProfile
+
+Observations
+
+Recommendations
+
+## Never
+
+Rename files
+
+Move files
+
+Delete files
+
+Modify the file system
+
+An Analyzer observes.
+
+It does not act.
+
+---
+
+# Source: Architectural Invariants.md
+
+﻿# Architectural Invariants
+
+These principles define Scout's architecture.
+
+Changing one requires an explicit architectural decision.
+
+---
+
+The Observation Box is universal.
+
+---
+
+FolderSummary contains facts, never opinions.
+
+---
+
+Analyzers observe.
+
+They do not modify files.
+
+---
+
+Capabilities perform work.
+
+They do not decide work.
+
+---
+
+The Planner makes decisions.
+
+---
+
+The Guide explains decisions.
+
+---
+
+FileContext represents a file.
+
+It is enriched rather than replaced.
+
+---
+
+Architecture emerges through completed vertical slices.
+
+Avoid speculative abstractions.
+
+---
+
+Every user-visible action must be explainable through observations.

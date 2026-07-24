@@ -1,4 +1,6 @@
 ﻿using System.Windows;
+using System.Windows.Controls;
+using SmartRenamer.Models;
 using SmartRenamer.ViewModels;
 
 namespace SmartRenamer
@@ -10,5 +12,7 @@ namespace SmartRenamer
             InitializeComponent();
             DataContext = new MainWindowViewModel();
         }
+
+        
     }
 }

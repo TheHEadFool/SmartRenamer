@@ -16,6 +16,8 @@ namespace SmartRenamer.Models.Analysis
 
         public List<MetadataCapability> Metadata { get; } = new();
 
+        public List<ProjectObservation> Observations { get; } = new();
+
         public List<Recommendation> Recommendations { get; } = new();
     }
 }

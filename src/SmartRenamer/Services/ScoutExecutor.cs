@@ -1,13 +1,16 @@
-﻿using System;
+﻿using SmartRenamer.Models;
+using SmartRenamer.Models.Rename;
+using System;
 using System.Collections.Generic;
 using System.IO;
-using SmartRenamer.Models.Rename;
 
 namespace SmartRenamer.Services
 {
     public class ScoutExecutor
     {
-        public RenameResult Execute(List<RenamePreview> preview)
+        public RenameResult Execute(
+            List<RenamePreview> preview,
+            IProgress<ExecutionProgress>? progress = null)
         {
             RenameResult result = new();
 
@@ -68,6 +71,15 @@ namespace SmartRenamer.Services
                     true);
 
                 result.FilesRenamed++;
+
+                progress?.Report(
+                    new ExecutionProgress
+                    {
+                        Completed = result.FilesRenamed,
+                        Total = preview.Count,
+                        CurrentFile = item.NewName,
+                        Status = "Copying files..."
+                    });
             }
 
             result.Success = result.FilesRenamed > 0;

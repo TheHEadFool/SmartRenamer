@@ -526,3 +526,36 @@ Observations present discoveries.
 Recommendations propose actions.
 Plans record decisions.
 Execution carries out the agreed plan.
+
+## Rule 21 The Observation Box presents one observation at a time. 
+Multiple discoveries are navigated through Observation Tabs. 
+Scout determines their order based on priority, 
+ensuring the user's attention stays focused on the single most valuable 
+conversation at any given moment.
+
+Scout is judged by the quality of its observations, not the number of operations it can perform.
+
+## Rule 22 – The Observation Box Is the Workspace
+
+The Observation Box is Scout's primary workspace.
+
+Everything Scout asks the user to understand,
+approve, or execute begins with the currently
+selected observation.
+
+Users interact with Scout by selecting observations.
+
+Recommendations, plans, explanations, and actions are always
+presented in the context of the currently selected observation.
+
+Other panels may provide supporting information, but they never
+replace the Observation Box as the center of the user experience.
+
+## Every coding session should teach Scout one new thing.
+
+Scout always speaks from one place.
+
+## A Specialist owns a domain of knowledge, not a single algorithm. 
+New understanding is added to existing Specialists whenever it naturally belongs to their expertise.
+A Specialist begins life by recognizing one pattern exceptionally well. Future versions deepen that 
+Specialist's understanding rather than creating new Specialists for closely related concepts.

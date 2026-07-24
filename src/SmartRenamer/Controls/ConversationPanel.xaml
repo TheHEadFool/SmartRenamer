@@ -116,7 +116,7 @@
                             FontSize="22"
                             FontWeight="Bold"
                             Foreground="White"
-                            Text="Guide"/>
+                            Text="Scout"/>
 
                         <TextBlock
                             Margin="0,6,0,0"
@@ -143,25 +143,60 @@
 
                         <DataTemplate>
 
-                            <Border Margin="0,0,0,12"
-                                    Padding="14"
-                                    Background="#EEF5FF"
-                                    CornerRadius="12">
+                            <StackPanel Margin="0,0,0,12">
 
-                                <StackPanel>
+                                <!-- Text Message -->
 
-                                    <TextBlock
-                                        FontWeight="SemiBold"
-                                        Text="{Binding Speaker}"/>
+                                <Border
+            Padding="14"
+            Background="#EEF5FF"
+            CornerRadius="12">
 
-                                    <TextBlock
-                                        Margin="0,8,0,0"
-                                        Text="{Binding Text}"
-                                        TextWrapping="Wrap"/>
+                                    <Border.Style>
 
-                                </StackPanel>
+                                        <Style TargetType="Border">
 
-                            </Border>
+                                            <Setter Property="Visibility"
+                            Value="Visible"/>
+
+                                            <Style.Triggers>
+
+                                                <DataTrigger Binding="{Binding Text}"
+                                     Value="">
+
+                                                    <Setter Property="Visibility"
+                                    Value="Collapsed"/>
+
+                                                </DataTrigger>
+
+                                            </Style.Triggers>
+
+                                        </Style>
+
+                                    </Border.Style>
+
+                                    <StackPanel>
+
+                                        <TextBlock
+                    FontWeight="SemiBold"
+                    Text="{Binding Speaker}" />
+
+                                        <TextBlock
+                    Margin="0,8,0,0"
+                    Text="{Binding Text}"
+                    TextWrapping="Wrap"/>
+
+                                    </StackPanel>
+
+                                </Border>
+
+                                <!-- Rich Card -->
+
+                                <ContentPresenter
+            Margin="0,10,0,0"
+            Content="{Binding Card}" />
+
+                            </StackPanel>
 
                         </DataTemplate>
 

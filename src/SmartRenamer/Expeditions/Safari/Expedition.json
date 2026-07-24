@@ -1,0 +1,11 @@
+{
+  "ManifestVersion": 1,
+  "Name": "Safari",
+  "Author": "Jonathan R Holman",
+  "Version": "1.0.0",
+  "Description": "The default Scout Expedition.",
+  "SupportsDarkMode": true,
+  "ThemeResource": "Themes/AppTheme.xaml",
+  "HeaderResource": "Header.xaml",
+  "ProgressControl": "TrailControl"
+}

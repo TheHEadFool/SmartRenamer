@@ -7,12 +7,18 @@
 
         <ResourceDictionary>
 
+            <ResourceDictionary.MergedDictionaries>
+
+                <ResourceDictionary
+                    Source="Expeditions/Safari/Foundation/SafariTheme.xaml"/>
+
+            </ResourceDictionary.MergedDictionaries>
+
             <BooleanToVisibilityConverter
-                x:Key="BooleanToVisibilityConverter" />
+                x:Key="BooleanToVisibilityConverter"/>
 
         </ResourceDictionary>
 
     </Application.Resources>
 
 </Application>
-    

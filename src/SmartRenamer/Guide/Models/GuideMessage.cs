@@ -1,50 +1,113 @@
-﻿using System.Windows;
-using SmartRenamer.Infrastructure;
+﻿using System;
 
 namespace SmartRenamer.Guide.Models
 {
-    /// <summary>
-    /// Represents one item in the conversation timeline.
-    /// A message may be plain text, or it may contain a rich UI card.
-    /// </summary>
+    /******************************************************************************
+     * GuideMessage
+     *
+     * Scout Design Language (SDL-001)
+     *
+     * PURPOSE
+     * -------
+     * Represents a single conversational item exchanged between Scout and the
+     * user.
+     *
+     * GuideMessage is the fundamental unit of communication within the Guide
+     * subsystem. Every conversation is composed of one or more GuideMessages
+     * arranged in chronological order.
+     *
+     * A GuideMessage intentionally contains no business logic and no knowledge
+     * of how it will be rendered. Expeditions decide how messages are displayed.
+     *
+     * RESPONSIBILITIES
+     * ----------------
+     * • Represent one conversational exchange.
+     * • Identify the speaker.
+     * • Store the message text.
+     * • Carry optional contextual information.
+     * • Record when the message was created.
+     *
+     * NON-RESPONSIBILITIES
+     * --------------------
+     * • Performing analysis.
+     * • Rendering UI.
+     * • Executing commands.
+     * • Accessing the file system.
+     *
+     * FUTURE EVOLUTION
+     * ----------------
+     * Future message types such as Welcome Cards, Folder Pickers, Project
+     * Summaries, Progress Cards, and Rich Guide Cards should extend the Guide
+     * conversation without changing its underlying philosophy.
+     *
+     * RELATED DOCUMENTS
+     * -----------------
+     * SDL-001  Scout Design Language
+     * ADR-011  Expedition Architecture
+     *
+     * HISTORY
+     * -------
+     * P003 - Initial implementation.
+     ******************************************************************************/
+
     public class GuideMessage
     {
         /// <summary>
-        /// True if the message came from Guide.
-        /// False if it came from the user.
+        /// Backward compatibility with the original conversation model.
+        /// This property will eventually be removed.
         /// </summary>
-        public bool IsGuide { get; set; }
+        public bool IsGuide
+        {
+            get => Speaker == GuideSpeaker.Guide;
+            set => Speaker = value
+                ? GuideSpeaker.Guide
+                : GuideSpeaker.User;
+        }
+        /// <summary>
+        /// Identifies who produced this message.
+        /// </summary>
+        public GuideSpeaker Speaker { get; set; } = GuideSpeaker.Guide;
 
         /// <summary>
-        /// Display name of the speaker.
-        /// Eventually this will come from the user's chosen Guide name.
+        /// Name displayed for the speaker.
+        /// Expeditions may customize this value.
         /// </summary>
-        public string Speaker =>    IsGuide ? "Scout" : "You";
+        public string DisplayName { get; set; } = "Scout";
 
         /// <summary>
-        /// Optional text shown in the conversation.
+        /// The primary conversational text.
         /// </summary>
         public string Text { get; set; } = string.Empty;
 
         /// <summary>
-        /// Optional rich content such as a WelcomeCard,
-        /// FolderPickerCard, or ProjectSummaryCard.
+        /// Temporary compatibility property.
+        /// Eventually this will become a strongly typed content model.
         /// </summary>
-        public FrameworkElement? Card { get; set; }
+        public object? Card { get; set; }
 
         /// <summary>
-        /// Optional action text.
+        /// Time the message was created.
         /// </summary>
-        public string? ActionText { get; set; }
+        public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.Now;
 
         /// <summary>
-        /// Optional action command.
-        /// </summary>
-        public RelayCommand? ActionCommand { get; set; }
-
-        /// <summary>
-        /// Optional payload associated with this message.
+        /// Optional contextual data associated with the message.
+        /// This may contain domain objects, observations, suggestions,
+        /// or other information understood by the Guide.
         /// </summary>
         public object? Payload { get; set; }
+
+        /// <summary>
+        /// Indicates whether this message contains additional contextual data.
+        /// </summary>
+        public bool HasPayload => Payload != null;
+
+        /// <summary>
+        /// Returns a readable representation for debugging.
+        /// </summary>
+        public override string ToString()
+        {
+            return $"{DisplayName}: {Text}";
+        }
     }
 }

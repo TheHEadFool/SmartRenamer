@@ -2,24 +2,44 @@
 
 namespace SmartRenamer.Guide.Models
 {
-    /// <summary>
-    /// Stores the conversation timeline between the user and Guide.
-    /// </summary>
+    /******************************************************************************
+     * GuideConversation
+     *
+     * Scout Design Language (SDL-001)
+     *
+     * PURPOSE
+     * -------
+     * Represents an entire conversation between Scout and the user.
+     *
+     * A conversation is an ordered collection of GuideMessages that evolves as
+     * Scout learns about the user's goals and makes recommendations.
+     *
+     * RESPONSIBILITIES
+     * ----------------
+     * • Maintain message order.
+     * • Record conversation state.
+     * • Provide helper methods for adding messages.
+     *
+     * NON-RESPONSIBILITIES
+     * --------------------
+     * • Rendering UI.
+     * • Performing investigations.
+     * • Executing recommendations.
+     ******************************************************************************/
+
     public class GuideConversation
     {
         public ObservableCollection<GuideMessage> Messages { get; }
             = new();
 
-        public void AddMessage(GuideMessage message)
-        {
-            Messages.Add(message);
-        }
+        public ConversationState State { get; } = new();
 
         public void AddGuideMessage(string text)
         {
             Messages.Add(new GuideMessage
             {
-                IsGuide = true,
+                Speaker = GuideSpeaker.Guide,
+                DisplayName = "Scout",
                 Text = text
             });
         }
@@ -28,9 +48,15 @@ namespace SmartRenamer.Guide.Models
         {
             Messages.Add(new GuideMessage
             {
-                IsGuide = false,
+                Speaker = GuideSpeaker.User,
+                DisplayName = "You",
                 Text = text
             });
+        }
+
+        public void Clear()
+        {
+            Messages.Clear();
         }
     }
 }

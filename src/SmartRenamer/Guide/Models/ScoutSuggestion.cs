@@ -1,23 +1,43 @@
-﻿using SmartRenamer.Infrastructure;
+﻿using System;
 
 namespace SmartRenamer.Guide.Models
 {
-    /// <summary>
-    /// A recommendation Scout presents to the user.
-    /// These become the buttons in the Suggestions panel.
-    /// </summary>
+    /******************************************************************************
+     * ScoutSuggestion
+     *
+     * Represents an action Scout recommends.
+     *
+     * Suggestions are optional.
+     *
+     * Scout never commands.
+     * Scout recommends.
+     ******************************************************************************/
+
     public class ScoutSuggestion
     {
-        public string Id { get; set; } = "";
+        /// <summary>
+        /// Title displayed to the user.
+        /// </summary>
+        public string Title { get; set; } = string.Empty;
 
-        public string Title { get; set; } = "";
+        /// <summary>
+        /// Short explanation.
+        /// </summary>
+        public string Description { get; set; } = string.Empty;
 
-        public string Description { get; set; } = "";
-
-        public RelayCommand? Command { get; set; }
-
-        public bool IsPrimary { get; set; }
-
+        /// <summary>
+        /// Indicates whether the suggestion is currently available.
+        /// </summary>
         public bool IsEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Optional payload associated with the suggestion.
+        /// </summary>
+        public object? Payload { get; set; }
+
+        public override string ToString()
+        {
+            return Title;
+        }
     }
 }

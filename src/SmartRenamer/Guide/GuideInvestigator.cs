@@ -93,10 +93,14 @@ namespace SmartRenamer.Guide
             {
                 summary.AppendLine(
                     "I've already prepared a preview of the proposed filename changes.");
+
                 summary.AppendLine();
+
                 summary.AppendLine(
                     "We can refine those changes together before anything is renamed.");
+
                 summary.AppendLine();
+
                 summary.AppendLine(
                     "What would you like me to do?");
             }

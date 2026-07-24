@@ -1,0 +1,57 @@
+﻿<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ===================================================== -->
+    <!-- Colors -->
+    <!-- ===================================================== -->
+
+    <SolidColorBrush x:Key="BackgroundBrush"
+                     Color="#ECE8DE"/>
+
+    <SolidColorBrush x:Key="PrimaryBrush"
+                     Color="#28432A"/>
+
+    <SolidColorBrush x:Key="SecondaryBrush"
+                     Color="#556B2F"/>
+
+    <SolidColorBrush x:Key="CardBrush"
+                     Color="#F8F4EA"/>
+
+    <SolidColorBrush x:Key="BorderBrush"
+                     Color="#D6CDBA"/>
+
+    <SolidColorBrush x:Key="SecondaryTextBrush"
+                     Color="#6D6A5F"/>
+
+    <SolidColorBrush x:Key="AccentBrush"
+                     Color="#B88935"/>
+
+    <!-- ===================================================== -->
+    <!-- Card Style -->
+    <!-- ===================================================== -->
+
+    <Style x:Key="CardBorder"
+           TargetType="Border">
+
+        <Setter Property="Background"
+                Value="{StaticResource CardBrush}" />
+
+        <Setter Property="CornerRadius"
+                Value="16"/>
+
+        <Setter Property="Padding"
+                Value="18"/>
+
+        <Setter Property="BorderBrush"
+                Value="{StaticResource BorderBrush}" />
+
+        <Setter Property="BorderThickness"
+                Value="1"/>
+
+        <Setter Property="Margin"
+                Value="0"/>
+
+    </Style>
+
+</ResourceDictionary>

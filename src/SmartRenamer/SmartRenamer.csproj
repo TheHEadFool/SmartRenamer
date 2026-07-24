@@ -2,28 +2,32 @@
 
 	<PropertyGroup>
 		<OutputType>WinExe</OutputType>
-
 		<TargetFramework>net8.0-windows</TargetFramework>
 
 		<UseWPF>true</UseWPF>
-		
 		<UseWindowsForms>true</UseWindowsForms>
-
 	</PropertyGroup>
 
+	<!--
+      Everything under Expeditions is copied EXCEPT
+      WPF XAML files, which must be compiled by WPF.
+  -->
 	<ItemGroup>
-		<Content Include="Expeditions\**\*">
+		<Content Include="Expeditions\**\*.*"
+				 Exclude="**\*.xaml;**\*.xaml.cs">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Folder Include="Controls\GuideCards\" />
+		<Folder Include="Controls\GuideCards\" />
+		<Folder Include="Expeditions\Safari\Layouts\" />
+		<Folder Include="Expeditions\Safari\Assets\" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <PackageReference Include="MetadataExtractor" Version="2.9.3" />
-	  <PackageReference Include="TagLibSharp" Version="2.3.0" />
+		<PackageReference Include="MetadataExtractor" Version="2.9.3" />
+		<PackageReference Include="TagLibSharp" Version="2.3.0" />
 	</ItemGroup>
 
 </Project>

@@ -4,14 +4,13 @@ namespace Scout.Expeditions.Safari.Camp
 {
     public partial class CampFire : UserControl
     {
-        private readonly EmberSystem _embers;
+        private readonly CampFireEffects _effects;
 
         public CampFire()
         {
             InitializeComponent();
 
-            _embers = new EmberSystem(SmokeLayer);
-            _embers.Start();
+            _effects = new CampFireEffects(SmokeLayer);
         }
     }
 }

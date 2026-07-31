@@ -18,7 +18,7 @@
 		</Content>
 	</ItemGroup>
 	<ItemGroup>
-	  	  <Compile Remove="Expeditions\Safari\Camp\Camp.cs" />
+	  	  
 	</ItemGroup>
 
 	<ItemGroup>

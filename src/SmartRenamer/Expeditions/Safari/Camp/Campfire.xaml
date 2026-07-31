@@ -7,42 +7,7 @@
 
     <Grid ClipToBounds="False">
 
-        <!-- Ground Glow -->
-        <Ellipse x:Name="GroundGlow"
-                 Width="72"
-                 Height="28"
-                 Fill="#55FF9A30"
-                 Opacity="0.18"
-                 VerticalAlignment="Bottom"
-                 Margin="0,0,0,12"
-                 IsHitTestVisible="False">
-            <Ellipse.Effect>
-                <BlurEffect Radius="20"/>
-            </Ellipse.Effect>
-        </Ellipse>
-
-        <!-- Flame Glow -->
-        <Ellipse x:Name="FlameGlow"
-                 Width="76"
-                 Height="60"
-                 Opacity="0.32"
-                 HorizontalAlignment="Center"
-                 VerticalAlignment="Center"
-                 Margin="0,-54,0,8"
-                 IsHitTestVisible="False">
-            <Ellipse.Fill>
-                <RadialGradientBrush>
-                    <GradientStop Color="#FFFFC060" Offset="0"/>
-                    <GradientStop Color="#88FF8030" Offset="0.45"/>
-                    <GradientStop Color="#00FF8030" Offset="1"/>
-                </RadialGradientBrush>
-            </Ellipse.Fill>
-
-            <Ellipse.Effect>
-                <BlurEffect Radius="16"/>
-            </Ellipse.Effect>
-        </Ellipse>
-
+                     
         <!-- Stone Ring -->
         <!-- <Image Source="/Expeditions/Safari/Assets/Fire3/StoneRing.png"
                Stretch="Uniform"
@@ -55,6 +20,54 @@
                IsHitTestVisible="False"/>-->
 
         <!-- Animated Fire -->
+        <Ellipse x:Name="FireGlow"
+         Width="95"
+         Height="110"
+         Fill="#80FFB040"
+         HorizontalAlignment="Center"
+         VerticalAlignment="Center"
+         Margin="0,-35,0,0"
+         Opacity="0.28"
+         IsHitTestVisible="False"
+         RenderTransformOrigin="0.5,0.5">
+
+            <Ellipse.RenderTransform>
+                <ScaleTransform/>
+            </Ellipse.RenderTransform>
+
+            <Ellipse.Effect>
+                <BlurEffect Radius="28"/>
+            </Ellipse.Effect>
+
+            <Ellipse.Triggers>
+                <EventTrigger RoutedEvent="Loaded">
+                    <BeginStoryboard>
+                        <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+
+                            <DoubleAnimation
+                        Storyboard.TargetProperty="Opacity"
+                        From="0.18"
+                        To="0.36"
+                        Duration="0:0:2.2"/>
+
+                            <DoubleAnimation
+                        Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleX)"
+                        From="0.90"
+                        To="1.12"
+                        Duration="0:0:2.6"/>
+
+                            <DoubleAnimation
+                        Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleY)"
+                        From="0.90"
+                        To="1.08"
+                        Duration="0:0:2.4"/>
+
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+            </Ellipse.Triggers>
+
+        </Ellipse>
         <Image x:Name="Flame"
        Width="130"
        Height="100"

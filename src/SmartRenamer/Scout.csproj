@@ -18,16 +18,15 @@
 		</Content>
 	</ItemGroup>
 	<ItemGroup>
-	  	  <Compile Remove="Expeditions\Safari\Animation\EmberSustem.cs" />
 	  	  <Compile Remove="Expeditions\Safari\Camp\Camp.cs" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Content Remove="Expeditions\Safari\Animation\EmberSustem.cs" />
 	  <Content Remove="Expeditions\Safari\Assets\Fire3\FireSlow.gif" />
 	  <Content Remove="Expeditions\Safari\Assets\Fire4\Flame1.png" />
 	  <Content Remove="Expeditions\Safari\Assets\Fire4\Flame10.png" />
 	  <Content Remove="Expeditions\Safari\Assets\images\SafariHeader.png" />
+	  <Content Remove="Expeditions\Safari\Camp\EmberSystem.cs" />
 	</ItemGroup>
 	
 	<ItemGroup>
@@ -44,7 +43,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Resource Include="Expeditions\Safari\Animation\EmberSustem.cs" />
 	  <Resource Include="Expeditions\Safari\Assets\Fire3\FireSlow.gif" />
 	  <Resource Include="Expeditions\Safari\Assets\Fire4\Flame1.png" />
 	  <Resource Include="Expeditions\Safari\Assets\Fire4\Flame10.png" />

@@ -17,10 +17,7 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
 	</ItemGroup>
-	<ItemGroup>
-	  	  
-	</ItemGroup>
-
+	
 	<ItemGroup>
 	  <Content Remove="Expeditions\Safari\Assets\Fire3\FireSlow.gif" />
 	  <Content Remove="Expeditions\Safari\Assets\Fire4\Flame1.png" />
@@ -47,6 +44,7 @@
 	  <Resource Include="Expeditions\Safari\Assets\Fire4\Flame1.png" />
 	  <Resource Include="Expeditions\Safari\Assets\Fire4\Flame10.png" />
 	  <Resource Include="Expeditions\Safari\Assets\images\SafariHeader.png" />
+		<Resource Include="Expeditions\Safari\Assets\Fire4\Smoke.png" />
 	</ItemGroup>
 
 </Project>

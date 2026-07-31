@@ -226,11 +226,14 @@ namespace SmartRenamer.ViewModels.Guide
             if (result.Project.Observations.Count > 1)
             {
                 Conversation.AddGuideMessage(
-                    $"There {(result.Project.Observations.Count == 2 ? "is" : "are")} also {result.Project.Observations.Count - 1} other discovery{(result.Project.Observations.Count - 1 == 1 ? "" : "ies")} I'd like to show you.");
+    $"I highlighted {result.Project.Observations.Count} discoveries in the Observation panel on the left. You can select any highlighted observation to explore it.");
             }
 
+            int proposedChanges =
+    result.Preview.Count(p => p.HasChanges);
+
             Conversation.AddGuideMessage(
-                $"Based on what I found, I prepared a safe preview with {result.Preview.Count} proposed change{(result.Preview.Count == 1 ? "" : "s")}.");
+    $"Based on what I found, I prepared a safe preview with {proposedChanges} proposed organizational change{(proposedChanges == 1 ? "" : "s")}.");
 
             Conversation.AddGuideMessage(
                 "We'll be able to review every recommendation together before anything is changed.");

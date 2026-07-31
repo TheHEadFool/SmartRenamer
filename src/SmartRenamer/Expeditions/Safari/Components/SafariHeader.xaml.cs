@@ -1,13 +1,15 @@
 ﻿using System.Windows;
 using System.Windows.Controls;
 
-namespace SmartRenamer.Expeditions.Safari.Components
+namespace Scout.Expeditions.Safari.Components
 {
     public partial class SafariHeader : UserControl
     {
         public SafariHeader()
         {
             InitializeComponent();
+
+            SizeChanged += SafariHeader_SizeChanged;
         }
 
         public static readonly DependencyProperty TitleProperty =
@@ -22,7 +24,7 @@ namespace SmartRenamer.Expeditions.Safari.Components
                 nameof(Subtitle),
                 typeof(string),
                 typeof(SafariHeader),
-                new PropertyMetadata("YOUR GUIDE ON THIS FILE SAFARI"));
+                new PropertyMetadata("Your Guide on the FIle Safari"));
 
         public string Title
         {
@@ -34,6 +36,10 @@ namespace SmartRenamer.Expeditions.Safari.Components
         {
             get => (string)GetValue(SubtitleProperty);
             set => SetValue(SubtitleProperty, value);
+        }
+
+        private void SafariHeader_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
         }
     }
 }

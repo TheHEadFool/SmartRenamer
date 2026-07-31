@@ -65,8 +65,14 @@ namespace SmartRenamer.Services
             if (!Directory.Exists(folderPath))
                 return summary;
 
+            EnumerationOptions options = new()
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true
+            };
+
             List<string> files = Directory
-                .EnumerateFiles(folderPath, "*.*", SearchOption.AllDirectories)
+                .EnumerateFiles(folderPath, "*.*", options)
                 .ToList();
 
             //-------------------------------------------------
@@ -99,7 +105,7 @@ namespace SmartRenamer.Services
             summary.FileCount = files.Count;
 
             summary.FolderCount = Directory
-                .EnumerateDirectories(folderPath, "*", SearchOption.AllDirectories)
+                .EnumerateDirectories(folderPath, "*", options)
                 .Count();
 
             summary.HasSubfolders = summary.FolderCount > 0;

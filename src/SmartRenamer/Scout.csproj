@@ -1,0 +1,54 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net8.0-windows</TargetFramework>
+		<Nullable>enable</Nullable>
+		<UseWPF>true</UseWPF>
+		<UseWindowsForms>true</UseWindowsForms>
+	</PropertyGroup>
+
+	<!--
+      Everything under Expeditions is copied EXCEPT
+      WPF XAML files, which must be compiled by WPF.
+  -->
+	<ItemGroup>
+		<Content Include="Expeditions\**\*.*" Exclude="**\*.xaml;**\*.xaml.cs">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+	<ItemGroup>
+	  	  <Compile Remove="Expeditions\Safari\Animation\EmberSustem.cs" />
+	  	  <Compile Remove="Expeditions\Safari\Camp\Camp.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Content Remove="Expeditions\Safari\Animation\EmberSustem.cs" />
+	  <Content Remove="Expeditions\Safari\Assets\Fire3\FireSlow.gif" />
+	  <Content Remove="Expeditions\Safari\Assets\Fire4\Flame1.png" />
+	  <Content Remove="Expeditions\Safari\Assets\Fire4\Flame10.png" />
+	  <Content Remove="Expeditions\Safari\Assets\images\SafariHeader.png" />
+	</ItemGroup>
+	
+	<ItemGroup>
+		<Folder Include="Controls\GuideCards\" />
+		<Folder Include="Expeditions\Safari\Assets\Fire2\" />
+		<Folder Include="Expeditions\Safari\Controls\" />
+		<Folder Include="Expeditions\Safari\Layouts\" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="MetadataExtractor" Version="2.9.3" />
+		<PackageReference Include="TagLibSharp" Version="2.3.0" />
+		<PackageReference Include="XamlAnimatedGif" Version="2.3.2" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Resource Include="Expeditions\Safari\Animation\EmberSustem.cs" />
+	  <Resource Include="Expeditions\Safari\Assets\Fire3\FireSlow.gif" />
+	  <Resource Include="Expeditions\Safari\Assets\Fire4\Flame1.png" />
+	  <Resource Include="Expeditions\Safari\Assets\Fire4\Flame10.png" />
+	  <Resource Include="Expeditions\Safari\Assets\images\SafariHeader.png" />
+	</ItemGroup>
+
+</Project>

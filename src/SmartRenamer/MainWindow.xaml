@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:SmartRenamer.Controls"
-        xmlns:safari="clr-namespace:SmartRenamer.Expeditions.Safari.Components"
+        xmlns:safari="clr-namespace:Scout.Expeditions.Safari.Components"
         Title="Scout"
         Width="1650"
         Height="900"
@@ -19,9 +19,10 @@
 
         <!-- Header -->
 
-        <Border Grid.Row="0"
-        Height="120"
-        Background="LightGray"/>
+        <safari:SafariHeader
+    Grid.Row="0"
+    Title="Scout"
+    Subtitle="Helping you Navigate your FILE Safari"/>
 
         <!-- Main -->
 
@@ -306,11 +307,10 @@
             <!-- ================================================= -->
 
             <Border Grid.Column="2"
-                    Style="{StaticResource CardBorder}">
+        Style="{StaticResource CardBorder}">
 
-                <TextBlock
-    Text="Conversation Panel Placeholder"
-    Margin="20"/>
+                <controls:ConversationPanel
+DataContext="{Binding Guide}"/>
 
             </Border>
 

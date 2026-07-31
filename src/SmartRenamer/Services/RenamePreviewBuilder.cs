@@ -30,7 +30,7 @@ namespace SmartRenamer.Services
                 foreach (FileContext file in context.Folder.FileContexts)
                 {
                     System.Diagnostics.Debug.WriteLine(
-     $"PREVIEW: {file.CurrentName}  Folder='{file.DestinationFolder}'");
+                        $"CURRENT='{file.CurrentName}'  NEW='{file.DestinationName}'  FOLDER='{file.DestinationFolder}'");
 
                     preview.Add(new RenamePreview
                     {

@@ -123,7 +123,7 @@
                             HorizontalAlignment="Center"
                             FontSize="13"
                             Foreground="#DCE9FF"
-                            Text="Your Friendly Neighborhood File Organizer"/>
+                            Text="Helping you Navigate your FILE Safari"/>
 
                     </StackPanel>
 
@@ -143,12 +143,12 @@
 
                         <DataTemplate>
 
-                            <StackPanel Margin="0,0,0,12">
+                            <StackPanel Margin="0,0,0,6">
 
                                 <!-- Text Message -->
 
                                 <Border
-            Padding="14"
+            Padding="10"
             Background="#EEF5FF"
             CornerRadius="12">
 
@@ -175,18 +175,9 @@
 
                                     </Border.Style>
 
-                                    <StackPanel>
-
-                                        <TextBlock
-                    FontWeight="SemiBold"
-                    Text="{Binding Speaker}" />
-
-                                        <TextBlock
-                    Margin="0,8,0,0"
-                    Text="{Binding Text}"
-                    TextWrapping="Wrap"/>
-
-                                    </StackPanel>
+                                    <TextBlock
+    Text="{Binding Text}"
+    TextWrapping="Wrap"/>
 
                                 </Border>
 

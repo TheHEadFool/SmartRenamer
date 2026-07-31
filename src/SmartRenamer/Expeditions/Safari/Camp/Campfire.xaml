@@ -1,0 +1,77 @@
+﻿<UserControl x:Class="Scout.Expeditions.Safari.Camp.CampFire"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:xgif="clr-namespace:XamlAnimatedGif;assembly=XamlAnimatedGif"
+             Width="120"
+             Height="120">
+
+    <Grid ClipToBounds="False">
+
+        <!-- Ground Glow -->
+        <Ellipse x:Name="GroundGlow"
+                 Width="72"
+                 Height="28"
+                 Fill="#55FF9A30"
+                 Opacity="0.18"
+                 VerticalAlignment="Bottom"
+                 Margin="0,0,0,12"
+                 IsHitTestVisible="False">
+            <Ellipse.Effect>
+                <BlurEffect Radius="20"/>
+            </Ellipse.Effect>
+        </Ellipse>
+
+        <!-- Flame Glow -->
+        <Ellipse x:Name="FlameGlow"
+                 Width="76"
+                 Height="60"
+                 Opacity="0.32"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center"
+                 Margin="0,-54,0,8"
+                 IsHitTestVisible="False">
+            <Ellipse.Fill>
+                <RadialGradientBrush>
+                    <GradientStop Color="#FFFFC060" Offset="0"/>
+                    <GradientStop Color="#88FF8030" Offset="0.45"/>
+                    <GradientStop Color="#00FF8030" Offset="1"/>
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+
+            <Ellipse.Effect>
+                <BlurEffect Radius="16"/>
+            </Ellipse.Effect>
+        </Ellipse>
+
+        <!-- Stone Ring -->
+        <!-- <Image Source="/Expeditions/Safari/Assets/Fire3/StoneRing.png"
+               Stretch="Uniform"
+               IsHitTestVisible="False"/>-->
+
+        <!-- Logs -->
+        <!-- <Image x:Name="Logs"
+               Source="/Expeditions/Safari/Assets/Fire3/Logs.png"
+               Stretch="Uniform"
+               IsHitTestVisible="False"/>-->
+
+        <!-- Animated Fire -->
+        <Image x:Name="Flame"
+       Width="130"
+       Height="100"
+       Stretch="Uniform"
+       Margin="0,-35,0,0"
+       VerticalAlignment="Center"
+       HorizontalAlignment="Center"
+       RenderTransformOrigin="0.5,1"
+       xgif:AnimationBehavior.SourceUri="/Expeditions/Safari/Assets/Fire3/FireSlow.gif"/>
+
+        <!-- Smoke (future) -->
+        <Canvas x:Name="SmokeLayer"
+        Width="160"
+        Height="180"
+        Margin="0,-65,0,0"
+        IsHitTestVisible="False"/>
+
+    </Grid>
+
+</UserControl>

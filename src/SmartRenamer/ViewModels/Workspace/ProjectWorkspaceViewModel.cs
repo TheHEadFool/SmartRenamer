@@ -137,7 +137,7 @@ namespace SmartRenamer.ViewModels.Workspace
             // Scout Recommendations
             //------------------------------------------
 
-           
+
             //------------------------------------------
             // Rename Preview
             //------------------------------------------
@@ -146,7 +146,7 @@ namespace SmartRenamer.ViewModels.Workspace
 
             foreach (RenamePreview preview in result.Preview)
             {
-                if (!preview.WillRename)
+                if (!preview.HasChanges)
                     continue;
 
                 RenamePreview.Add(preview);
@@ -159,17 +159,17 @@ namespace SmartRenamer.ViewModels.Workspace
             if (RenamePreview.Count == 0)
             {
                 Description =
-                    "Scout analyzed this folder and didn't find any filenames that need changing.";
+                    "Scout analyzed this folder and didn't find any organizational changes to recommend.";
             }
             else if (RenamePreview.Count == 1)
             {
                 Description =
-                    "Scout analyzed this folder and found 1 filename that could be improved.";
+                    "Scout analyzed this folder and prepared 1 organizational change.";
             }
             else
             {
                 Description =
-                    $"Scout analyzed this folder and found {RenamePreview.Count} filenames that could be improved.";
+                    $"Scout analyzed this folder and prepared {RenamePreview.Count} organizational changes.";
             }
 
             OnPropertyChanged(nameof(RenameCount));

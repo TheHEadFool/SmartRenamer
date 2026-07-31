@@ -86,7 +86,7 @@ namespace SmartRenamer.Services.Intelligence
                 Title = "Audio Collection",
 
                 Description =
-                    $"Scout found {musicFiles} supported music files.",
+    "Scout recognized patterns consistent with an audio collection.",
 
                 WhyItMatters =
                     "Recognizing a music collection allows Scout to provide organization recommendations that are appropriate for audio libraries.",

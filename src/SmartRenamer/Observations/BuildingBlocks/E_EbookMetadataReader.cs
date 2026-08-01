@@ -11,7 +11,7 @@ namespace SmartRenamer.Observations.BuildingBlocks
     /// =========================================================================
     /// E_EbookMetadataReader
     /// =========================================================================
-    /// Reads the basic identity metadata from an EPUB.
+    /// Reads the basic metadata from an EPUB.
     /// =========================================================================
     /// </summary>
     public static class E_EbookMetadataReader
@@ -100,6 +100,23 @@ namespace SmartRenamer.Observations.BuildingBlocks
                         .FirstOrDefault(id =>
                             id.StartsWith("978") ||
                             id.StartsWith("979")) ?? "";
+
+                XNamespace opf =
+                    package.Root?.Name.Namespace ?? XNamespace.None;
+
+                XElement? manifest =
+                    package.Root?.Element(opf + "manifest");
+
+                if (manifest != null)
+                {
+                    metadata.HasCover =
+                        manifest.Elements(opf + "item")
+                            .Any(item =>
+                                string.Equals(
+                                    (string?)item.Attribute("properties"),
+                                    "cover-image",
+                                    StringComparison.OrdinalIgnoreCase));
+                }
 
                 return metadata;
             }

@@ -90,7 +90,7 @@ namespace SmartRenamer.Services.Intelligence
                 context.RecommendedCapabilities.Add(
                     recommendation.Title);
             }
-            //--------------------------------------------------
+            /* //--------------------------------------------------
             // Expert observations
             //--------------------------------------------------
 
@@ -101,7 +101,7 @@ namespace SmartRenamer.Services.Intelligence
                      ObservationMapper.Map(findings))
             {
                 context.Observations.Add(observation);
-            }
+            } */
         }
     }
 }

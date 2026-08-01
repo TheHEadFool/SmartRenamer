@@ -1047,3 +1047,5 @@ Avoid speculative abstractions.
 ---
 
 Every user-visible action must be explainable through observations.
+
+Analyzers never inspect individual files deeply.

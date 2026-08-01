@@ -46,14 +46,14 @@ namespace SmartRenamer.Services.Intelligence
             {
                 profile.Collections.Add(new ProjectCollection
                 {
-                    Name = "Documents",
+                    Name = "eBooks",
                     FileCount = folder.DocumentCount,
                     Description = "Document files detected."
                 });
 
                 profile.Recommendations.Add(new Recommendation
                 {
-                    Title = "Organize Documents",
+                    Title = "Analyze eBook Library",
                     Description = "Group documents into a consistent folder structure.",
                     Priority = 10
                 });

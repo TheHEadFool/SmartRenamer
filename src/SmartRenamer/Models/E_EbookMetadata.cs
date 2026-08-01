@@ -24,5 +24,7 @@
         public string Description { get; set; } = "";
 
         public bool HasCover { get; set; }
+
+        public byte[]? CoverImage { get; set; }
     }
 }

@@ -11,7 +11,7 @@ namespace SmartRenamer.Observations.BuildingBlocks
     /// =========================================================================
     /// E_EbookMetadataReader
     /// =========================================================================
-    /// Reads the basic metadata from an EPUB.
+    /// Reads metadata and the embedded cover from an EPUB.
     /// =========================================================================
     /// </summary>
     public static class E_EbookMetadataReader
@@ -72,6 +72,9 @@ namespace SmartRenamer.Observations.BuildingBlocks
                 XNamespace dc =
                     "http://purl.org/dc/elements/1.1/";
 
+                XNamespace opf =
+                    package.Root?.Name.Namespace ?? XNamespace.None;
+
                 E_EbookMetadata metadata = new();
 
                 metadata.Title =
@@ -101,22 +104,56 @@ namespace SmartRenamer.Observations.BuildingBlocks
                             id.StartsWith("978") ||
                             id.StartsWith("979")) ?? "";
 
-                XNamespace opf =
-                    package.Root?.Name.Namespace ?? XNamespace.None;
-
                 XElement? manifest =
                     package.Root?.Element(opf + "manifest");
 
-                if (manifest != null)
-                {
-                    metadata.HasCover =
-                        manifest.Elements(opf + "item")
-                            .Any(item =>
-                                string.Equals(
-                                    (string?)item.Attribute("properties"),
-                                    "cover-image",
-                                    StringComparison.OrdinalIgnoreCase));
-                }
+                if (manifest == null)
+                    return metadata;
+
+                XElement? coverItem =
+                    manifest.Elements(opf + "item")
+                        .FirstOrDefault(item =>
+                            string.Equals(
+                                (string?)item.Attribute("properties"),
+                                "cover-image",
+                                StringComparison.OrdinalIgnoreCase));
+
+                if (coverItem == null)
+                    return metadata;
+
+                metadata.HasCover = true;
+
+                string? coverPath =
+                    (string?)coverItem.Attribute("href");
+
+                if (string.IsNullOrWhiteSpace(coverPath))
+                    return metadata;
+
+                string baseFolder =
+                    Path.GetDirectoryName(packagePath)?
+                        .Replace('\\', '/') ?? "";
+
+                string fullCoverPath =
+                    string.IsNullOrWhiteSpace(baseFolder)
+                        ? coverPath
+                        : baseFolder + "/" + coverPath;
+
+                ZipArchiveEntry? coverEntry =
+                    archive.GetEntry(fullCoverPath);
+
+                if (coverEntry == null)
+                    return metadata;
+
+                using Stream coverStream =
+                    coverEntry.Open();
+
+                using MemoryStream memory =
+                    new();
+
+                coverStream.CopyTo(memory);
+
+                metadata.CoverImage =
+                    memory.ToArray();
 
                 return metadata;
             }

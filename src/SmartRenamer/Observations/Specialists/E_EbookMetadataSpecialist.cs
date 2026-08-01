@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using SmartRenamer.Models;
+using SmartRenamer.Observations.BuildingBlocks;
 
 namespace SmartRenamer.Observations.Specialists
 {
@@ -8,53 +9,50 @@ namespace SmartRenamer.Observations.Specialists
     /// =========================================================================
     /// E_EbookMetadataSpecialist
     /// =========================================================================
-    ///
-    /// Motto
-    /// -------------------------------------------------------------------------
-    /// "Understand the identity of every book before organizing the library."
-    ///
-    /// Domain
-    /// -------------------------------------------------------------------------
-    /// eBook Metadata
-    ///
-    /// Purpose
-    /// -------------------------------------------------------------------------
-    /// Identifies EPUB files that will eventually be analyzed for metadata.
-    ///
-    /// Why it exists
-    /// -------------------------------------------------------------------------
-    /// This Specialist is the foundation of Scout's ebook understanding.
-    /// Future builds will read metadata, covers, ISBNs, series information,
-    /// descriptions and other information stored inside ebook files.
-    ///
-    /// Responsibilities (Current Build)
-    /// -------------------------------------------------------------------------
-    /// • Recognize EPUB files
-    /// • Count EPUB files
-    /// • Report whether any EPUBs were found
-    ///
-    /// Future Responsibilities
-    /// -------------------------------------------------------------------------
-    /// • Read metadata
-    /// • Report missing metadata
-    /// • Emit ObservationSignals
-    /// • Ask unanswered questions
+    /// Observes EPUB metadata and reports the overall health of an ebook
+    /// collection.
     /// =========================================================================
     /// </summary>
     public sealed class E_EbookMetadataSpecialist : ObservationSpecialist
     {
-        public override string Name => "eBook Metadata Analysis";
+        public override string Name => "eBook Metadata";
 
         public override string Summary =>
-            "Identifies EPUB files for future metadata analysis.";
+            "Analyzes metadata stored inside EPUB files.";
 
         public override ExpertFinding Observe(
             IReadOnlyList<FileContext> files)
         {
-            int epubCount =
-                files.Count(IsEpubFile);
+            int epubFiles = 0;
+            int titles = 0;
+            int authors = 0;
+            int isbns = 0;
+            int covers = 0;
 
-            if (epubCount == 0)
+            foreach (FileContext file in files.Where(IsEpub))
+            {
+                epubFiles++;
+
+                E_EbookMetadata? metadata =
+                    E_EbookMetadataReader.Read(file);
+
+                if (metadata == null)
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(metadata.Title))
+                    titles++;
+
+                if (!string.IsNullOrWhiteSpace(metadata.Author))
+                    authors++;
+
+                if (!string.IsNullOrWhiteSpace(metadata.Isbn))
+                    isbns++;
+
+                if (metadata.HasCover)
+                    covers++;
+            }
+
+            if (epubFiles == 0)
             {
                 return new ExpertFinding
                 {
@@ -63,22 +61,21 @@ namespace SmartRenamer.Observations.Specialists
                 };
             }
 
-            var finding = new ExpertFinding
+            ExpertFinding finding = new()
             {
                 FoundSomething = true,
-                Summary = $"Found {epubCount} EPUB file(s)."
+                Summary = $"Analyzed {epubFiles} EPUB files."
             };
 
-            finding.Evidence.Add(
-                $"EPUB Files: {epubCount}");
-
-            finding.Questions.Add(
-                "Ready to read EPUB metadata.");
+            finding.Evidence.Add($"Titles: {titles}/{epubFiles}");
+            finding.Evidence.Add($"Authors: {authors}/{epubFiles}");
+            finding.Evidence.Add($"ISBNs: {isbns}/{epubFiles}");
+            finding.Evidence.Add($"Covers: {covers}/{epubFiles}");
 
             return finding;
         }
 
-        private static bool IsEpubFile(
+        private static bool IsEpub(
             FileContext file)
         {
             return file.Extension.Equals(

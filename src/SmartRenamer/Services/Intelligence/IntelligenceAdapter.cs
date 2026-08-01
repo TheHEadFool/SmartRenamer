@@ -1,5 +1,7 @@
 ﻿using SmartRenamer.Models;
 using SmartRenamer.Models.Analysis;
+using SmartRenamer.Observations;
+using System.Collections.Generic;
 
 namespace SmartRenamer.Services.Intelligence
 {
@@ -11,6 +13,7 @@ namespace SmartRenamer.Services.Intelligence
     public class IntelligenceAdapter
     {
         private readonly ProjectIntelligenceEngine engine = new();
+        private readonly ObservationEngine observationEngine = new();
 
         public void Analyze(ProjectContext context)
         {
@@ -86,6 +89,18 @@ namespace SmartRenamer.Services.Intelligence
             {
                 context.RecommendedCapabilities.Add(
                     recommendation.Title);
+            }
+            //--------------------------------------------------
+            // Expert observations
+            //--------------------------------------------------
+
+            List<ExpertFinding> findings =
+                observationEngine.Observe(context.Files);
+
+            foreach (ProjectObservation observation in
+                     ObservationMapper.Map(findings))
+            {
+                context.Observations.Add(observation);
             }
         }
     }

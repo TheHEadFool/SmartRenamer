@@ -8,6 +8,14 @@ namespace SmartRenamer.Models
     {
         public FolderSummary? Folder { get; set; }
 
+        /// <summary>
+        /// Every file participating in the current Scout analysis.
+        /// This allows Observation Experts to inspect the actual files
+        /// without needing to know where they originated.
+        /// </summary>
+        public IReadOnlyList<FileContext> Files { get; set; } =
+            System.Array.Empty<FileContext>();
+
         public string ProjectGoal { get; set; } = "";
 
         public bool KeepOriginals { get; set; } = true;

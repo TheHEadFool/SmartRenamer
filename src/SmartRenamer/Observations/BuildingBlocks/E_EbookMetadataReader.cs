@@ -1,16 +1,18 @@
-﻿using SmartRenamer.Models;
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Xml.Linq;
+using SmartRenamer.Models;
 
 namespace SmartRenamer.Observations.BuildingBlocks
 {
     /// <summary>
-    /// Reads metadata from EPUB files.
-    /// Current build:
-    /// Returns the book title.
+    /// =========================================================================
+    /// E_EbookMetadataReader
+    /// =========================================================================
+    /// Reads the basic identity metadata from an EPUB.
+    /// =========================================================================
     /// </summary>
     public static class E_EbookMetadataReader
     {
@@ -70,17 +72,23 @@ namespace SmartRenamer.Observations.BuildingBlocks
                 XNamespace dc =
                     "http://purl.org/dc/elements/1.1/";
 
-                XElement? titleElement =
+                E_EbookMetadata metadata = new();
+
+                metadata.Title =
                     package.Descendants(dc + "title")
-                           .FirstOrDefault();
+                        .FirstOrDefault()?.Value.Trim() ?? "";
 
-                var metadata = new E_EbookMetadata();
+                metadata.Author =
+                    package.Descendants(dc + "creator")
+                        .FirstOrDefault()?.Value.Trim() ?? "";
 
-                if (titleElement != null)
-                {
-                    metadata.Title =
-                        titleElement.Value.Trim();
-                }
+                metadata.Publisher =
+                    package.Descendants(dc + "publisher")
+                        .FirstOrDefault()?.Value.Trim() ?? "";
+
+                metadata.Language =
+                    package.Descendants(dc + "language")
+                        .FirstOrDefault()?.Value.Trim() ?? "";
 
                 return metadata;
             }

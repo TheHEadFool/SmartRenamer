@@ -31,6 +31,18 @@
         public string Question { get; set; } = "";
 
         /// <summary>
+        /// Optional capability that Scout should launch if the
+        /// user accepts this recommendation.
+        ///
+        /// Examples:
+        /// • EbookExpert
+        /// • MusicExpert
+        /// • DuplicateFinder
+        /// • RenamePipeline
+        /// </summary>
+        public string Capability { get; set; } = "";
+
+        /// <summary>
         /// Indicates whether Scout should ask the question
         /// before adding this recommendation to the workflow.
         /// </summary>

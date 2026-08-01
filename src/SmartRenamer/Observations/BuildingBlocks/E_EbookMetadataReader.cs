@@ -1,29 +1,20 @@
-﻿using System;
+﻿using SmartRenamer.Models;
+using System;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Xml.Linq;
-using SmartRenamer.Models;
 
 namespace SmartRenamer.Observations.BuildingBlocks
 {
     /// <summary>
-    /// =========================================================================
-    /// E_EbookMetadataReader
-    /// =========================================================================
-    ///
-    /// Current Responsibility
-    /// -------------------------------------------------------------------------
-    /// Open an EPUB and determine the location of its package document (.opf).
-    ///
-    /// Future builds will:
-    /// • Read metadata
-    /// • Read the cover
-    /// • Read the synopsis
-    /// =========================================================================
+    /// Reads metadata from EPUB files.
+    /// Current build:
+    /// Returns the book title.
     /// </summary>
     public static class E_EbookMetadataReader
     {
-        public static string? Read(FileContext file)
+        public static E_EbookMetadata? Read(FileContext file)
         {
             if (!file.Extension.Equals(
                 ".epub",
@@ -43,23 +34,55 @@ namespace SmartRenamer.Observations.BuildingBlocks
                 if (containerEntry == null)
                     return null;
 
-                using Stream stream =
-                    containerEntry.Open();
+                XDocument container;
 
-                XDocument document =
-                    XDocument.Load(stream);
+                using (Stream stream = containerEntry.Open())
+                {
+                    container = XDocument.Load(stream);
+                }
 
-                XNamespace ns =
+                XNamespace containerNs =
                     "urn:oasis:names:tc:opendocument:xmlns:container";
 
-                XElement? rootFile =
-                    document.Root?
-                        .Element(ns + "rootfiles")?
-                        .Element(ns + "rootfile");
+                string? packagePath =
+                    container.Root?
+                        .Element(containerNs + "rootfiles")?
+                        .Element(containerNs + "rootfile")?
+                        .Attribute("full-path")?
+                        .Value;
 
-                return rootFile?
-                    .Attribute("full-path")?
-                    .Value;
+                if (string.IsNullOrWhiteSpace(packagePath))
+                    return null;
+
+                ZipArchiveEntry? packageEntry =
+                    archive.GetEntry(packagePath);
+
+                if (packageEntry == null)
+                    return null;
+
+                XDocument package;
+
+                using (Stream stream = packageEntry.Open())
+                {
+                    package = XDocument.Load(stream);
+                }
+
+                XNamespace dc =
+                    "http://purl.org/dc/elements/1.1/";
+
+                XElement? titleElement =
+                    package.Descendants(dc + "title")
+                           .FirstOrDefault();
+
+                var metadata = new E_EbookMetadata();
+
+                if (titleElement != null)
+                {
+                    metadata.Title =
+                        titleElement.Value.Trim();
+                }
+
+                return metadata;
             }
             catch
             {

@@ -1,5 +1,7 @@
 ﻿using System;
+using System.IO;
 using System.IO.Compression;
+using System.Xml.Linq;
 using SmartRenamer.Models;
 
 namespace SmartRenamer.Observations.BuildingBlocks
@@ -11,25 +13,23 @@ namespace SmartRenamer.Observations.BuildingBlocks
     ///
     /// Current Responsibility
     /// -------------------------------------------------------------------------
-    /// Verify that an EPUB can be opened and that it contains the
-    /// standard META-INF/container.xml file.
+    /// Open an EPUB and determine the location of its package document (.opf).
     ///
     /// Future builds will:
-    /// • Read container.xml
-    /// • Locate the package (.opf)
     /// • Read metadata
     /// • Read the cover
+    /// • Read the synopsis
     /// =========================================================================
     /// </summary>
     public static class E_EbookMetadataReader
     {
-        public static bool Read(FileContext file)
+        public static string? Read(FileContext file)
         {
             if (!file.Extension.Equals(
                 ".epub",
                 StringComparison.OrdinalIgnoreCase))
             {
-                return false;
+                return null;
             }
 
             try
@@ -37,14 +37,33 @@ namespace SmartRenamer.Observations.BuildingBlocks
                 using ZipArchive archive =
                     ZipFile.OpenRead(file.CurrentFullPath);
 
-                ZipArchiveEntry? container =
+                ZipArchiveEntry? containerEntry =
                     archive.GetEntry("META-INF/container.xml");
 
-                return container != null;
+                if (containerEntry == null)
+                    return null;
+
+                using Stream stream =
+                    containerEntry.Open();
+
+                XDocument document =
+                    XDocument.Load(stream);
+
+                XNamespace ns =
+                    "urn:oasis:names:tc:opendocument:xmlns:container";
+
+                XElement? rootFile =
+                    document.Root?
+                        .Element(ns + "rootfiles")?
+                        .Element(ns + "rootfile");
+
+                return rootFile?
+                    .Attribute("full-path")?
+                    .Value;
             }
             catch
             {
-                return false;
+                return null;
             }
         }
     }

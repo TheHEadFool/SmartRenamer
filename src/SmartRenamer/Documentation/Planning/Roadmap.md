@@ -140,3 +140,5 @@ Register it.
 Scout immediately starts using it.
 
 If we achieve that, the project becomes highly extensible. New capabilities won't require touching the rest of the application—they'll just plug into the existing pipeline.
+
+## Never solve a visual problem by adding complexity until you've checked whether changing the initial conditions solves it.

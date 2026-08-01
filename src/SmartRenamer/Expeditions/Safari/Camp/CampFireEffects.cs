@@ -13,6 +13,8 @@ namespace Scout.Expeditions.Safari.Camp
         private readonly Canvas _canvas;
         private readonly Random _random = new();
 
+        private readonly CampFireBehavior _behavior = new();
+
         private readonly List<EmberParticle> _embers = new();
         private readonly List<SmokeParticle> _smoke = new();
 
@@ -52,8 +54,15 @@ namespace Scout.Expeditions.Safari.Camp
 
             _lastUpdate = now;
 
+            bool popped = _behavior.Update(deltaTime);
+
             SpawnSmoke();
             SpawnEmbers();
+
+            if (popped)
+            {
+                SpawnFlamePop();
+            }
 
             UpdateSmoke(deltaTime);
             UpdateEmbers(deltaTime);
@@ -61,8 +70,11 @@ namespace Scout.Expeditions.Safari.Camp
 
         private void SpawnSmoke()
         {
-            // About one puff every 3–5 frames
-            if (_random.NextDouble() > 0.25)
+            double smokeChance =
+                0.12 +
+                (_behavior.Intensity * 0.18);
+
+            if (_random.NextDouble() > smokeChance)
                 return;
 
             SmokeParticle smoke = new SmokeParticle(_random);
@@ -73,15 +85,34 @@ namespace Scout.Expeditions.Safari.Camp
 
             _smoke.Add(smoke);
 
-            // Smoke stays behind the flame and embers
+            // Keep smoke behind everything else.
             _canvas.Children.Insert(0, smoke.Visual);
         }
 
         private void SpawnEmbers()
         {
-            if (_random.NextDouble() > 0.03)
+            double emberChance =
+                0.005 +
+                (_behavior.Intensity * 0.05);
+
+            if (_random.NextDouble() > emberChance)
                 return;
 
+            SpawnSingleEmber();
+        }
+
+        private void SpawnFlamePop()
+        {
+            int count = _behavior.PopSize();
+
+            for (int i = 0; i < count; i++)
+            {
+                SpawnSingleEmber();
+            }
+        }
+
+        private void SpawnSingleEmber()
+        {
             EmberParticle ember = new EmberParticle(_random);
 
             ember.SetPosition(

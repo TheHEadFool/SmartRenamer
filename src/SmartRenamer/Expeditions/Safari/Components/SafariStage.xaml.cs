@@ -1,17 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
+using Scout.Expeditions.Safari.Waterfall.Effects;
 
 namespace Scout.Expeditions.Safari.Components
 {
@@ -20,9 +10,20 @@ namespace Scout.Expeditions.Safari.Components
     /// </summary>
     public partial class SafariStage : UserControl
     {
+        private readonly WaterfallEffects _waterfallEffects;
+
         public SafariStage()
         {
             InitializeComponent();
+
+            _waterfallEffects = new WaterfallEffects(WaterfallLayer);
+
+            CompositionTarget.Rendering += OnRendering;
+        }
+
+        private void OnRendering(object? sender, EventArgs e)
+        {
+            _waterfallEffects.Update();
         }
     }
 }

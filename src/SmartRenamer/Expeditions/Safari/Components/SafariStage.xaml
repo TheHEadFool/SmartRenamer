@@ -16,11 +16,18 @@
         <Image Source="/Expeditions/Safari/Assets/images/HeaderBackground.png"
            Stretch="Fill"/>
 
+        <!-- Waterfall Effects -->
+        <Canvas x:Name="WaterfallLayer"
+            Width="1600"
+            Height="220"
+            Background="Transparent"
+            IsHitTestVisible="False"/>
+
         <!-- Actors -->
         <Canvas x:Name="ActorLayer"
-        Width="1600"
-        Height="220"
-        Background="Transparent">
+            Width="1600"
+            Height="220"
+            Background="Transparent">
 
             <camp:CampFire
         x:Name="CampFireActor"

@@ -90,6 +90,17 @@ namespace SmartRenamer.Observations.BuildingBlocks
                     package.Descendants(dc + "language")
                         .FirstOrDefault()?.Value.Trim() ?? "";
 
+                metadata.Description =
+                    package.Descendants(dc + "description")
+                        .FirstOrDefault()?.Value.Trim() ?? "";
+
+                metadata.Isbn =
+                    package.Descendants(dc + "identifier")
+                        .Select(i => i.Value.Trim())
+                        .FirstOrDefault(id =>
+                            id.StartsWith("978") ||
+                            id.StartsWith("979")) ?? "";
+
                 return metadata;
             }
             catch

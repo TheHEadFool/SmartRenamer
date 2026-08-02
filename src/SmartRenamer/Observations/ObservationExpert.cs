@@ -17,14 +17,19 @@ namespace SmartRenamer.Observations
 
         public virtual int Confidence => 100;
 
+        /// <summary>
+        /// Existing Experts expose Specialists directly.
+        /// Newer Experts may instead override Investigate().
+        /// </summary>
         public abstract IReadOnlyList<ObservationSpecialist> Specialists { get; }
 
         /// <summary>
-        /// Ask this expert to investigate the supplied files.
+        /// Legacy observation model.
         /// By default the expert consults each of its specialists
         /// and gathers their findings.
         /// </summary>
-        public virtual List<ExpertFinding> Observe(IReadOnlyList<FileContext> files)
+        public virtual List<ExpertFinding> Observe(
+            IReadOnlyList<FileContext> files)
         {
             List<ExpertFinding> findings = new();
 
@@ -39,6 +44,18 @@ namespace SmartRenamer.Observations
             }
 
             return findings;
+        }
+
+        /// <summary>
+        /// New Investigation-based entry point.
+        /// Existing Experts continue to work because this
+        /// simply delegates to the legacy Observe() method.
+        /// New Experts should override this method instead.
+        /// </summary>
+        public virtual List<ExpertFinding> Investigate(
+            IReadOnlyList<FileContext> files)
+        {
+            return Observe(files);
         }
     }
 }

@@ -5,6 +5,8 @@ This document consolidates the architecture-related documents into a single refe
 
 ---
 
+# Scout understands collections, explains what it learned, and asks permission before acting.
+
 # Source: Architecture.md
 
 ﻿# SmartRenamer Architecture
@@ -1049,3 +1051,23 @@ Avoid speculative abstractions.
 Every user-visible action must be explainable through observations.
 
 Analyzers never inspect individual files deeply.
+
+## Principle #1
+
+Scout never performs work in isolation.
+
+Scout first understands the collection.
+
+Scout explains what it learned.
+
+Scout recommends a course of action.
+
+Scout asks permission.
+
+Scout performs the work.
+
+Scout explains the result.
+
+## A plugin owns its knowledge. Scout owns the conversation.
+
+## The folders should describe roles, not implementation.

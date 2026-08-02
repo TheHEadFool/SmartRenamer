@@ -41,3 +41,18 @@ unless we are replacing a single line.
 
 ## If another Expert could reasonably use a file then → no prefix (shared infrastructure).
 ## If it belongs only to the a module → a_ prefix. b module → b_ prefix and so on.
+
+## An Expert owns everything required to understand its domain.
+An Investigation asks questions. It does not perform work.
+
+## A Specialist performs one investigation well.
+
+Nothing more.
+
+## A Building Block performs one reusable task.
+
+Never move shared architecture until the replacement is complete.
+
+## If two Experts need the same class, promote it to the platform.
+
+Don't modify a file until we know why it's the right file.

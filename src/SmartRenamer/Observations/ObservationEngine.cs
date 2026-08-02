@@ -32,7 +32,7 @@ namespace SmartRenamer.Observations
             foreach (ObservationExpert expert in _experts)
             {
                 findings.AddRange(
-                    expert.Observe(files));
+                    expert.Investigate(files));
             }
 
             return findings;

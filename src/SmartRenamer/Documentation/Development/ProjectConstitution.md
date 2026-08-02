@@ -559,3 +559,16 @@ Scout always speaks from one place.
 New understanding is added to existing Specialists whenever it naturally belongs to their expertise.
 A Specialist begins life by recognizing one pattern exceptionally well. Future versions deepen that 
 Specialist's understanding rather than creating new Specialists for closely related concepts.
+
+## An Expert is allowed to say "I don't know." 
+When that happens, Scout should use the available evidence 
+to determine whether another Expert is better suited to continue the investigation.
+
+## SDL-00X — Experts are encouraged to admit uncertainty. 
+An Expert that cannot confidently identify or understand a file should report its 
+evidence to Scout rather than failing silently. Scout may then invite other Experts 
+whose domains overlap to continue the investigation.
+
+## An Expert must be independently distributable. 
+Everything required to understand its domain should live inside 
+the Expert unless it is part of Scout's shared infrastructure.

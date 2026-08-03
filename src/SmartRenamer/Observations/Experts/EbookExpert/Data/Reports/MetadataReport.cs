@@ -93,5 +93,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Data.Reports
         //-----------------------------------------------------
 
         public List<MetadataFinding> Findings { get; } = new();
+
+        public List<MetadataEvidence> Evidence { get; } = new();
     }
 }

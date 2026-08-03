@@ -1,5 +1,6 @@
 ﻿using SmartRenamer.Models;
 using SmartRenamer.Observations.BuildingBlocks;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using System;
 using System.Collections.Generic;
@@ -76,6 +77,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                     // Preserve why the metadata could not be read.
                     continue;
                 }
+
+                report.Records.Add(
+                    new MetadataRecord
+                    {
+                        File = file,
+                        Metadata = metadata
+                    });
 
                 AnalyzeMetadata(metadata, report);
 

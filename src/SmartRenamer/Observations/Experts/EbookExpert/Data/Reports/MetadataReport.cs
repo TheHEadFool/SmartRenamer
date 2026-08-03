@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using SmartRenamer.Models;
+using System.Collections.Generic;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Models;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Data.Reports
 {
@@ -87,6 +89,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Data.Reports
         public int ExcellentMetadata { get; set; }
 
         public int NeedsAttention { get; set; }
+
+        //-----------------------------------------------------
+        // Research Dataset
+        //-----------------------------------------------------
+
+        public List<MetadataRecord> Records { get; } = new();
 
         //-----------------------------------------------------
         // Findings

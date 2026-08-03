@@ -79,9 +79,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
 
                 AnalyzeMetadata(metadata, report);
 
+                ClassifyMetadata(
+                    metadata,
+                    report);
+
                 CollectEvidence(
-                metadata,
-                file);
+                    metadata,
+                    file);
             }
 
             CalculateMissingMetadata(report);
@@ -128,7 +132,58 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
             // Subjects
             // Rights
         }
+        //---------------------------------------------------------
+        // Metadata Quality
+        //---------------------------------------------------------
 
+        private static void ClassifyMetadata(
+            E_EbookMetadata metadata,
+            MetadataReport report)
+        {
+            int score = 0;
+
+            if (!string.IsNullOrWhiteSpace(metadata.Title))
+                score++;
+
+            if (!string.IsNullOrWhiteSpace(metadata.Author))
+                score++;
+
+            if (!string.IsNullOrWhiteSpace(metadata.Publisher))
+                score++;
+
+            if (!string.IsNullOrWhiteSpace(metadata.Language))
+                score++;
+
+            if (!string.IsNullOrWhiteSpace(metadata.Isbn))
+                score++;
+
+            if (!string.IsNullOrWhiteSpace(metadata.Description))
+                score++;
+
+            if (!string.IsNullOrWhiteSpace(metadata.Series))
+                score++;
+
+            if (metadata.HasCover)
+                score++;
+
+            if (score == 8)
+            {
+                report.ExcellentMetadata++;
+                report.CompleteMetadata++;
+            }
+            else if (score >= 6)
+            {
+                report.CompleteMetadata++;
+            }
+            else if (score >= 3)
+            {
+                report.IncompleteMetadata++;
+            }
+            else
+            {
+                report.NeedsAttention++;
+            }
+        }
         //---------------------------------------------------------
         // Missing Metadata
         //---------------------------------------------------------

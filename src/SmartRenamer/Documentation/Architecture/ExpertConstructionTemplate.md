@@ -493,6 +493,15 @@ Never continue until the build is green.
 
 Commit after every successful package.
 
+# Milestone Workflow
+
+✓ Build succeeds
+✓ Run application
+✓ Update documentation
+✓ Commit
+✓ Push
+✓ Continue development
+
 # Lessons Learned
 
 After completing this Expert, record improvements that should benefit every future Expert.

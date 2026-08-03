@@ -173,6 +173,15 @@ This pattern should appear throughout every Expert.
 
 ---
 
+A Block should completely exploit
+the information it already possesses.
+
+A Block should not require new
+infrastructure merely to produce
+one additional observation.
+
+---
+
 # Reports
 
 Reports preserve understanding.

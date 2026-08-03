@@ -4,6 +4,7 @@
 
 *.user
 *.suo
+*.zip
 
 TestResults/
 publish/

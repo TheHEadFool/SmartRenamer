@@ -12,7 +12,41 @@ Scout should be able to load or remove this Expert without requiring changes to 
 
 The completed Expert should serve as a reusable plugin.
 
-"When in doubt, copy the Ebook Expert."
+"When in doubt, follow the Ebook Expert architecture."
+
+# Scout Architecture
+
+Every Scout Expert follows the same pipeline.
+
+Reader
+    ↓
+Extracts facts from one file.
+
+Block
+    ↓
+Builds understanding from many files.
+
+Report
+    ↓
+Preserves everything the Block learned.
+
+Consultant
+    ↓
+Interprets one Report.
+
+Investigation
+    ↓
+Coordinates Consultants within one subject.
+
+Expert
+    ↓
+Coordinates Investigations and reports discoveries.
+
+Scout
+    ↓
+Combines discoveries from every Expert and communicates with the user.
+
+When in doubt, follow this pipeline.
 
 # Plugin Independence Test
 
@@ -149,11 +183,33 @@ Metadata Investigation
 
 Repeat as needed.
 
+# How a Block Thinks
+
+A Block does more than read data.
+
+Every Block follows the same pattern.
+
+Observe
+    ↓
+Measure
+    ↓
+Collect Evidence
+    ↓
+Understand
+    ↓
+Build Report
+
+Readers extract facts.
+
+Blocks build understanding.
+
+Blocks never communicate directly with Scout.
+
+Blocks never create ExpertFindings.
+
 # Blocks
 
 Describe every reusable Block.
-
-Each Block should perform one technical task.
 
 For every Block specify:
 
@@ -174,6 +230,24 @@ YES / NO
 # Reports
 
 Reports are private to the Expert.
+
+Reports preserve understanding.
+
+Reports contain:
+
+Statistics
+
+Evidence
+
+Relationships
+
+Intermediate reasoning
+
+Reports are never shown to the user.
+
+Consultants interpret Reports.
+
+Scout never reads Reports directly.
 
 Scout never sees Reports.
 
@@ -196,6 +270,30 @@ Contains
     Missing Metadata
 
 Repeat for every Report.
+
+# Evidence
+
+Blocks should preserve supporting evidence whenever practical.
+
+Examples
+
+Duplicate ISBN
+
+Duplicate Title
+
+Missing Series Book
+
+Broken Table of Contents
+
+Missing Cover
+
+Corrupt Metadata
+
+Evidence should answer:
+
+"What caused the Block to reach this conclusion?"
+
+Consultants use Evidence to explain discoveries.
 
 # Observation Signals
 
@@ -285,6 +383,14 @@ Would you like me to repair this metadata?
 
 Every class answers exactly one question.
 
+Every method should perform one step.
+
+Every Block should preserve evidence whenever possible.
+
+Prefer understandable code over clever code.
+
+Optimize for readability before optimization.
+
 ## Analyzer
 
 What kind of collection is this?
@@ -360,6 +466,32 @@ Before this Expert is complete:
 □ Plugin Independence Test
 
 Nothing ships until every box is checked.
+
+# Development Workflow
+
+Build Experts in small packages.
+
+Each package contains:
+
+Goal
+
+Files
+
+New
+
+Modified
+
+Replaced
+
+Implementation Steps
+
+Expected Build Result
+
+Commit Message
+
+Never continue until the build is green.
+
+Commit after every successful package.
 
 # Lessons Learned
 

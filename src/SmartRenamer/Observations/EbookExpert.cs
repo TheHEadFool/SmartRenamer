@@ -1,15 +1,30 @@
-﻿using System.Collections.Generic;
-using SmartRenamer.Models;
+﻿using SmartRenamer.Models;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations;
 using SmartRenamer.Observations.Specialists;
+using System.Collections.Generic;
 
 namespace SmartRenamer.Observations
+
+// Begin namespace
 {
     /// <summary>
+    /// =========================================================================
+    /// EbookExpert
+    /// =========================================================================
+    ///
     /// Scout asks this expert whenever it wants to understand whether a folder
     /// contains a meaningful collection of ebooks.
+    ///
+    /// The Ebook Expert coordinates a series of Investigations. Each
+    /// Investigation asks one or more Blocks to discover facts, then asks
+    /// Consultants to interpret those facts into ExpertFindings.
+    /// =========================================================================
     /// </summary>
-    public class EbookExpert : ObservationExpert
+    public sealed class EbookExpert
+
+    // Begin EbookExpert
+        : ObservationExpert
     {
         //---------------------------------------------------------
         // Investigations
@@ -30,7 +45,7 @@ namespace SmartRenamer.Observations
         private readonly E_EnrichmentInvestigation _enrichmentInvestigation = new();
 
         //---------------------------------------------------------
-        // Legacy Specialists (temporary during migration)
+        // Legacy Specialists
         //---------------------------------------------------------
 
         private static readonly IReadOnlyList<ObservationSpecialist> _specialists =
@@ -43,7 +58,8 @@ namespace SmartRenamer.Observations
 
         //---------------------------------------------------------
 
-        public override string Name => "eBook Library";
+        public override string Name =>
+            "eBook Library";
 
         public override string Summary =>
             "I noticed what appears to be a collection of ebooks.";
@@ -52,28 +68,60 @@ namespace SmartRenamer.Observations
             "Keeping ebooks organized by author, series, or subject makes your library easier to browse and enjoy.";
 
         /// <summary>
-        /// Generation 2 entry point.
-        /// The Ebook Expert coordinates its Investigations and returns
-        /// the combined findings.
+        /// =========================================================================
+        /// Generation 2 Entry Point
+        /// =========================================================================
         /// </summary>
         public override List<ExpertFinding> Investigate(
             IReadOnlyList<FileContext> files)
+
+        // Begin Investigate()
         {
             List<ExpertFinding> findings = new();
 
-            findings.AddRange(
-                _metadataInvestigation.Investigate(files));
+            //---------------------------------------------------------
+            // Acquire metadata once.
+            //---------------------------------------------------------
 
-            // Future investigations
-            //
-            // findings.AddRange(_contentsInvestigation.Investigate(files));
-            // findings.AddRange(_organizationInvestigation.Investigate(files));
-            // findings.AddRange(_duplicateInvestigation.Investigate(files));
-            // findings.AddRange(_qualityInvestigation.Investigate(files));
-            // findings.AddRange(_repairInvestigation.Investigate(files));
-            // findings.AddRange(_enrichmentInvestigation.Investigate(files));
+            MetadataReport metadataReport =
+                _metadataInvestigation.Investigate(files);
+
+            //---------------------------------------------------------
+            // Completed Generation 2 Investigations
+            //---------------------------------------------------------
+
+            findings.AddRange(
+                _contentsInvestigation.Investigate(
+                    metadataReport));
+
+            findings.AddRange(
+                _organizationInvestigation.Investigate(
+                    metadataReport));
+
+            findings.AddRange(
+                _duplicateInvestigation.Investigate(
+                    files));
+
+            findings.AddRange(
+                _qualityInvestigation.Investigate(
+                    metadataReport));
+
+            findings.AddRange(
+                _repairInvestigation.Investigate(
+                    metadataReport));
+
+            //---------------------------------------------------------
+            // Future Investigations
+            //---------------------------------------------------------
+
+            findings.AddRange(
+                 _enrichmentInvestigation.Investigate(
+                     metadataReport));
 
             return findings;
-        }
-    }
-}
+
+        } // End Investigate()
+
+    } // End EbookExpert
+
+} // End namespace

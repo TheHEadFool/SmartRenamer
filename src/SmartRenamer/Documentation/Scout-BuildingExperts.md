@@ -137,3 +137,36 @@ Migrate the Music Expert to the new architecture.
 Build additional Experts.
 
 Return to implement the conversational Expert Builder.
+
+## Research Assistant Pattern
+
+Each Investigation consists of one or more research assistants.
+
+Research assistants:
+
+- acquire information
+- measure
+- observe
+- preserve evidence
+- build reports
+
+Research assistants never:
+
+- interpret findings
+- produce recommendations
+- communicate with Scout
+
+Consultants consume reports.
+
+Consultants provide:
+
+- observations
+- recommendations
+- warnings
+- opportunities
+
+Scout communicates the final experience to the user.
+
+This separation keeps research independent from interpretation 
+and allows additional research assistants to be added without 
+changing existing investigations.

@@ -1,7 +1,12 @@
 ﻿using System.Collections.Generic;
 using SmartRenamer.Models;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
+
+// Begin namespace
 {
     /// <summary>
     /// =========================================================================
@@ -15,10 +20,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     ///
     /// Responsibilities
     /// -------------------------------------------------------------------------
+    /// • Coordinate organization Blocks.
     /// • Coordinate organization Consultants.
-    /// • Investigate series information.
-    /// • Investigate author organization.
-    /// • Investigate collections and folder structure.
+    /// • Evaluate series organization.
+    /// • Evaluate author organization.
     /// • Collect observations.
     /// • Report findings back to the Ebook Expert.
     ///
@@ -31,18 +36,39 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     /// Those responsibilities belong to Consultants and Blocks.
     /// =========================================================================
     /// </summary>
-    public class E_OrganizationInvestigation
+    public sealed class E_OrganizationInvestigation
+
+    // Begin E_OrganizationInvestigation
     {
         public List<ExpertFinding> Investigate(
-            IReadOnlyList<FileContext> files)
+            MetadataReport metadataReport)
+
+        // Begin Investigate()
         {
             List<ExpertFinding> findings = new();
 
-            // Organization investigation has not yet been implemented.
-            // This Investigation exists as a completed architectural
-            // component and will gain Consultants in future iterations.
+            //---------------------------------------------------------
+            // Ask the Block to discover facts.
+            //---------------------------------------------------------
+
+            OrganizationBlock block = new();
+
+            OrganizationReport report =
+                block.Analyze(metadataReport);
+
+            //---------------------------------------------------------
+            // Ask the Consultant to interpret those facts.
+            //---------------------------------------------------------
+
+            E_OrganizationConsultant consultant = new();
+
+            findings.AddRange(
+                consultant.Review(report));
 
             return findings;
-        }
-    }
-}
+
+        } // End Investigate()
+
+    } // End E_OrganizationInvestigation
+
+} // End namespace

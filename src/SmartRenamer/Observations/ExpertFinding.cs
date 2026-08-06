@@ -10,32 +10,56 @@ namespace SmartRenamer.Observations
     ///
     /// Motto
     /// -------------------------------------------------------------------------
-    /// "Capture what a Specialist discovered."
+    /// "Capture what an Investigation discovered.
     ///
     /// Purpose
     /// -------------------------------------------------------------------------
-    /// Represents a single finding produced by an ObservationSpecialist.
+    /// Represents a single finding produced by an Investigation.
+    ///
     /// A finding contains both human-readable information and structured
-    /// ObservationSignals that Experts can reason about.
+    /// ObservationSignals that Scout can reason about.
+    ///
+    /// ExpertFindings are the primary communication contract between
+    /// Investigations and the rest of the Scout system.
     ///
     /// Responsibilities
     /// -------------------------------------------------------------------------
-    /// • Describe what was discovered
-    /// • Record supporting evidence
-    /// • Record unanswered questions
-    /// • Provide structured ObservationSignals
+    /// • Describe what was discovered.
+    /// • Record supporting evidence.
+    /// • Record unanswered questions.
+    /// • Provide structured ObservationSignals.
+    /// • Provide a consistent communication contract for the UI.
     ///
     /// Relationship to Scout
     /// -------------------------------------------------------------------------
-    /// ObservationSpecialist
-    ///         ↓
-    ///     ExpertFinding
-    ///         ↓
-    ///     MusicExpert
-    ///         ↓
-    ///    ExpertInsight
+    /// Block
+    ///   ↓
+    /// Report
+    ///   ↓
+    /// Consultant
+    ///   ↓
+    /// ExpertFinding
+    ///   ↓
+    /// ObservationExpert
+    ///   ↓
+    /// Scout
     /// =========================================================================
     /// </summary>
+    /// 
+    ///
+    /// Design Principles
+    /// -------------------------------------------------------------------------
+    /// Every ExpertFinding should answer four questions:
+    ///
+    /// • What was discovered?      (Summary)
+    /// • Why was it reported?      (Evidence)
+    /// • How certain is it?        (Confidence)
+    /// • What should happen next?  (Questions)
+    ///
+    /// These principles help ensure every Investigation communicates in a
+    /// consistent manner regardless of domain.
+    ///
+
     public class ExpertFinding
     {
         /// <summary>
@@ -44,7 +68,8 @@ namespace SmartRenamer.Observations
         public bool FoundSomething { get; init; }
 
         /// <summary>
-        /// One-sentence summary for the Expert.
+        /// A concise human-readable summary of the finding.
+        /// This becomes the primary headline shown by Scout.
         /// </summary>
         public string Summary { get; init; } = string.Empty;
 
@@ -54,19 +79,22 @@ namespace SmartRenamer.Observations
         public double Confidence { get; init; }
 
         /// <summary>
-        /// Facts observed while investigating.
+        /// Supporting facts that explain why this finding was reported.
+        /// Intended primarily for people.
         /// Intended for human consumption.
         /// </summary>
         public List<string> Evidence { get; } = new();
 
         /// <summary>
-        /// Structured observations that Experts use for reasoning.
+        /// Structured observations that Scout uses for reasoning.
+        /// Intended primarily for software rather than people.
         /// Intended for software rather than people.
         /// </summary>
         public List<ObservationSignal> Signals { get; } = new();
 
         /// <summary>
-        /// Additional things this Specialist would like to investigate later.
+        /// Additional questions or follow-up investigations suggested by
+        /// this finding
         /// </summary>
         public List<string> Questions { get; } = new();
     }

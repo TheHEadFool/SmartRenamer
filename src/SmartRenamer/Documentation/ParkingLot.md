@@ -13,3 +13,4 @@ Series organization
 Alphabetical organization
 Library Health
 Confidence scoring
+Online folder access

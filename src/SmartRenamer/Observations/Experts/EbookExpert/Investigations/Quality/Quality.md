@@ -13,6 +13,7 @@ Evaluate the overall health of the ebook collection.
 - Are ebook files healthy?
 - Are required resources missing?
 - Are books internally consistent?
+- Which books should be reviewed first?
 
 ---
 

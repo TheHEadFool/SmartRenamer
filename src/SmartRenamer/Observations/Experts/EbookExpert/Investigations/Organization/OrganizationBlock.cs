@@ -1,5 +1,7 @@
 ﻿using SmartRenamer.Models;
 using SmartRenamer.Observations.BuildingBlocks;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Models;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using System;
 using System.Collections.Generic;
 
@@ -41,36 +43,42 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
         private readonly Dictionary<string, List<string>> _publishers =
     new(StringComparer.OrdinalIgnoreCase);
 
+        private readonly Dictionary<string, List<string>> _languages =
+    new(StringComparer.OrdinalIgnoreCase);
+
         //---------------------------------------------------------
 
         public OrganizationReport Analyze(
-            IReadOnlyList<FileContext> files)
+    MetadataReport metadataReport)
         {
             OrganizationReport report = new();
 
             _series.Clear();
             _publishers.Clear();
+            _languages.Clear();
 
-            foreach (FileContext file in files)
+            foreach (MetadataRecord record in metadataReport.Records)
             {
-                if (!file.Extension.Equals(
-                        ".epub",
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
+                FileContext file = record.File;
+                E_EbookMetadata metadata = record.Metadata;
 
-                E_EbookMetadata? metadata =
-                    E_EbookMetadataReader.Read(file);
-
-                if (metadata == null)
+                if (string.IsNullOrWhiteSpace(metadata.Series))
                 {
-                    continue;
+                    report.BooksWithoutSeries++;
                 }
 
                 CollectSeries(
                     metadata,
                     file);
+
+                CollectPublisher(
+                    metadata,
+                    file);
+
+                CollectLanguage(
+                    metadata,
+                    file);
+
             }
 
             BuildSeriesReport(report);
@@ -105,12 +113,64 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
             books.Add(file.CurrentName);
         }
 
+        private void CollectPublisher(
+    E_EbookMetadata metadata,
+    FileContext file)
+        {
+            if (string.IsNullOrWhiteSpace(metadata.Publisher))
+            {
+                return;
+            }
+
+            if (!_publishers.TryGetValue(
+                    metadata.Publisher,
+                    out List<string>? books))
+            {
+                books = new List<string>();
+
+                _publishers.Add(
+                    metadata.Publisher,
+                    books);
+            }
+
+            books.Add(file.CurrentName);
+        }
         //---------------------------------------------------------
+
+        private void CollectLanguage(
+    E_EbookMetadata metadata,
+    FileContext file)
+        {
+            if (string.IsNullOrWhiteSpace(metadata.Language))
+            {
+                return;
+            }
+
+            if (!_languages.TryGetValue(
+                    metadata.Language,
+                    out List<string>? books))
+            {
+                books = new List<string>();
+
+                _languages.Add(
+                    metadata.Language,
+                    books);
+            }
+
+            books.Add(file.CurrentName);
+        }
 
         private void BuildSeriesReport(
             OrganizationReport report)
+
+            
         {
+
             report.SeriesCount = _series.Count;
+
+            report.PublisherCount = _publishers.Count;
+
+            report.LanguageCount = _languages.Count;
 
             foreach (KeyValuePair<string, List<string>> pair in _series)
             {

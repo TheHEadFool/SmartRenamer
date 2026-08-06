@@ -1,59 +1,55 @@
-﻿using SmartRenamer.Models;
+﻿using System.Collections.Generic;
+using SmartRenamer.Models;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
-using System.Collections.Generic;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Contents;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
+
+// Begin namespace
 {
     /// <summary>
     /// =========================================================================
     /// E_ContentsInvestigation
     /// =========================================================================
     ///
-    /// Purpose
-    /// -------------------------------------------------------------------------
     /// Coordinates content-related investigations performed by the
     /// Ebook Expert.
-    ///
-    /// Responsibilities
-    /// -------------------------------------------------------------------------
-    /// • Coordinate content Consultants.
-    /// • Investigate covers, chapters, tables of contents, and other
-    ///   embedded ebook content.
-    /// • Collect observations.
-    /// • Report findings back to the Ebook Expert.
-    ///
-    /// This Investigation does NOT
-    /// -------------------------------------------------------------------------
-    /// • Read ebook files directly.
-    /// • Modify ebook content.
-    /// • Communicate with Scout.
-    ///
-    /// Those responsibilities belong to Consultants and Blocks.
     /// =========================================================================
     /// </summary>
-    public class E_ContentsInvestigation
+    public sealed class E_ContentsInvestigation
+
+    // Begin E_ContentsInvestigation
     {
-        //---------------------------------------------------------
-        // Consultants
-        //---------------------------------------------------------
-        // Each Consultant investigates one specific aspect of the
-        // ebook's contents. Consultants never communicate directly
-        // with Scout and never modify files.
-        //---------------------------------------------------------
-
-        private readonly TableOfContentsConsultant _tableOfContents = new();
-
-        //---------------------------------------------------------
-
         public List<ExpertFinding> Investigate(
-            IReadOnlyList<FileContext> files)
+            MetadataReport metadataReport)
+
+        // Begin Investigate()
         {
             List<ExpertFinding> findings = new();
 
-            findings.Add(
-                _tableOfContents.Observe(files));
+            //---------------------------------------------------------
+            // Ask the Block to discover facts.
+            //---------------------------------------------------------
+
+            ContentsBlock block = new();
+
+            ContentsReport report =
+                block.Analyze(metadataReport);
+
+            //---------------------------------------------------------
+            // Ask the Consultant to interpret those facts.
+            //---------------------------------------------------------
+
+            TableOfContentsConsultant consultant = new();
+
+            findings.AddRange(
+                consultant.Review(report));
 
             return findings;
-        }
-    }
-}
+
+        } // End Investigate()
+
+    } // End E_ContentsInvestigation
+
+} // End namespace

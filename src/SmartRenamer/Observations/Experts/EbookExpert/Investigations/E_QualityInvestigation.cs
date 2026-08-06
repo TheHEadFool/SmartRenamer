@@ -1,7 +1,12 @@
 ﻿using System.Collections.Generic;
 using SmartRenamer.Models;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Quality;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
+
+// Begin namespace
 {
     /// <summary>
     /// =========================================================================
@@ -15,35 +20,54 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     ///
     /// Responsibilities
     /// -------------------------------------------------------------------------
+    /// • Coordinate quality Blocks.
     /// • Coordinate quality Consultants.
     /// • Evaluate the overall health of the ebook library.
-    /// • Detect missing or incomplete metadata.
-    /// • Detect missing or poor-quality covers.
-    /// • Detect damaged or inconsistent ebook files.
     /// • Collect observations.
     /// • Report findings back to the Ebook Expert.
     ///
     /// This Investigation does NOT
     /// -------------------------------------------------------------------------
-    /// • Repair ebook files.
-    /// • Modify metadata.
+    /// • Read ebook files directly.
+    /// • Modify ebook files.
     /// • Communicate with Scout.
     ///
     /// Those responsibilities belong to Consultants and Blocks.
     /// =========================================================================
     /// </summary>
-    public class E_QualityInvestigation
+    public sealed class E_QualityInvestigation
+
+    // Begin E_QualityInvestigation
     {
         public List<ExpertFinding> Investigate(
-            IReadOnlyList<FileContext> files)
+            MetadataReport metadataReport)
+
+        // Begin Investigate()
         {
             List<ExpertFinding> findings = new();
 
-            // Quality investigation has not yet been implemented.
-            // This Investigation exists as a completed architectural
-            // component and will gain Consultants in future iterations.
+            //---------------------------------------------------------
+            // Ask the Block to discover facts.
+            //---------------------------------------------------------
+
+            E_QualityBlock block = new();
+
+            QualityReport report =
+                block.Analyze(metadataReport);
+
+            //---------------------------------------------------------
+            // Ask the Consultant to interpret those facts.
+            //---------------------------------------------------------
+
+            E_QualityConsultant consultant = new();
+
+            findings.AddRange(
+                consultant.Review(report));
 
             return findings;
-        }
-    }
-}
+
+        } // End Investigate()
+
+    } // End E_QualityInvestigation
+
+} // End namespace

@@ -35,6 +35,11 @@ EnrichmentReport
 - Open Library Client
 - ISBN Lookup
 - Cover Download Block
+- Author Collection Completeness
+- Series Completeness
+- Missing Works
+- Recommended Next Books
+- Similar Authors
 
 ---
 

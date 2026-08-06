@@ -382,6 +382,15 @@ Commit
 
 Never continue development while the build is broken.
 
+
+# Observations answer:
+
+What do I know?
+
+# Capabilities answer:
+
+What can I do?
+
 ---
 
 # Coding Standards

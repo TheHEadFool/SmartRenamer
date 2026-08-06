@@ -4,6 +4,20 @@
 
 Determine relationships between multiple copies of the same work.
 
+## Version 1 Scope
+
+Version 1 detects:
+
+- Duplicate filenames
+- Duplicate ISBNs
+- Multiple editions
+
+Future versions may add:
+
+- File hash comparison
+- Fuzzy title matching
+- Duplicate content detection
+
 ---
 
 ## Questions Answered
@@ -33,8 +47,14 @@ DuplicateReport
 ## Future Blocks
 
 - Hash Calculator
+
 - ISBN Matcher
+
 - Filename Comparison
+
+- Title Comparison
+
+- Edition Detector
 
 ---
 

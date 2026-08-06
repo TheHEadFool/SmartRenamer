@@ -1,7 +1,11 @@
 ﻿using System.Collections.Generic;
 using SmartRenamer.Models;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Duplicates;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
+
+// Begin namespace
 {
     /// <summary>
     /// =========================================================================
@@ -15,9 +19,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     ///
     /// Responsibilities
     /// -------------------------------------------------------------------------
+    /// • Coordinate duplicate Blocks.
     /// • Coordinate duplicate Consultants.
     /// • Detect duplicate ebook files.
-    /// • Detect multiple editions of the same title.
+    /// • Detect duplicate metadata.
     /// • Collect observations.
     /// • Report findings back to the Ebook Expert.
     ///
@@ -30,18 +35,39 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     /// Those responsibilities belong to Consultants and Blocks.
     /// =========================================================================
     /// </summary>
-    public class E_DuplicateInvestigation
+    public sealed class E_DuplicateInvestigation
+
+    // Begin E_DuplicateInvestigation
     {
         public List<ExpertFinding> Investigate(
             IReadOnlyList<FileContext> files)
+
+        // Begin Investigate()
         {
             List<ExpertFinding> findings = new();
 
-            // Duplicate investigation has not yet been implemented.
-            // This Investigation exists as a completed architectural
-            // component and will gain Consultants in future iterations.
+            //---------------------------------------------------------
+            // Ask the Block to discover facts.
+            //---------------------------------------------------------
+
+            E_DuplicateBlock block = new();
+
+            E_DuplicateReport report =
+                block.Analyze(files);
+
+            //---------------------------------------------------------
+            // Ask the Consultant to interpret those facts.
+            //---------------------------------------------------------
+
+            E_DuplicateConsultant consultant = new();
+
+            findings.AddRange(
+                consultant.Review(report));
 
             return findings;
-        }
-    }
-}
+
+        } // End Investigate()
+
+    } // End E_DuplicateInvestigation
+
+} // End namespace

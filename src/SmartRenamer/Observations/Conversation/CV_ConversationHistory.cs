@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Scout.Observations.Conversation
 {
-    internal class CV_ConversationHistory
+    public sealed class CV_ConversationHistory
     {
     }
 }

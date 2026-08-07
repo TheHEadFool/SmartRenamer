@@ -640,3 +640,43 @@ Each framework owns one responsibility and communicates
 only through shared contracts.
 
 
+# A new class should only be created when it immediately participates in the running system.
+
+
+
+## Conversation Framework Completed
+
+Established the Conversation Framework as a peer to the Observation Framework.
+Added CV_ConversationEngine as the root object responsible for conversation state.
+
+Defined ownership of:
+    Current Topic
+    Recommendation Selector
+    Conversation Planner
+    Conversation History
+    User Intent
+    Active Recommendations
+Confirmed architectural boundary:
+    Experts produce ExpertFinding.
+    Expert-owned Translators produce CV_Recommendation.
+    The Conversation Framework begins with CV_Recommendation.
+Decided that the Conversation Framework remains domain-agnostic and knows nothing about ebook, music, photo, or document analysis.
+Next Session
+
+Wire the Ebook Expert into the Conversation Framework:
+
+EbookExpert
+    ↓
+ExpertFinding
+    ↓
+E_RecommendationTranslator
+    ↓
+CV_Recommendation
+    ↓
+CV_ConversationEngine
+    ↓
+CurrentTopic
+    ↓
+UI
+
+

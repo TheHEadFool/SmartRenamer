@@ -2,6 +2,17 @@
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization;
 
+// Future:
+//
+// Consultants classify findings as:
+//
+// Observation
+// Opportunity
+// Warning
+//
+// The Conversation Planner will use these classifications
+// to determine which findings should become conversations.
+
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants
 {
     internal sealed class E_OrganizationConsultant

@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Scout.Observations.Conversation
 {
-    internal class CV_UserIntent
+    public sealed class CV_UserIntent
     {
     }
 }

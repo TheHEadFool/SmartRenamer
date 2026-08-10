@@ -170,3 +170,125 @@ Scout communicates the final experience to the user.
 This separation keeps research independent from interpretation 
 and allows additional research assistants to be added without 
 changing existing investigations.
+
+/// =========================================================================
+/// Scout Design Law #1
+/// =========================================================================
+///
+/// Every class that represents domain knowledge must be generatable
+/// from an interview.
+///
+/// If Scout cannot generate the class from structured interview
+/// responses, then either:
+///
+/// • the class is incomplete,
+/// • the interview is incomplete,
+/// • or the architecture needs improvement.
+///
+/// Every completed class produces:
+///
+/// • the implementation,
+/// • the generation template,
+/// • the interview definition,
+/// • the ChatGPT prompt schema.
+///
+/// The implementation is never considered complete until all four
+/// artifacts exist.
+///
+/// =========================================================================
+
+Scout Design Law #2
+
+Scout never asks for information it can reasonably infer.
+
+For example:
+
+If the user says:
+
+"I'm organizing MP3 files."
+
+Scout already knows:
+
+there will probably be artists,
+albums,
+genres,
+years,
+track numbers.
+
+It shouldn't ask all of those immediately.
+
+Instead it says:
+
+"I believe artist, album, genre, year and track number are common pieces of music metadata. Are those important for your collection?"
+
+Now the user is confirming or correcting, not inventing.
+
+Another design law.
+Scout Design Law #3
+
+Information is collected incrementally.
+
+Never try to build an Expert in one conversation.
+
+Instead:
+
+Interview 1
+    ↓
+Create Investigation
+
+Interview 2
+    ↓
+Create Consultant
+
+Interview 3
+    ↓
+Create Translator
+
+Interview 4
+    ↓
+Create Signals
+
+That solves the context window problem naturally.
+
+ Scout Design Law #4
+
+ ChatGPT never generates Scout architecture. It generates structured domain knowledge.
+
+Scout owns:
+
+    Architecture
+    Templates
+    Assembly
+    Validation
+    Integration
+
+ChatGPT owns:
+
+    Domain knowledge
+    Taxonomies
+    Metadata locations
+    File formats
+    Common organization strategies
+    Common repair strategies
+    Best practices
+
+   That separation of responsibilities gives you something very powerful: 
+as Scout's architecture evolves, you update the templates once, 
+while the same Knowledge Package format can continue to populate 
+those templates. It keeps the software engineering decisions inside 
+Scout and uses ChatGPT where it provides the most leverage—building 
+comprehensive, structured knowledge that can be dropped into the 
+Expert Factory in a single copy/paste operation. I think that's the 
+architecture that will scale.
+
+Scout Design Law #5
+
+The user supplies intent. ChatGPT supplies domain knowledge. Scout supplies architecture.
+
+That means responsibility is perfectly divided:
+
+User: "I want to organize..."
+Scout: "I know how Experts are built."
+ChatGPT: "I know this domain."
+
+None of them are asked to do the other's job.

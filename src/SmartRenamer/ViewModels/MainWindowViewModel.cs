@@ -61,9 +61,7 @@ namespace SmartRenamer.ViewModels
         {
             currentWorkflow = result;
 
-            Workspace.Load(
-    result,
-    recommendationBuilder.Build(result));
+            LoadConversation(result);
         }
 
         private void Guide_PlanApproved(object? sender, EventArgs e)
@@ -129,6 +127,13 @@ namespace SmartRenamer.ViewModels
             }
         }
 
+        private void LoadConversation(
+    WorkflowResult workflow)
+        {
+            Workspace.Load(
+                workflow,
+                recommendationBuilder.Build(workflow));
+        }
         private void ExecuteRecommendation(object? parameter)
         {
             if (parameter is not Recommendation recommendation)

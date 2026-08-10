@@ -3,6 +3,8 @@ using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations;
 using SmartRenamer.Observations.Specialists;
 using System.Collections.Generic;
+using Scout.Observations.Conversation;
+using SmartRenamer.Observations.Experts.EbookExpert.Translators;
 
 namespace SmartRenamer.Observations
 
@@ -121,6 +123,22 @@ namespace SmartRenamer.Observations
             return findings;
 
         } // End Investigate()
+
+        public override List<CV_Recommendation> BuildRecommendations(
+    IReadOnlyList<ExpertFinding> findings)
+        {
+            E_RecommendationTranslator translator = new();
+
+            List<CV_Recommendation> recommendations = new();
+
+            foreach (ExpertFinding finding in findings)
+            {
+                recommendations.Add(
+                    translator.Translate(finding));
+            }
+
+            return recommendations;
+        }
 
     } // End EbookExpert
 

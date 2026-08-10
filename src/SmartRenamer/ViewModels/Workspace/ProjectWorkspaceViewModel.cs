@@ -1,4 +1,5 @@
-﻿using SmartRenamer.Infrastructure;
+﻿using Scout.Observations.Conversation;
+using SmartRenamer.Infrastructure;
 using SmartRenamer.Models;
 using SmartRenamer.Models.Recommendations;
 using SmartRenamer.Models.Rename;
@@ -76,6 +77,23 @@ namespace SmartRenamer.ViewModels.Workspace
 
             SelectedObservation = observation;
         }
+
+        //---------------------------------------------------------
+        // Conversation
+        //---------------------------------------------------------
+
+        public CV_CurrentTopic CurrentTopic { get; }
+            = new();
+
+        //---------------------------------------------------------
+        // Legacy Recommendation Panel
+        // TODO (Generation 2)
+        //
+        // Replace this collection with the Conversation Framework.
+        // The UI should ultimately bind to CurrentTopic instead of
+        // a collection of Recommendation objects.
+        //---------------------------------------------------------
+
         public ObservableCollection<Recommendation> Recommendations { get; }
             = new();
 

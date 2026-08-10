@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using Scout.Observations.Conversation;
 using SmartRenamer.Models;
 
 namespace SmartRenamer.Observations
@@ -10,9 +11,10 @@ namespace SmartRenamer.Observations
     ///
     /// Hosts all Observation Experts.
     ///
-    /// The ObservationEngine knows which Experts are available.
-    /// It asks each Expert to investigate the supplied files and
-    /// gathers every ExpertFinding into a single collection.
+    /// Scout communicates only with the ObservationEngine.
+    /// The ObservationEngine coordinates Experts, gathers their
+    /// findings, then asks each Expert to translate those findings
+    /// into conversation-ready recommendations.
     ///
     /// =========================================================================
     /// </summary>
@@ -24,18 +26,21 @@ namespace SmartRenamer.Observations
             new EbookExpert()
         ];
 
-        public List<ExpertFinding> Observe(
+        public List<CV_Recommendation> Observe(
             IReadOnlyList<FileContext> files)
         {
-            List<ExpertFinding> findings = new();
+            List<CV_Recommendation> recommendations = new();
 
             foreach (ObservationExpert expert in _experts)
             {
-                findings.AddRange(
-                    expert.Investigate(files));
+                List<ExpertFinding> findings =
+                    expert.Investigate(files);
+
+                recommendations.AddRange(
+                    expert.BuildRecommendations(findings));
             }
 
-            return findings;
+            return recommendations;
         }
     }
 }

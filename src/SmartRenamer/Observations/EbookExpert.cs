@@ -10,19 +10,69 @@ namespace SmartRenamer.Observations
 
 // Begin namespace
 {
-    /// <summary>
-    /// =========================================================================
-    /// EbookExpert
-    /// =========================================================================
-    ///
-    /// Scout asks this expert whenever it wants to understand whether a folder
-    /// contains a meaningful collection of ebooks.
-    ///
-    /// The Ebook Expert coordinates a series of Investigations. Each
-    /// Investigation asks one or more Blocks to discover facts, then asks
-    /// Consultants to interpret those facts into ExpertFindings.
-    /// =========================================================================
-    /// </summary>
+    // =========================================================================
+    // PROJECT STATUS
+    // =========================================================================
+    //
+    // WHY THIS CLASS EXISTS
+    // -------------------------------------------------------------------------
+    // The EbookExpert is Scout's reference implementation of a complete
+    // Observation Expert. It demonstrates the architecture that every future
+    // Expert should follow.
+    //
+    // It coordinates Investigations, produces ExpertFindings, and translates
+    // those findings into conversation-ready recommendations that Scout can
+    // present to the user.
+    //
+    // CURRENT MILESTONE
+    // -------------------------------------------------------------------------
+    // Display Ebook Expert recommendations in the existing UI.
+    //
+    // CURRENT STATUS
+    // -------------------------------------------------------------------------
+    // ✓ Observation architecture complete
+    // ✓ Investigation pipeline complete
+    // ✓ Report pipeline complete
+    // ✓ Consultant pipeline complete
+    // ✓ ExpertFinding pipeline complete
+    // ✓ Recommendation translation implemented
+    // ☐ Recommendation pipeline connected to existing UI
+    // ☐ Conversation integration complete
+    //
+    // CURRENTLY DRIVING
+    // -------------------------------------------------------------------------
+    // The Recommendation panel (left side of the UI).
+    //
+    // The information produced here will determine:
+    //
+    // • Which recommendation buttons appear.
+    // • Which actions Scout can perform immediately.
+    // • Which conversation topics Scout can introduce.
+    //
+    // Recommendation buttons and Scout's conversation always represent the
+    // same underlying understanding of the user's project.
+    //
+    // DO NOT CHANGE UNTIL
+    // -------------------------------------------------------------------------
+    // The Ebook Expert is successfully driving the Recommendation panel.
+    //
+    // Avoid adding new architecture or renaming classes until the current UI
+    // demonstrates what information the Expert already provides.
+    //
+    // EXPERT FACTORY
+    // -------------------------------------------------------------------------
+    // YES
+    //
+    // This class is intended to become the template for future Experts.
+    //
+    // When complete, Scout should be able to generate an Expert with this
+    // structure from an interview and a ChatGPT Knowledge Package.
+    //
+    // NEXT STEP
+    // -------------------------------------------------------------------------
+    // Connect the translated recommendations produced by this Expert to the
+    // existing Recommendation panel without replacing the current UI.
+    // =========================================================================
     public sealed class EbookExpert
 
     // Begin EbookExpert

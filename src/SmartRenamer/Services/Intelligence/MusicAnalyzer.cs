@@ -1,12 +1,53 @@
 ﻿using SmartRenamer.Models;
 using SmartRenamer.Models.Analysis;
-using SmartRenamer.Observations;
 
 namespace SmartRenamer.Services.Intelligence
 {
     /// <summary>
-    /// Determines whether a project appears to be
-    /// primarily a music collection.
+    /// =========================================================================
+    /// MusicAnalyzer
+    /// =========================================================================
+    ///
+    /// Determines whether a project appears to be primarily a music collection.
+    ///
+    /// =========================================================================
+    /// PROJECT STATUS
+    /// =========================================================================
+    ///
+    /// CURRENT ROLE
+    /// -------------------------------------------------------------------------
+    /// MusicAnalyzer performs project-level classification.
+    ///
+    /// It does NOT directly invoke MusicExpert.
+    ///
+    /// The Observation Framework now owns Expert execution:
+    ///
+    ///     ProjectWorkflow
+    ///          ↓
+    ///     ObservationEngine
+    ///          ↓
+    ///     MusicExpert
+    ///
+    /// This separation is intentional.
+    ///
+    /// CURRENT MILESTONE
+    /// -------------------------------------------------------------------------
+    /// Preserve the existing Music Analyzer behavior while allowing the new
+    /// Observation Framework to become the single path to MusicExpert.
+    ///
+    /// FUTURE MUSIC WORK
+    /// -------------------------------------------------------------------------
+    /// MusicExpert will later be rebuilt through Scout's Expert-creation
+    /// process. This analyzer should remain focused on recognizing the
+    /// project type rather than becoming a second Music Expert.
+    ///
+    /// DO NOT
+    /// -------------------------------------------------------------------------
+    /// • Call MusicExpert directly from this analyzer.
+    /// • Add music-domain investigation here.
+    /// • Add recommendation logic here.
+    ///
+    /// =========================================================================
     /// </summary>
     public class MusicAnalyzer : IProjectAnalyzer
     {
@@ -23,6 +64,10 @@ namespace SmartRenamer.Services.Intelligence
                 return result;
 
             FolderSummary folder = context.Folder;
+
+            //--------------------------------------------------
+            // Identify music files.
+            //--------------------------------------------------
 
             int musicFiles = 0;
 
@@ -41,6 +86,11 @@ namespace SmartRenamer.Services.Intelligence
                         break;
                 }
             }
+
+            //--------------------------------------------------
+            // Determine whether this appears to be a music
+            // collection.
+            //--------------------------------------------------
 
             int score = 0;
 
@@ -62,6 +112,10 @@ namespace SmartRenamer.Services.Intelligence
             if (score > 100)
                 score = 100;
 
+            //--------------------------------------------------
+            // Build project profile.
+            //--------------------------------------------------
+
             ProjectProfile profile = new()
             {
                 ProjectType = "Music",
@@ -71,14 +125,14 @@ namespace SmartRenamer.Services.Intelligence
             result.Confidence = score;
 
             //--------------------------------------------------
-            // Ask the Music Expert to investigate.
+            // Project-level observation.
             //--------------------------------------------------
-
-            MusicExpert expert = new();
-            expert.Observe(folder.FileContexts);
-
-            //--------------------------------------------------
-            // Existing observation.
+            //
+            // MusicExpert is intentionally NOT called here.
+            //
+            // The ObservationEngine is now the single integration
+            // point for domain Experts. This prevents MusicAnalyzer
+            // and MusicExpert from becoming competing paths.
             //--------------------------------------------------
 
             profile.Observations.Add(new ProjectObservation
@@ -86,7 +140,7 @@ namespace SmartRenamer.Services.Intelligence
                 Title = "Audio Collection",
 
                 Description =
-    "Scout recognized patterns consistent with an audio collection.",
+                    "Scout recognized patterns consistent with an audio collection.",
 
                 WhyItMatters =
                     "Recognizing a music collection allows Scout to provide organization recommendations that are appropriate for audio libraries.",

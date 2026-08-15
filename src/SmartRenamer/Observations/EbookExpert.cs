@@ -137,6 +137,18 @@ namespace SmartRenamer.Observations
 
             MetadataReport metadataReport =
                 _metadataInvestigation.Investigate(files);
+            //---------------------------------------------------------
+            // Metadata ExpertFindings
+            //---------------------------------------------------------
+            //
+            // Metadata research is shared with downstream Investigations,
+            // but the Metadata Consultant also produces findings that belong
+            // in the Ebook Expert's overall understanding.
+            //
+            //---------------------------------------------------------
+
+            findings.AddRange(
+                _metadataInvestigation.Findings);
 
             //---------------------------------------------------------
             // Completed Generation 2 Investigations

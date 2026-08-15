@@ -8,13 +8,13 @@
                TargetType="Button">
 
             <Setter Property="Foreground"
-                    Value="White"/>
+                    Value="{StaticResource ConversationHeaderTextBrush}"/>
 
             <Setter Property="Background"
-                    Value="#2563EB"/>
+                    Value="{StaticResource ConversationSendBrush}"/>
 
             <Setter Property="BorderBrush"
-                    Value="#1D4ED8"/>
+                    Value="{StaticResource ConversationSendBorderBrush}"/>
 
             <Setter Property="BorderThickness"
                     Value="1"/>
@@ -50,7 +50,7 @@
 
                                 <Setter TargetName="border"
                                         Property="Background"
-                                        Value="#3B82F6"/>
+                                        Value="{StaticResource ConversationSendHoverBrush}"/>
 
                             </Trigger>
 
@@ -59,7 +59,7 @@
 
                                 <Setter TargetName="border"
                                         Property="Background"
-                                        Value="#1E40AF"/>
+                                        Value="{StaticResource ConversationSendPressedBrush}"/>
 
                             </Trigger>
 
@@ -87,8 +87,8 @@
     <Grid Background="{StaticResource BackgroundBrush}">
 
         <Border Margin="8"
-                Background="White"
-                BorderBrush="#D8DEE8"
+                Background="{StaticResource CardBrush}"
+                BorderBrush="{StaticResource ConversationBorderBrush}"
                 BorderThickness="1"
                 CornerRadius="24">
 
@@ -104,8 +104,10 @@
 
                 </Grid.RowDefinitions>
 
+                <!-- Conversation Header -->
+
                 <Border Grid.Row="0"
-                        Background="#2563EB"
+                        Background="{StaticResource ConversationHeaderBrush}"
                         CornerRadius="24,24,0,0"
                         Padding="18">
 
@@ -115,19 +117,21 @@
                             HorizontalAlignment="Center"
                             FontSize="22"
                             FontWeight="Bold"
-                            Foreground="White"
+                            Foreground="{StaticResource ConversationHeaderTextBrush}"
                             Text="Scout"/>
 
                         <TextBlock
                             Margin="0,6,0,0"
                             HorizontalAlignment="Center"
                             FontSize="13"
-                            Foreground="#DCE9FF"
+                            Foreground="{StaticResource ConversationSubtitleBrush}"
                             Text="Helping you Navigate your FILE Safari"/>
 
                     </StackPanel>
 
                 </Border>
+
+                <!-- Conversation Messages -->
 
                 <ListBox
                     x:Name="ConversationList"
@@ -148,24 +152,24 @@
                                 <!-- Text Message -->
 
                                 <Border
-            Padding="10"
-            Background="#EEF5FF"
-            CornerRadius="12">
+                                    Padding="10"
+                                    Background="{StaticResource ConversationBubbleBrush}"
+                                    CornerRadius="12">
 
                                     <Border.Style>
 
                                         <Style TargetType="Border">
 
                                             <Setter Property="Visibility"
-                            Value="Visible"/>
+                                                    Value="Visible"/>
 
                                             <Style.Triggers>
 
                                                 <DataTrigger Binding="{Binding Text}"
-                                     Value="">
+                                                             Value="">
 
                                                     <Setter Property="Visibility"
-                                    Value="Collapsed"/>
+                                                            Value="Collapsed"/>
 
                                                 </DataTrigger>
 
@@ -176,16 +180,16 @@
                                     </Border.Style>
 
                                     <TextBlock
-    Text="{Binding Text}"
-    TextWrapping="Wrap"/>
+                                        Text="{Binding Text}"
+                                        TextWrapping="Wrap"/>
 
                                 </Border>
 
                                 <!-- Rich Card -->
 
                                 <ContentPresenter
-            Margin="0,10,0,0"
-            Content="{Binding Card}" />
+                                    Margin="0,10,0,0"
+                                    Content="{Binding Card}" />
 
                             </StackPanel>
 
@@ -195,9 +199,11 @@
 
                 </ListBox>
 
+                <!-- Conversation Input -->
+
                 <Border Grid.Row="2"
-                        Background="White"
-                        BorderBrush="#E5E7EB"
+                        Background="{StaticResource ConversationInputBrush}"
+                        BorderBrush="{StaticResource ConversationBorderBrush}"
                         BorderThickness="1,0,0,0"
                         Padding="10">
 
@@ -232,7 +238,9 @@
                             Height="32"
                             VerticalAlignment="Center"
                             Content="Send"
-                            Command="{Binding SendCommand}"/>
+                            Command="{Binding SendCommand}"
+                            Style="{StaticResource RoundedSendButton}"/>
+                            
 
                     </Grid>
 

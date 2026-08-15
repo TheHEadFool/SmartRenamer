@@ -54,4 +54,46 @@
 
     </Style>
 
+
+    <!-- ===================================================== -->
+    <!-- Conversation Presentation -->
+    <!-- ===================================================== -->
+    <!--
+         Scout owns the ConversationPanel layout.
+         Safari owns the visual presentation of that conversation.
+
+         These resources allow the same Scout conversation layout
+         to be presented differently by different Expeditions.
+    -->
+
+    <SolidColorBrush x:Key="ConversationHeaderBrush"
+                     Color="#28432A"/>
+
+    <SolidColorBrush x:Key="ConversationHeaderTextBrush"
+                     Color="#FFFFFF"/>
+
+    <SolidColorBrush x:Key="ConversationSubtitleBrush"
+                     Color="#D8C38A"/>
+
+    <SolidColorBrush x:Key="ConversationBubbleBrush"
+                 Color="#E3E6D2"/>
+
+    <SolidColorBrush x:Key="ConversationBorderBrush"
+                     Color="#D8DEE8"/>
+
+    <SolidColorBrush x:Key="ConversationInputBrush"
+                     Color="#FFFFFF"/>
+
+    <SolidColorBrush x:Key="ConversationSendBrush"
+                     Color="#B88935"/>
+
+    <SolidColorBrush x:Key="ConversationSendBorderBrush"
+                     Color="#8F6825"/>
+
+    <SolidColorBrush x:Key="ConversationSendHoverBrush"
+                     Color="#C99D4D"/>
+
+    <SolidColorBrush x:Key="ConversationSendPressedBrush"
+                     Color="#76531D"/>
+
 </ResourceDictionary>

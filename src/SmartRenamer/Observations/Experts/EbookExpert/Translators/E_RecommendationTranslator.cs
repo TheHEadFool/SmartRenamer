@@ -17,19 +17,19 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Translators;
 /// Converts Ebook ExpertFindings into user-friendly conversation
 /// recommendations that Scout can discuss with the user.
 ///
-/// Future Responsibilities
+/// Responsibilities
 /// -------------------------------------------------------------------------
 /// • Translate ExpertFindings into CV_Recommendations.
-/// • Preserve evidence.
-/// • Preserve confidence.
-/// • Explain recommendations in user-friendly language.
-/// • Generate questions Scout can ask the user.
+/// • Preserve supporting evidence.
+/// • Preserve follow-up questions.
+/// • Preserve the meaning of the Expert's finding.
 ///
 /// This class does NOT
 /// -------------------------------------------------------------------------
 /// • Analyze files.
 /// • Decide which recommendation is most important.
 /// • Render the user interface.
+/// • Decide which recommendation Scout discusses next.
 ///
 /// Those responsibilities belong to the Ebook Expert,
 /// Conversation Planner, and User Interface.
@@ -45,10 +45,14 @@ public sealed class E_RecommendationTranslator
     {
         CV_Recommendation recommendation = new()
         {
-            // For now, the ExpertFinding summary becomes the
-            // conversational reason. As the architecture evolves,
-            // richer recommendation properties will be translated here.
-            Reason = finding.Summary
+            // The ExpertFinding summary becomes the conversational reason.
+            Reason = finding.Summary,
+
+            // The first follow-up question becomes the question Scout can
+            // use when discussing this recommendation.
+            Question = finding.Questions.Count > 0
+                ? finding.Questions[0]
+                : string.Empty
         };
 
         //---------------------------------------------------------

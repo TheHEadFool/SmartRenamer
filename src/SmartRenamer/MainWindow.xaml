@@ -51,15 +51,44 @@
 
                     <StackPanel Margin="15">
 
-                        <TextBlock
-    FontSize="22"
-    FontWeight="Bold"
-    Text="Scout"/>
+                        <Grid Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
 
-                        <TextBlock
-    Margin="0,6,0,20"
-    Foreground="{StaticResource SecondaryTextBrush}"
-    Text="Choose an observation to explore."/>
+                            <!-- Scout title and description -->
+                            <StackPanel Grid.Column="0"
+                VerticalAlignment="Center">
+
+                                <TextBlock
+            FontSize="22"
+            FontWeight="Bold"
+            Text="Scout"/>
+
+                                <TextBlock
+            Margin="0,6,8,0"
+            Foreground="{StaticResource SecondaryTextBrush}"
+            Text="Choose an observation to explore."
+            TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <!-- Review All -->
+                            <Button
+        Grid.Column="1"
+        Width="96"
+        Height="96"
+        Margin="8,0,0,0"
+        Padding="0"
+        BorderThickness="0"
+        Background="Transparent"
+        ToolTip="Review All">
+
+                                <Image
+            Source="/Expeditions/Safari/Assets/images/ReviewAll.png"
+            Stretch="Uniform"/>
+                            </Button>
+                        </Grid>
 
                         <Border
                 Padding="16"

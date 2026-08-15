@@ -21,6 +21,9 @@ namespace SmartRenamer.ViewModels.Workspace
                     SelectObservation(observation);
                 }
             });
+
+            ReviewAllCommand = new RelayCommand(
+                parameter => ReviewAll());
         }
         private string title = "The Plan";
 
@@ -49,9 +52,14 @@ namespace SmartRenamer.ViewModels.Workspace
 
         public ObservableCollection<ProjectObservation> Observations { get; }
     = new();
+
+        public ObservableCollection<ProjectObservation> ReviewAllObservations { get; }
+    = new();
+
+        public ICommand ReviewAllCommand { get; }
         public ICommand SelectObservationCommand { get; }
 
-        private ProjectObservation? selectedObservation;
+            private ProjectObservation? selectedObservation;
 
         public ProjectObservation? SelectedObservation
         {
@@ -76,6 +84,23 @@ namespace SmartRenamer.ViewModels.Workspace
                 $"SelectObservation called: {observation.Title}");
 
             SelectedObservation = observation;
+        }
+
+        public void ReviewAll()
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "ReviewAll called.");
+
+            ReviewAllObservations.Clear();
+
+            foreach (ProjectObservation observation in Observations
+                .Where(o => o.IsRecommended))
+            {
+                ReviewAllObservations.Add(observation);
+            }
+
+            System.Diagnostics.Debug.WriteLine(
+                $"ReviewAll gathered {ReviewAllObservations.Count} observations.");
         }
 
         //---------------------------------------------------------
@@ -115,41 +140,61 @@ namespace SmartRenamer.ViewModels.Workspace
             // Project Summary
             //------------------------------------------
 
-            
+
             //------------------------------------------
             // Observations
+            //------------------------------------------
+            //
+            // BUTTON PRESENTATION PATH
+            //
+            // The ObservationMapper has already converted the authoritative
+            // ExpertFindings into ProjectObservations.
+            //
+            // The ViewModel does NOT decide which findings are important.
+            // It simply presents the observations supplied by the workflow.
+            //
+            // Every distinct observation remains available as a button.
+            //
+            // Selection is UI state only.
+            // Recommendation status belongs to the observation itself.
             //------------------------------------------
 
             Observations.Clear();
 
             SelectedObservation = null;
 
-            int recommendationCount = 0;
-
             foreach (ProjectObservation observation in
                 result.Project.Observations
                       .OrderByDescending(o => o.Priority)
                       .ThenBy(o => o.Title))
             {
-                if (recommendationCount < 2)
-                {
-                    observation.IsRecommended = true;
-                    observation.IsSelected = true;
-                    recommendationCount++;
-                }
-                else
-                {
-                    observation.IsRecommended = false;
-                    observation.IsSelected = false;
-                }
+                //------------------------------------------
+                // Preserve recommendation state supplied
+                // by the ObservationMapper.
+                //------------------------------------------
 
-                observation.ActionTitle = $"Organize {observation.Title}";
-                observation.ActionDescription = observation.Description;
+                observation.IsSelected = false;
+
+                //------------------------------------------
+                // Add the observation to the button path.
+                //------------------------------------------
 
                 Observations.Add(observation);
             }
 
-            SelectedObservation = Observations.FirstOrDefault();
+            //------------------------------------------
+            // Select the first observation initially.
+            //
+            // This is UI state, not recommendation logic.
+            //------------------------------------------
+
+            SelectedObservation =
+                Observations.FirstOrDefault();
+
+            if (SelectedObservation != null)
+            {
+                SelectedObservation.IsSelected = true;
+            }
 
             //------------------------------------------
             // Scout Recommendations

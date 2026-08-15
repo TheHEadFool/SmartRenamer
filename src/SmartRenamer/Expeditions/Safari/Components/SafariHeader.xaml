@@ -18,7 +18,7 @@
             <!-- Safari Stage -->
             <Viewbox Stretch="Fill">
 
-                <components:SafariStage/>
+                <components:SafariStage />
 
             </Viewbox>
 
@@ -26,9 +26,9 @@
             <Grid Margin="24">
 
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <!-- Left side -->
@@ -37,7 +37,22 @@
                     <Image Source="/Expeditions/Safari/Assets/ScoutSign.png"
                            Width="160"
                            Stretch="Uniform"
-                           HorizontalAlignment="Left"/>
+                           HorizontalAlignment="Left" />
+
+                    <TextBlock Margin="0,8,0,0"
+                               Text="{Binding HeaderTitle}"
+                               FontSize="24"
+                               FontWeight="Bold"
+                               Foreground="White"
+                               HorizontalAlignment="Left" />
+
+                    <TextBlock Margin="0,4,0,0"
+                               Text="{Binding HeaderSubtitle}"
+                               FontSize="13"
+                               Foreground="#D8C38A"
+                               TextWrapping="Wrap"
+                               MaxWidth="300"
+                               HorizontalAlignment="Left" />
 
                 </StackPanel>
 
@@ -48,7 +63,7 @@
                                VerticalAlignment="Center"
                                FontSize="22"
                                Foreground="#D8C38A"
-                               Text=""/>
+                               Text="" />
 
                 </Grid>
 

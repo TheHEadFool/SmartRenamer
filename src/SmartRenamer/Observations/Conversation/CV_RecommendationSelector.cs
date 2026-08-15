@@ -45,6 +45,42 @@ namespace Scout.Observations.Conversation
         public CV_Recommendation? Select(
             IReadOnlyList<CV_Recommendation> recommendations)
         {
+
+            //---------------------------------------------------------
+            // TEMPORARY LIMITATION — CONVERSATION SELECTION
+            //---------------------------------------------------------
+            //
+            // The Conversation Engine currently receives the complete set of
+            // CV_Recommendations, but CV_RecommendationSelector intentionally
+            // selects the first recommendation.
+            //
+            // This is deliberate for the initial Conversation Framework
+            // vertical slice. The purpose of this implementation is to prove
+            // that an Expert-generated CV_Recommendation can travel:
+            //
+            //     Expert
+            //       ↓
+            //     CV_Recommendation
+            //       ↓
+            //     CV_ConversationEngine
+            //       ↓
+            //     CV_CurrentTopic
+            //       ↓
+            //     Workspace
+            //
+            // DO NOT add prioritization, ranking, scoring, or conversational
+            // selection logic here.
+            //
+            // Future work should improve CV_RecommendationSelector when the
+            // Conversation Framework is ready for recommendation prioritization.
+            //
+            // Until then, "first recommendation wins" is the known and
+            // intentional behavior.
+            //
+            // This comment should be removed or updated when the Selector
+            // becomes responsible for real recommendation selection.
+            //
+            //---------------------------------------------------------
             if (recommendations == null)
                 throw new ArgumentNullException(nameof(recommendations));
 

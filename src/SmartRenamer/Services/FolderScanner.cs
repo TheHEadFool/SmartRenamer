@@ -52,7 +52,8 @@ namespace SmartRenamer.Services
             ".xlsx",
             ".ppt",
             ".pptx",
-            ".txt"
+            ".txt" ,
+            ".epub"
         };
 
         public FolderSummary Scan(string folderPath)

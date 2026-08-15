@@ -12,12 +12,15 @@ namespace Scout.Core;
 ///
 /// WHY IT EXISTS
 /// Scout separates appearance from behavior. ExpeditionManager is the single
-/// component responsible for loading the visual resources that define an
-/// Expedition.
+/// component responsible for loading the resources that define an Expedition
+/// and making the active Expedition manifest available to Scout.
 ///
 /// RESPONSIBILITIES
 /// • Locate the active Expedition manifest.
 /// • Deserialize the manifest.
+/// • Retain the active Expedition manifest.
+/// • Determine the Expedition root directory.
+/// • Resolve Expedition resources relative to that Expedition.
 /// • Load the Expedition ResourceDictionary.
 /// • Merge Expedition resources into the application.
 ///
@@ -25,6 +28,7 @@ namespace Scout.Core;
 /// • Load Experts.
 /// • Execute plugin code.
 /// • Modify business logic.
+/// • Analyze files.
 ///
 /// DEPENDENCIES
 /// • ExpeditionManifest
@@ -40,6 +44,23 @@ namespace Scout.Core;
 public sealed class ExpeditionManager
 {
     /// <summary>
+    /// Gets the manifest for the currently active Expedition.
+    ///
+    /// The manifest is retained after initialization so other parts of Scout
+    /// can obtain Expedition-provided information without knowing which
+    /// Expedition is active.
+    /// </summary>
+    public ExpeditionManifest? CurrentManifest { get; private set; }
+
+    /// <summary>
+    /// Gets the path to the manifest for the currently active Expedition.
+    ///
+    /// This allows Scout to understand where the active Expedition lives
+    /// without hard-coding Safari-specific resource paths elsewhere.
+    /// </summary>
+    public string? CurrentManifestPath { get; private set; }
+
+    /// <summary>
     /// Initializes the current Expedition.
     /// </summary>
     public void Initialize()
@@ -54,11 +75,18 @@ public sealed class ExpeditionManager
                 $"Unable to load Expedition manifest '{manifestPath}'.");
         }
 
-        LoadTheme(manifest);
+        CurrentManifestPath = manifestPath;
+        CurrentManifest = manifest;
+
+        LoadTheme(manifest, manifestPath);
     }
 
     /// <summary>
     /// Returns the path to the currently selected Expedition.
+    ///
+    /// P002 currently uses Safari as the default Expedition.
+    /// Later this selection will come from Scout Settings or an
+    /// Expedition selection service.
     /// </summary>
     private static string GetCurrentManifestPath()
     {
@@ -89,19 +117,55 @@ public sealed class ExpeditionManager
 
     /// <summary>
     /// Loads the Expedition theme into the application.
+    ///
+    /// The ThemeResource path declared by the manifest is relative to the
+    /// Expedition folder, not the Scout application root.
+    ///
+    /// Example:
+    ///
+    /// Expedition manifest:
+    ///     Expeditions/Safari/Expedition.json
+    ///
+    /// Manifest resource:
+    ///     Foundation/SafariTheme.xaml
+    ///
+    /// Resolved resource:
+    ///     Expeditions/Safari/Foundation/SafariTheme.xaml
     /// </summary>
-    private static void LoadTheme(ExpeditionManifest manifest)
+    private static void LoadTheme(
+        ExpeditionManifest manifest,
+        string manifestPath)
     {
         if (string.IsNullOrWhiteSpace(manifest.ThemeResource))
             return;
 
+        string? expeditionDirectory =
+            Path.GetDirectoryName(manifestPath);
+
+        if (string.IsNullOrWhiteSpace(expeditionDirectory))
+        {
+            throw new InvalidOperationException(
+                $"Unable to determine the Expedition directory from " +
+                $"manifest path '{manifestPath}'.");
+        }
+
+        string resourcePath = Path.Combine(
+            expeditionDirectory,
+            manifest.ThemeResource);
+
+        resourcePath = resourcePath.Replace(
+            Path.DirectorySeparatorChar,
+            '/');
+
         var dictionary = new ResourceDictionary
         {
             Source = new Uri(
-                manifest.ThemeResource,
+                resourcePath,
                 UriKind.Relative)
         };
 
-        Application.Current.Resources.MergedDictionaries.Add(dictionary);
+        Application.Current.Resources
+            .MergedDictionaries
+            .Add(dictionary);
     }
 }

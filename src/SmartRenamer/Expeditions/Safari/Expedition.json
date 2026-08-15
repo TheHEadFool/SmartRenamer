@@ -5,7 +5,9 @@
   "Version": "1.0.0",
   "Description": "The default Scout Expedition.",
   "SupportsDarkMode": true,
-  "ThemeResource": "Themes/AppTheme.xaml",
-  "HeaderResource": "Header.xaml",
-  "ProgressControl": "TrailControl"
+  "ThemeResource": "Foundation/SafariTheme.xaml",
+  "HeaderResource": "Components/SafariHeader.xaml",
+  "HeaderTitle": "Scout",
+  "HeaderSubtitle": "Your Guide Through THIS FILE SAFARI",
+  "ProgressControl": ""
 }

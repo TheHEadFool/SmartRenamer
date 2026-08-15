@@ -45,55 +45,54 @@ namespace SmartRenamer.Services
     /// It coordinates project discovery, analysis, capability execution,
     /// Observation Experts, planning, and rename preview generation.
     ///
+    /// =========================================================================
     /// CURRENT MILESTONE
-    /// -------------------------------------------------------------------------
+    /// =========================================================================
+    ///
     /// Connect the completed EbookExpert to the existing UI.
     ///
-    /// CURRENT STATUS
-    /// -------------------------------------------------------------------------
-    /// ✓ Project investigation
-    /// ✓ Project analysis
-    /// ✓ Capability execution
-    /// ✓ Observation Framework integration
-    /// ✓ Scout planning
-    /// ✓ Rename preview generation
-    /// ✓ Observation recommendations carried by WorkflowResult
-    /// ☐ Observation recommendations displayed by the UI
-    /// ☐ Conversation uses the same recommendation state
+    /// =========================================================================
+    /// OBSERVATION ARCHITECTURE
+    /// =========================================================================
     ///
-    /// CURRENTLY DRIVING
-    /// -------------------------------------------------------------------------
-    /// The transition from the existing workflow to the Expert-driven
-    /// observation and recommendation pipeline.
+    /// The ObservationEngine produces ExpertFindings.
     ///
-    /// IMPORTANT
-    /// -------------------------------------------------------------------------
-    /// The existing workflow is NOT being replaced.
+    /// Those SAME findings are used in two places:
     ///
-    /// The Observation Framework is being connected alongside the existing
-    /// workflow so we can observe what the completed Experts actually produce
-    /// before deciding what legacy code can safely be removed.
+    ///     ExpertFinding
+    ///          │
+    ///          ├──→ ObservationMapper
+    ///          │       ↓
+    ///          │   ProjectObservation
+    ///          │       ↓
+    ///          │   Existing Workspace UI
+    ///          │
+    ///          └──→ Expert Translator
+    ///                  ↓
+    ///              CV_Recommendation
+    ///                  ↓
+    ///              Conversation Framework
     ///
-    /// DO NOT CHANGE UNTIL
-    /// -------------------------------------------------------------------------
-    /// EbookExpert recommendations are visible in the existing UI.
+    /// This is intentional.
     ///
-    /// In particular, do not remove the existing RecommendationBuilder,
-    /// Recommendation model, or other legacy recommendation infrastructure
-    /// merely because the Observation Framework now produces recommendations.
+    /// The UI and Conversation Framework must describe the same underlying
+    /// understanding produced by the domain Expert.
     ///
-    /// EXPERT FACTORY
-    /// -------------------------------------------------------------------------
-    /// INDIRECT
+    /// =========================================================================
+    /// MIGRATION NOTE
+    /// =========================================================================
     ///
-    /// This class is shared infrastructure rather than an Expert template.
-    /// It provides the execution path through which future generated Experts
-    /// will participate in Scout.
+    /// The existing Workspace UI still consumes ProjectObservation.
     ///
-    /// NEXT STEP
-    /// -------------------------------------------------------------------------
-    /// Connect WorkflowResult.ObservationRecommendations to the existing
-    /// Recommendation/UI pipeline.
+    /// The Conversation Framework consumes CV_Recommendation.
+    ///
+    /// During this migration we deliberately support both contracts.
+    ///
+    /// The ObservationMapper is the compatibility bridge between the new
+    /// ExpertFinding model and the existing ProjectObservation UI model.
+    ///
+    /// DO NOT remove the legacy Recommendation infrastructure until the
+    /// Expert-driven pipeline has been proven in the UI.
     ///
     /// =========================================================================
     /// </summary>
@@ -153,8 +152,8 @@ namespace SmartRenamer.Services
         /// This is used after renaming so the preview can be refreshed.
         ///
         /// The Observation Framework is executed as part of the same workflow
-        /// so the Expert recommendations always correspond to the currently
-        /// discovered project.
+        /// so the Expert findings and recommendations always correspond to
+        /// the currently discovered project.
         /// </summary>
         public WorkflowResult Execute(ProjectContext context)
         {
@@ -186,22 +185,58 @@ namespace SmartRenamer.Services
             // Observation Framework
             //---------------------------------------------------------
             //
-            // The completed domain Experts now observe the discovered
+            // The completed domain Experts observe the discovered
             // collection and produce conversation-ready recommendations.
             //
-            // This is the integration point between the existing workflow
-            // and the new Expert architecture.
+            // ObservationEngine also preserves the exact ExpertFindings
+            // produced during this observation pass.
             //
-            // We intentionally keep these recommendations separate from
-            // the existing Recommendation system for now.
-            //
-            // That allows the UI to show us what the Experts actually
-            // produce before we remove or replace legacy infrastructure.
             //---------------------------------------------------------
 
             List<CV_Recommendation> observationRecommendations =
                 observationEngine.Observe(
                     context.Folder.FileContexts);
+
+            //---------------------------------------------------------
+            // Observation Framework → Existing UI
+            //---------------------------------------------------------
+            //
+            // The existing Workspace UI consumes ProjectObservation.
+            //
+            // The new Expert architecture produces ExpertFinding.
+            //
+            // ObservationMapper is the deliberate compatibility bridge
+            // between those two models.
+            //
+            // IMPORTANT:
+            //
+            // We use ObservationEngine.Findings here rather than running
+            // the Experts again. This guarantees the UI and Conversation
+            // Framework are based on the SAME observation pass.
+            //
+            // We clear the previous observations because the new Expert
+            // findings are now the authoritative observations for this
+            // workflow pass.
+            //
+            // This prevents legacy generic observations such as:
+            //
+            //     Project Type
+            //     Related Files
+            //     Audio Collection
+            //
+            // from appearing alongside the domain-specific Expert
+            // observations.
+            //
+            //---------------------------------------------------------
+
+            List<ProjectObservation> observationUiItems =
+                ObservationMapper.Map(
+                    observationEngine.Findings);
+
+            context.Observations.Clear();
+
+            context.Observations.AddRange(
+                observationUiItems);
 
             //---------------------------------------------------------
             // Build Scout's plan.
@@ -237,7 +272,10 @@ namespace SmartRenamer.Services
                 Plan = plan,
                 Preview = preview,
 
+                //-----------------------------------------------------
                 // New Expert-driven recommendation pipeline.
+                //-----------------------------------------------------
+
                 ObservationRecommendations =
                     observationRecommendations
             };

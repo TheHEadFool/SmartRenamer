@@ -14,7 +14,7 @@ namespace SmartRenamer;
 /// RESPONSIBILITIES
 /// • Initialize global application services.
 /// • Initialize the active Expedition.
-/// • Continue normal WPF startup.
+/// • Expose the active Expedition to the application.
 ///
 /// DOES NOT
 /// • Select the active Expedition.
@@ -33,11 +33,18 @@ namespace SmartRenamer;
 /// </summary>
 public partial class App : Application
 {
+    /// <summary>
+    /// Provides access to the Expedition Manager initialized during startup.
+    ///
+    /// This allows the rest of the application to obtain information about
+    /// the active Expedition without directly knowing which Expedition is
+    /// currently loaded.
+    /// </summary>
+    public ExpeditionManager ExpeditionManager { get; } = new();
+
     protected override void OnStartup(StartupEventArgs e)
     {
-        var expeditionManager = new ExpeditionManager();
-
-        expeditionManager.Initialize();
+        ExpeditionManager.Initialize();
 
         base.OnStartup(e);
     }

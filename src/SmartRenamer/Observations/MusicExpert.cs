@@ -1,9 +1,11 @@
-﻿using System.Collections.Generic;
-using Scout.Observations.Conversation;
+﻿using Scout.Observations.Conversation;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.BuildingBlocks;
 using SmartRenamer.Observations.Insights;
 using SmartRenamer.Observations.Specialists;
+using System.Collections.Generic;
+using System.Linq;
+using System;
 
 namespace SmartRenamer.Observations
 {
@@ -124,8 +126,41 @@ namespace SmartRenamer.Observations
         public override List<ExpertFinding> Investigate(
             IReadOnlyList<FileContext> files)
         {
+
+            //---------------------------------------------------------
+            // DOMAIN GATE
+            //---------------------------------------------------------
+            //
+            // MusicExpert must remain silent when the discovered
+            // collection contains no supported music files.
+            //
+            // The ObservationEngine intentionally gives Experts the
+            // complete project collection. Each Expert is responsible
+            // for determining whether its own domain is actually
+            // present.
+            //
+            // This prevents an eBook collection from receiving music
+            // recommendations simply because MusicExpert was registered
+            // with the ObservationEngine.
+            //
+            //---------------------------------------------------------
+
+            bool containsMusic =
+                files.Any(file =>
+                    file.Extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase) ||
+                    file.Extension.Equals(".flac", StringComparison.OrdinalIgnoreCase) ||
+                    file.Extension.Equals(".wav", StringComparison.OrdinalIgnoreCase) ||
+                    file.Extension.Equals(".aac", StringComparison.OrdinalIgnoreCase) ||
+                    file.Extension.Equals(".m4a", StringComparison.OrdinalIgnoreCase) ||
+                    file.Extension.Equals(".ogg", StringComparison.OrdinalIgnoreCase) ||
+                    file.Extension.Equals(".wma", StringComparison.OrdinalIgnoreCase));
+
+            if (!containsMusic)
+                return new List<ExpertFinding>();
+
             List<ExpertFinding> findings = new();
 
+            
             //---------------------------------------------------------
             // Preserve existing Specialist behavior.
             //---------------------------------------------------------

@@ -42,7 +42,6 @@
 	<ItemGroup>
 		<Folder Include="Controls\GuideCards\" />
 		<Folder Include="Expeditions\Safari\Assets\Fire2\" />
-		<Folder Include="Expeditions\Safari\Controls\" />
 		<Folder Include="Expeditions\Safari\Layouts\" />
 		<Folder Include="Observations\Experts\EbookExpert\Resources\" />
 	</ItemGroup>

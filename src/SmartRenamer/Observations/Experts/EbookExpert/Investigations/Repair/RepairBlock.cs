@@ -1,8 +1,7 @@
 ﻿using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
+using System.Linq;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
-
-// Begin namespace
 {
     /// <summary>
     /// =========================================================================
@@ -31,39 +30,60 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     /// =========================================================================
     /// </summary>
     internal sealed class RepairBlock
-
-    // Begin RepairBlock
     {
         public RepairReport Analyze(
             MetadataReport metadataReport)
-
-        // Begin Analyze()
         {
             RepairReport report = new();
 
             //---------------------------------------------------------
-            // Version 1
+            // Examine the metadata records already produced by the
+            // Metadata Block.
             //
-            // Repair analysis will be implemented here.
-            //
-            // Future versions will detect:
-            //
-            // • Missing titles
-            // • Missing authors
-            // • Missing ISBNs
-            // • Missing publishers
-            // • Missing languages
-            // • Missing descriptions
-            // • Missing covers
+            // RepairBlock does not read EPUB files itself.
+            // It works from the factual metadata supplied to it.
+            //---------------------------------------------------------
+
+            foreach (var record in metadataReport.Records)
+            {
+                if (string.IsNullOrWhiteSpace(record.Metadata.Title))
+                    report.MissingTitles++;
+
+                if (string.IsNullOrWhiteSpace(record.Metadata.Author))
+                    report.MissingAuthors++;
+
+                if (string.IsNullOrWhiteSpace(record.Metadata.Isbn))
+                    report.MissingIsbns++;
+
+                if (string.IsNullOrWhiteSpace(record.Metadata.Publisher))
+                    report.MissingPublishers++;
+
+                if (string.IsNullOrWhiteSpace(record.Metadata.Language))
+                    report.MissingLanguages++;
+
+                if (string.IsNullOrWhiteSpace(record.Metadata.Description))
+                    report.MissingDescriptions++;
+
+                if (!record.Metadata.HasCover)
+                    report.MissingCovers++;
+            }
+
+            //---------------------------------------------------------
+            // A repairable book is one with at least one known
+            // metadata repair opportunity.
             //---------------------------------------------------------
 
             report.RepairableBooks =
-                metadataReport.Records.Count;
+                metadataReport.Records.Count(record =>
+                    string.IsNullOrWhiteSpace(record.Metadata.Title) ||
+                    string.IsNullOrWhiteSpace(record.Metadata.Author) ||
+                    string.IsNullOrWhiteSpace(record.Metadata.Isbn) ||
+                    string.IsNullOrWhiteSpace(record.Metadata.Publisher) ||
+                    string.IsNullOrWhiteSpace(record.Metadata.Language) ||
+                    string.IsNullOrWhiteSpace(record.Metadata.Description) ||
+                    !record.Metadata.HasCover);
 
             return report;
-
-        } // End Analyze()
-
-    } // End RepairBlock
-
-} // End namespace
+        }
+    }
+}

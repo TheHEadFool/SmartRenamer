@@ -3,8 +3,6 @@ using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants
-
-// Begin namespace
 {
     /// <summary>
     /// =========================================================================
@@ -31,13 +29,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
     /// =========================================================================
     /// </summary>
     internal sealed class E_RepairConsultant
-
-    // Begin E_RepairConsultant
     {
         public List<ExpertFinding> Review(
             RepairReport report)
-
-        // Begin Review()
         {
             List<ExpertFinding> findings = new();
 
@@ -85,6 +79,39 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
                     });
             }
 
+            if (report.MissingPublishers > 0)
+            {
+                findings.Add(
+                    new ExpertFinding
+                    {
+                        FoundSomething = true,
+                        Summary =
+                            $"{report.MissingPublishers} ebooks are missing publishers."
+                    });
+            }
+
+            if (report.MissingLanguages > 0)
+            {
+                findings.Add(
+                    new ExpertFinding
+                    {
+                        FoundSomething = true,
+                        Summary =
+                            $"{report.MissingLanguages} ebooks are missing languages."
+                    });
+            }
+
+            if (report.MissingDescriptions > 0)
+            {
+                findings.Add(
+                    new ExpertFinding
+                    {
+                        FoundSomething = true,
+                        Summary =
+                            $"{report.MissingDescriptions} ebooks are missing descriptions."
+                    });
+            }
+
             if (report.MissingCovers > 0)
             {
                 findings.Add(
@@ -97,9 +124,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
             }
 
             return findings;
-
-        } // End Review()
-
-    } // End E_RepairConsultant
-
-} // End namespace
+        }
+    }
+}

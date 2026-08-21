@@ -244,6 +244,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
             if (!string.IsNullOrWhiteSpace(metadata.Title))
             {
                 AddEvidence(
+                    _titleEvidence,
+                    metadata.Title,
+                    file.OriginalName);
+            }
+            {
+                AddEvidence(
                      _isbnEvidence,
                      metadata.Isbn,
                      file.OriginalName);

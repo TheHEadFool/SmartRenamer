@@ -1,4 +1,5 @@
-﻿using SmartRenamer.Controls.ConversationCards;
+﻿using Scout.Observations.Conversation;
+using SmartRenamer.Controls.ConversationCards;
 using SmartRenamer.Guide;
 using SmartRenamer.Guide.Models;
 using SmartRenamer.Guide.Thinking;
@@ -6,6 +7,7 @@ using SmartRenamer.Infrastructure;
 using SmartRenamer.Models;
 using SmartRenamer.Models.Rename;
 using SmartRenamer.Services;
+using SmartRenamer.ViewModels.Workspace;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,6 +19,7 @@ namespace SmartRenamer.ViewModels.Guide
         private readonly GuideInvestigator guideInvestigator = new();
         private readonly ScoutThoughtBuilder thoughtBuilder = new();
         private readonly ScoutConversationEngine conversationEngine = new();
+        private readonly ProjectWorkspaceViewModel workspace;
 
         private ConversationStage stage = ConversationStage.Greeting;
 
@@ -24,6 +27,7 @@ namespace SmartRenamer.ViewModels.Guide
 
         public event EventHandler<WorkflowResult>? ProjectCreated;
         public event EventHandler? PlanApproved;
+        public event EventHandler? ReviewAllRequested;
 
         private WorkflowResult? currentWorkflow;
 
@@ -38,9 +42,15 @@ namespace SmartRenamer.ViewModels.Guide
         public RelayCommand SendCommand { get; }
         public RelayCommand BrowseFolderCommand { get; }
 
-        public GuideViewModel()
+        public GuideViewModel(ProjectWorkspaceViewModel workspace)
         {
+            this.workspace = workspace;
+
+            workspace.ConversationMessageGenerated +=
+                Workspace_ConversationMessageGenerated;
+
             SendCommand = new RelayCommand(Send);
+
             BrowseFolderCommand = new RelayCommand(ChooseFolder);
 
             Conversation.Messages.Add(new GuideMessage
@@ -52,7 +62,18 @@ namespace SmartRenamer.ViewModels.Guide
                 }
             });
         }
+        private void Workspace_ConversationMessageGenerated(
+    object? sender,
+    CV_ConversationMessage message)
+        {
+            if (message == null)
+                return;
 
+            if (string.IsNullOrWhiteSpace(message.Text))
+                return;
+
+            Conversation.AddGuideMessage(message.Text);
+        }
         private void AskNextQuestion()
         {
             List<ScoutThought> thoughts =
@@ -79,6 +100,16 @@ namespace SmartRenamer.ViewModels.Guide
             UserInput = "";
 
             conversationEngine.ProcessAnswer(answer);
+
+            if (answer.Equals("review all", StringComparison.OrdinalIgnoreCase))
+            {
+                ReviewAllRequested?.Invoke(this, EventArgs.Empty);
+
+                Conversation.AddGuideMessage(
+                    "I'll review all of the recommendations for you.");
+
+                return;
+            }
 
             switch (stage)
             {
@@ -202,44 +233,49 @@ namespace SmartRenamer.ViewModels.Guide
 
             ProjectCreated?.Invoke(this, result);
 
-            Conversation.AddGuideMessage(
-                "I had a chance to explore your folder.");
-
-            Conversation.AddGuideMessage(
-                "Nothing has been changed. I was simply looking for patterns that might help us organize it better.");
+            //---------------------------------------------------------
+            // Initial investigation conversation
+            //
+            // The Workspace now presents the investigation results
+            // directly. Conversation should provide context, not
+            // duplicate the report.
+            //
+            // Keep this deliberately concise:
+            //   • Tell the user that the investigation is complete.
+            //   • State how many observations were found.
+            //   • Give one useful piece of context when available.
+            //   • Do not narrate information already visible in the UI.
+            //   • Do not tell the user to select a specific item.
+            //
+            // Review All is intentionally neutral. The user chooses
+            // what they want to discuss.
+            //---------------------------------------------------------
 
             ProjectObservation? firstObservation =
-                result.Project.Observations.FirstOrDefault();
+    result.Project.Observations.FirstOrDefault();
+
+            int observationCount =
+                result.Project.Observations.Count;
 
             if (firstObservation != null)
             {
                 Conversation.AddGuideMessage(
-                    "Your files tell an interesting story.");
-
-                Conversation.AddGuideMessage(
-                    $"The first thing that caught my attention was {firstObservation.Title.ToLower()}.");
-
-                Conversation.AddGuideMessage(
-                    firstObservation.Description);
+                    $"I explored your folder and found {observationCount} things worth looking at. " +
+                    $"One thing that stood out was {firstObservation.Title.ToLower()}.");
             }
-
-            if (result.Project.Observations.Count > 1)
+            else
             {
                 Conversation.AddGuideMessage(
-    $"I highlighted {result.Project.Observations.Count} discoveries in the Observation panel on the left. You can select any highlighted observation to explore it.");
+                    $"I explored your folder and found {observationCount} things worth looking at.");
             }
 
             int proposedChanges =
-    result.Preview.Count(p => p.HasChanges);
+                result.Preview.Count(p => p.HasChanges);
 
             Conversation.AddGuideMessage(
-    $"Based on what I found, I prepared a safe preview with {proposedChanges} proposed organizational change{(proposedChanges == 1 ? "" : "s")}.");
-
-            Conversation.AddGuideMessage(
-                "We'll be able to review every recommendation together before anything is changed.");
-
-            Conversation.AddGuideMessage(
-                "Select the first observation on the left and I'll explain why I think it's the best place to start.");
+                proposedChanges > 0
+                    ? $"I also prepared a safe preview showing {proposedChanges} proposed organizational changes. Nothing has been changed."
+                    : "I prepared a safe preview, and nothing has been changed.");
 
             // Stop here temporarily.
         }

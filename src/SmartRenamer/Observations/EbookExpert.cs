@@ -96,6 +96,8 @@ namespace SmartRenamer.Observations
 
         private readonly E_EnrichmentInvestigation _enrichmentInvestigation = new();
 
+        private readonly E_CoverInvestigation _coverInvestigation = new();
+
         //---------------------------------------------------------
         // Legacy Specialists
         //---------------------------------------------------------
@@ -174,8 +176,12 @@ namespace SmartRenamer.Observations
                 _repairInvestigation.Investigate(
                     metadataReport));
 
+            findings.AddRange(
+                _coverInvestigation.Investigate(
+                    metadataReport));
+
             //---------------------------------------------------------
-            // Future Investigations
+            // Enrichment Investigation
             //---------------------------------------------------------
 
             findings.AddRange(

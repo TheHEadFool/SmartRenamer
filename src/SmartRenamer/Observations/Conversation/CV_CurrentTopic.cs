@@ -1,4 +1,6 @@
 ﻿using System;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 
 namespace Scout.Observations.Conversation
 {
@@ -37,12 +39,28 @@ namespace Scout.Observations.Conversation
     /// and the User Interface.
     /// =========================================================================
     /// </summary>
-    public sealed class CV_CurrentTopic
+    public sealed class CV_CurrentTopic : INotifyPropertyChanged
     {
+        private CV_Recommendation? recommendation;
+
         /// <summary>
         /// The recommendation currently being discussed.
         /// </summary>
-        public CV_Recommendation? Recommendation { get; private set; }
+        public CV_Recommendation? Recommendation
+        {
+            get => recommendation;
+
+            private set
+            {
+                if (ReferenceEquals(recommendation, value))
+                    return;
+
+                recommendation = value;
+
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsActive));
+            }
+        }
 
         /// <summary>
         /// True once Scout has begun discussing this recommendation.
@@ -64,6 +82,16 @@ namespace Scout.Observations.Conversation
         public void Clear()
         {
             Recommendation = null;
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private void OnPropertyChanged(
+            [CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(propertyName));
         }
     }
 }

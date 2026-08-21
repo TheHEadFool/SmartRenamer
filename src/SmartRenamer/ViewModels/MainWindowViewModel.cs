@@ -13,6 +13,8 @@ using System;
 using System.Collections.ObjectModel;
 using System.Windows;
 
+
+
 namespace SmartRenamer.ViewModels
 {
     /// <summary>
@@ -140,13 +142,10 @@ namespace SmartRenamer.ViewModels
         //---------------------------------------------------------
 
         public GuideViewModel Guide { get; }
-            = new();
 
         public PipelineViewModel Pipeline { get; }
-            = new();
 
         public ProjectWorkspaceViewModel Workspace { get; }
-            = new();
 
         //---------------------------------------------------------
         // Operation
@@ -173,6 +172,9 @@ namespace SmartRenamer.ViewModels
 
         public MainWindowViewModel()
         {
+            Workspace = new ProjectWorkspaceViewModel();
+            Guide = new GuideViewModel(Workspace);
+            Pipeline = new PipelineViewModel();
             AddFilesCommand =
                 new RelayCommand(AddFiles);
 
@@ -194,6 +196,61 @@ namespace SmartRenamer.ViewModels
 
             Guide.PlanApproved +=
                 Guide_PlanApproved;
+
+            Guide.ReviewAllRequested +=
+                Guide_ReviewAllRequested;
+
+                Workspace.ReviewAllRequested +=
+    Workspace_ReviewAllRequested;
+
+        }
+
+        //---------------------------------------------------------
+        // Conversation Review All
+        //---------------------------------------------------------
+        private void Guide_ReviewAllRequested(
+    object? sender,
+    EventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "MainWindowViewModel received Review All from conversation.");
+
+            Workspace.ReviewAll();
+        }
+
+
+        private void Workspace_ReviewAllRequested(
+    object? sender,
+    EventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "MainWindowViewModel received Review All request.");
+
+            //---------------------------------------------------------
+            // NEW CONVERSATION REVIEW ALL
+            //---------------------------------------------------------
+            //
+            // The Conversation Engine owns the complete set of
+            // CV_Recommendations produced by the Observation Framework.
+            //
+            // Review All therefore operates directly on that collection.
+            // The legacy ProjectObservation ReviewAll path is no longer
+            // used by the new Conversation Framework.
+            //---------------------------------------------------------
+
+            conversationEngine.ReviewAll();
+
+            CV_Recommendation? currentRecommendation =
+                conversationEngine.CurrentTopic.Recommendation;
+
+            if (currentRecommendation != null)
+            {
+                Workspace.CurrentTopic.Begin(
+                    currentRecommendation);
+            }
+
+            Guide.Conversation.AddGuideMessage(
+                "I'll review all of the recommendations for you.");
         }
 
         //---------------------------------------------------------

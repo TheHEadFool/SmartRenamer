@@ -1,4 +1,4 @@
-﻿<Window x:Class="SmartRenamer.MainWindow"
+﻿    <Window x:Class="SmartRenamer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:SmartRenamer.Controls"
@@ -74,19 +74,23 @@
                             </StackPanel>
 
                             <!-- Review All -->
+                            <!-- Review All -->
                             <Button
-        Grid.Column="1"
-        Width="96"
-        Height="96"
-        Margin="8,0,0,0"
-        Padding="0"
-        BorderThickness="0"
-        Background="Transparent"
-        ToolTip="Review All">
+    Grid.Column="1"
+    Width="96"
+    Height="96"
+    Margin="8,0,0,0"
+    Padding="0"
+    BorderThickness="0"
+    Background="Transparent"
+    ToolTip="Review All"
+    Cursor="Hand"                           
+    Command="{Binding DataContext.Workspace.ReviewAllCommand,
+                      RelativeSource={RelativeSource AncestorType=Window}}">
 
                                 <Image
-            Source="/Expeditions/Safari/Assets/images/ReviewAll.png"
-            Stretch="Uniform"/>
+        Source="/Expeditions/Safari/Assets/images/ReviewAll.png"
+        Stretch="Uniform"/>
                             </Button>
                         </Grid>
 
@@ -120,7 +124,7 @@
     The conversation path lets Scout discuss its recommendation.
     ================================================================
                 -->
-                                
+
                                 <ItemsControl ItemsSource="{Binding Workspace.Observations}">
 
                                     <ItemsControl.ItemTemplate>
@@ -138,8 +142,8 @@
                                                    
 
                                                         <Border
-    Margin="0,0,0,10"
-    Padding="12"
+    Margin="0,0,0,0"
+    Padding="8"
     Background="{StaticResource ObservationCardBrush}"
     BorderBrush="{StaticResource ObservationBorderBrush}"
     BorderThickness="1"
@@ -191,141 +195,322 @@
             <!-- Workspace -->
             <!-- ================================================= -->
 
+            <!-- ================================================= -->
+            <!-- Workspace -->
+            <!-- ================================================= -->
+
             <Border Grid.Column="1"
-                    Margin="20,0"
-                    Style="{StaticResource CardBorder}">
+        Margin="20,0"
+        Style="{StaticResource CardBorder}">
 
                 <Grid Margin="25">
 
-                    <Grid.RowDefinitions>
+                    <!-- ================================================= -->
+                    <!-- NORMAL MODE -->
+                    <!-- ================================================= -->
 
-                        <RowDefinition Height="Auto"/>
+                    <Grid>
 
-                        <RowDefinition Height="Auto"/>
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="Visibility" Value="Visible"/>
 
-                        <RowDefinition Height="25"/>
+                                <Style.Triggers>
+                                    <DataTrigger
+                            Binding="{Binding Workspace.IsReviewAllActive}"
+                            Value="True">
+                                        <Setter Property="Visibility"
+                                    Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
 
-                        <RowDefinition Height="*"/>
-
-                        <RowDefinition Height="25"/>
-
-                        <RowDefinition Height="*"/>
-
-                    </Grid.RowDefinitions>
-
-                    <TextBlock
-                        Grid.Row="0"
-                        FontSize="30"
-                        FontWeight="Bold"
-                        Text="Scout's Recommendation"/>
-
-                    <StackPanel Grid.Row="3">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="25"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="25"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
 
                         <TextBlock
-                            FontSize="20"
-                            FontWeight="SemiBold"
-                            Text="Supporting Evidence"/>
+                Grid.Row="0"
+                FontSize="30"
+                FontWeight="Bold"
+                Text="Scout's Recommendation"/>
 
-                        <!-- TODO:
-                            Eventually bind this ItemsControl to
-                        CurrentRecommendation.Evidence. -->
+                        <StackPanel Grid.Row="3">
+
+                            <TextBlock
+                    FontSize="20"
+                    FontWeight="SemiBold"
+                    Text="Supporting Evidence"/>
+
+                            <Border
+                    Margin="0,10,0,0"
+                    Padding="12"
+                    Background="#EEF5FF"
+                    CornerRadius="10">
+
+                                <StackPanel>
+
+                                    <TextBlock
+                            Text="{Binding Workspace.SelectedObservation.Description}"
+                            TextWrapping="Wrap"
+                            FontSize="13"
+                            Margin="0,0,0,12"/>
+
+                                    <TextBlock
+                            Text="{Binding Workspace.SelectedObservation.WhyItMatters}"
+                            TextWrapping="Wrap"
+                            FontSize="13"
+                            Margin="0,0,0,12"/>
+
+                                    <TextBlock
+                            Text="{Binding Workspace.SelectedObservation.ActionTitle}"
+                            FontWeight="SemiBold"
+                            FontSize="14"
+                            TextWrapping="Wrap"/>
+
+                                </StackPanel>
+
+                            </Border>
+
+                        </StackPanel>
+
+                        <Grid Grid.Row="5">
+
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <DockPanel
+                    Grid.Row="0"
+                    LastChildFill="False">
+
+                                <TextBlock
+                        FontSize="20"
+                        FontWeight="SemiBold"
+                        Text="Rename Preview"/>
+
+                                <Border
+                        Margin="10,0,0,0"
+                        Padding="8,2"
+                        Background="#D9EEF8"
+                        CornerRadius="10"
+                        DockPanel.Dock="Right">
+
+                                    <TextBlock
+                            FontWeight="SemiBold"
+                            Text="{Binding Workspace.RenameCount,
+                                   StringFormat={}{0} file(s)}"/>
+
+                                </Border>
+
+                            </DockPanel>
+
+                            <Border
+                    Grid.Row="1"
+                    Margin="0,15,0,0"
+                    BorderBrush="#D8D8D8"
+                    BorderThickness="1"
+                    CornerRadius="8">
+
+                                <DataGrid
+                        AutoGenerateColumns="False"
+                        CanUserAddRows="False"
+                        CanUserDeleteRows="False"
+                        CanUserResizeRows="False"
+                        HeadersVisibility="Column"
+                        IsReadOnly="True"
+                        GridLinesVisibility="Horizontal"
+                        ScrollViewer.VerticalScrollBarVisibility="Auto"
+                        ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                        ItemsSource="{Binding Workspace.RenamePreview}">
+
+                                    <DataGrid.Columns>
+
+                                        <DataGridTextColumn
+                                Header="Current Name"
+                                Width="*"
+                                Binding="{Binding CurrentName}"/>
+
+                                        <DataGridTextColumn
+                                Header="New Name"
+                                Width="*"
+                                Binding="{Binding NewName}"/>
+
+                                    </DataGrid.Columns>
+
+                                </DataGrid>
+
+                            </Border>
+
+                        </Grid>
+
+                    </Grid>
+
+
+                    <!-- ================================================= -->
+                    <!-- REVIEW ALL MODE -->
+                    <!-- ================================================= -->
+
+                    <Grid>
+
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+
+                                <Style.Triggers>
+                                    <DataTrigger
+                            Binding="{Binding Workspace.IsReviewAllActive}"
+                            Value="True">
+                                        <Setter Property="Visibility"
+                                    Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
+
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="15"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+
+                        <!-- Review All heading -->
+
+                        <TextBlock
+                Grid.Row="0"
+                FontSize="30"
+                FontWeight="Bold"
+                Text="Scout's Review All"/>
+
+
+                        <!-- Introduction -->
 
                         <Border
-    Margin="0,10,0,0"
-    Padding="12"
-    Background="#EEF5FF"
-    CornerRadius="10">
+                Grid.Row="2"
+                Padding="15"
+                Background="#EEF5FF"
+                CornerRadius="10">
 
                             <StackPanel>
 
                                 <TextBlock
-            Text="{Binding Workspace.SelectedObservation.Description}"
-            TextWrapping="Wrap"
-            FontSize="13"
-            Margin="0,0,0,12"/>
+                        FontSize="18"
+                        FontWeight="SemiBold"
+                        Text="Recommendations"/>
 
                                 <TextBlock
-            Text="{Binding Workspace.SelectedObservation.WhyItMatters}"
-            TextWrapping="Wrap"
-            FontSize="13"
-            Margin="0,0,0,12"/>
+                        Margin="0,6,0,0"
+                        FontSize="13"
+                        TextWrapping="Wrap"
+                        Text="Scout reviewed the discoveries and recommendations from this scan. Nothing will be changed until you choose an action."/>
 
                                 <TextBlock
-            Text="{Binding Workspace.SelectedObservation.ActionTitle}"
-            FontWeight="SemiBold"
-            FontSize="14"
-            TextWrapping="Wrap"/>
+                        Margin="0,8,0,0"
+                        FontSize="13"
+                        FontWeight="SemiBold"
+                        Text="{Binding Workspace.ReviewAllItems.Count,
+                               StringFormat={}Recommendations found: {0}}"/>
 
                             </StackPanel>
 
                         </Border>
 
-                    </StackPanel>
 
-                    <Grid Grid.Row="5">
-
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <DockPanel Grid.Row="0" LastChildFill="False">
-
-                            <TextBlock
-            FontSize="20"
-            FontWeight="SemiBold"
-            Text="Rename Preview"/>
-
-                            <Border
-            Margin="10,0,0,0"
-            Padding="8,2"
-            Background="#D9EEF8"
-            CornerRadius="10"
-            DockPanel.Dock="Right">
-
-                                <TextBlock
-                FontWeight="SemiBold"
-                Text="{Binding Workspace.RenameCount,
-                               StringFormat={}{0} file(s)}"/>
-
-                            </Border>
-
-                        </DockPanel>
+                        <!-- Recommendation list -->
 
                         <Border
-        Grid.Row="1"
-        Margin="0,15,0,0"
-        BorderBrush="#D8D8D8"
-        BorderThickness="1"
-        CornerRadius="8">
+                Grid.Row="3"
+                Margin="0,15,0,0"
+                BorderBrush="#D8D8D8"
+                BorderThickness="1"
+                CornerRadius="8">
 
-                            <DataGrid
-            AutoGenerateColumns="False"
-            CanUserAddRows="False"
-            CanUserDeleteRows="False"
-            CanUserResizeRows="False"
-            HeadersVisibility="Column"
-            IsReadOnly="True"
-            GridLinesVisibility="Horizontal"
-            ScrollViewer.VerticalScrollBarVisibility="Auto"
-            ScrollViewer.HorizontalScrollBarVisibility="Auto"
-            ItemsSource="{Binding Workspace.RenamePreview}">
+                            <ScrollViewer
+                    VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled">
 
-                                <DataGrid.Columns>
+                                <ItemsControl
+                        ItemsSource="{Binding Workspace.ReviewAllItems}">
 
-                                    <DataGridTextColumn
-                    Header="Current Name"
-                    Width="*"
-                    Binding="{Binding CurrentName}" />
+                                    <ItemsControl.ItemTemplate>
 
-                                    <DataGridTextColumn
-                    Header="New Name"
-                    Width="*"
-                    Binding="{Binding NewName}" />
+                                        <DataTemplate>
 
-                                </DataGrid.Columns>
+                                            <Border
+                                    Margin="10"
+                                    Padding="15"
+                                    Background="#F8FAFD"
+                                    BorderBrush="#D8D8D8"
+                                    BorderThickness="1"
+                                    CornerRadius="10">
 
-                            </DataGrid>
+                                                <StackPanel>
+
+                                                    <Button
+    Padding="0"
+    HorizontalContentAlignment="Left"
+    Background="Transparent"
+    BorderThickness="0"
+    Cursor="Hand"
+    Command="{Binding DataContext.Workspace.SelectReviewAllItemCommand,
+                      RelativeSource={RelativeSource AncestorType=Window}}"
+    CommandParameter="{Binding}">
+
+                                                        <TextBlock
+        FontSize="18"
+        FontWeight="SemiBold"
+        Foreground="#245A35"
+        Text="{Binding Recommendation.Title}"
+        TextWrapping="Wrap"/>
+
+                                                    </Button>
+
+                                                    <TextBlock
+                                            Margin="0,8,0,0"
+                                            FontSize="13"
+                                            Text="{Binding Recommendation.Reason}"
+                                            TextWrapping="Wrap"/>
+
+                                                    <ItemsControl
+                                            Margin="0,10,0,0"
+                                            ItemsSource="{Binding Recommendation.Evidence}">
+
+                                                        <ItemsControl.ItemTemplate>
+
+                                                            <DataTemplate>
+
+                                                                <TextBlock
+                                                        Margin="0,3,0,0"
+                                                        FontSize="12"
+                                                        Text="{Binding}"
+                                                        TextWrapping="Wrap"/>
+
+                                                            </DataTemplate>
+
+                                                        </ItemsControl.ItemTemplate>
+
+                                                    </ItemsControl>
+
+                                                </StackPanel>
+
+                                            </Border>
+
+                                        </DataTemplate>
+
+                                    </ItemsControl.ItemTemplate>
+
+                                </ItemsControl>
+
+                            </ScrollViewer>
 
                         </Border>
 
@@ -334,7 +519,6 @@
                 </Grid>
 
             </Border>
-
             <!-- ================================================= -->
             <!-- Scout -->
             <!-- ================================================= -->

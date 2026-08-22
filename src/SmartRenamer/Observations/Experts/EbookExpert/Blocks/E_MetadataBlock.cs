@@ -248,12 +248,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                     metadata.Title,
                     file.OriginalName);
             }
-            {
-                AddEvidence(
-                     _isbnEvidence,
-                     metadata.Isbn,
-                     file.OriginalName);
-            }
         }
         //---------------------------------------------------------
         // Consistency

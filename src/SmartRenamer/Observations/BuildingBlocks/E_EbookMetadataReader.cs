@@ -94,8 +94,20 @@ namespace SmartRenamer.Observations.BuildingBlocks
                         .FirstOrDefault()?.Value.Trim() ?? "";
 
                 metadata.Description =
-                    package.Descendants(dc + "description")
-                        .FirstOrDefault()?.Value.Trim() ?? "";
+     package.Descendants(dc + "description")
+         .FirstOrDefault()?.Value.Trim() ?? "";
+
+                metadata.Series =
+                    package.Descendants()
+                        .FirstOrDefault(element =>
+                            element.Name.LocalName.Equals(
+                                "meta",
+                                StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(
+                                (string?)element.Attribute("property"),
+                                "belongs-to-collection",
+                                StringComparison.OrdinalIgnoreCase))
+                        ?.Value.Trim() ?? "";
 
                 metadata.Isbn =
                     package.Descendants(dc + "identifier")
@@ -111,12 +123,21 @@ namespace SmartRenamer.Observations.BuildingBlocks
                     return metadata;
 
                 XElement? coverItem =
-                    manifest.Elements(opf + "item")
-                        .FirstOrDefault(item =>
-                            string.Equals(
-                                (string?)item.Attribute("properties"),
-                                "cover-image",
-                                StringComparison.OrdinalIgnoreCase));
+     manifest.Elements(opf + "item")
+         .FirstOrDefault(item =>
+         {
+             string properties =
+                 (string?)item.Attribute("properties") ?? "";
+
+             return properties
+                 .Split(
+                     new[] { ' ', '\t', '\r', '\n' },
+                     StringSplitOptions.RemoveEmptyEntries)
+                 .Any(property =>
+                     property.Equals(
+                         "cover-image",
+                         StringComparison.OrdinalIgnoreCase));
+         });
 
                 if (coverItem == null)
                     return metadata;

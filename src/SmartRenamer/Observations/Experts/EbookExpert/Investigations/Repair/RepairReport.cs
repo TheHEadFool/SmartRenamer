@@ -26,6 +26,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         // Repair Opportunities
         //---------------------------------------------------------
 
+        public List<RepairOpportunity> Opportunities { get; } = new();
         public int MissingTitles { get; set; }
 
         public int MissingAuthors { get; set; }

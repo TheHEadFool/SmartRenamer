@@ -1,4 +1,6 @@
-﻿using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
+﻿using SmartRenamer.Models;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Models;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using System.Linq;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
@@ -32,56 +34,54 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     internal sealed class RepairBlock
     {
         public RepairReport Analyze(
-            MetadataReport metadataReport)
+    MetadataReport metadataReport)
         {
             RepairReport report = new();
 
-            //---------------------------------------------------------
-            // Examine the metadata records already produced by the
-            // Metadata Block.
-            //
-            // RepairBlock does not read EPUB files itself.
-            // It works from the factual metadata supplied to it.
-            //---------------------------------------------------------
-
-            foreach (var record in metadataReport.Records)
+            foreach (MetadataRecord record in metadataReport.Records)
             {
-                if (string.IsNullOrWhiteSpace(record.Metadata.Title))
-                    report.MissingTitles++;
+                E_EbookMetadata metadata = record.Metadata;
 
-                if (string.IsNullOrWhiteSpace(record.Metadata.Author))
-                    report.MissingAuthors++;
+                RepairOpportunity opportunity = new()
+                {
+                    Record = record,
 
-                if (string.IsNullOrWhiteSpace(record.Metadata.Isbn))
-                    report.MissingIsbns++;
+                    MissingTitle =
+                        string.IsNullOrWhiteSpace(metadata.Title),
 
-                if (string.IsNullOrWhiteSpace(record.Metadata.Publisher))
-                    report.MissingPublishers++;
+                    MissingAuthor =
+                        string.IsNullOrWhiteSpace(metadata.Author),
 
-                if (string.IsNullOrWhiteSpace(record.Metadata.Language))
-                    report.MissingLanguages++;
+                    MissingIsbn =
+                        string.IsNullOrWhiteSpace(metadata.Isbn),
 
-                if (string.IsNullOrWhiteSpace(record.Metadata.Description))
-                    report.MissingDescriptions++;
+                    MissingPublisher =
+                        string.IsNullOrWhiteSpace(metadata.Publisher),
 
-                if (!record.Metadata.HasCover)
-                    report.MissingCovers++;
+                    MissingLanguage =
+                        string.IsNullOrWhiteSpace(metadata.Language),
+
+                    MissingDescription =
+                        string.IsNullOrWhiteSpace(metadata.Description),
+
+                    MissingCover =
+                        !metadata.HasCover
+                };
+
+                if (opportunity.MissingTitle ||
+                    opportunity.MissingAuthor ||
+                    opportunity.MissingIsbn ||
+                    opportunity.MissingPublisher ||
+                    opportunity.MissingLanguage ||
+                    opportunity.MissingDescription ||
+                    opportunity.MissingCover)
+                {
+                    report.Opportunities.Add(opportunity);
+                }
             }
 
-            //---------------------------------------------------------
-            // A repairable book is one with at least one known
-            // metadata repair opportunity.
-            //---------------------------------------------------------
-
             report.RepairableBooks =
-                metadataReport.Records.Count(record =>
-                    string.IsNullOrWhiteSpace(record.Metadata.Title) ||
-                    string.IsNullOrWhiteSpace(record.Metadata.Author) ||
-                    string.IsNullOrWhiteSpace(record.Metadata.Isbn) ||
-                    string.IsNullOrWhiteSpace(record.Metadata.Publisher) ||
-                    string.IsNullOrWhiteSpace(record.Metadata.Language) ||
-                    string.IsNullOrWhiteSpace(record.Metadata.Description) ||
-                    !record.Metadata.HasCover);
+                report.Opportunities.Count;
 
             return report;
         }

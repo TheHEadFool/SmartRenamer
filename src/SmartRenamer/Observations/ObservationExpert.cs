@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using Scout.Observations.Conversation;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Specialists;
@@ -33,12 +34,13 @@ namespace SmartRenamer.Observations
     /// • Produce ExpertFindings.
     /// • Translate findings into conversation recommendations.
     /// • Describe its domain.
+    /// • Optionally execute domain-specific actions.
     ///
     /// This class does NOT
     /// -------------------------------------------------------------------------
     /// • Render the user interface.
     /// • Manage conversations.
-    /// • Execute rename operations.
+    /// • Execute rename operations directly.
     ///
     /// =========================================================================
     ///
@@ -55,6 +57,8 @@ namespace SmartRenamer.Observations
     ///     Recommendation Translator
     ///          ↓
     ///     CV_Recommendations
+    ///          ↓
+    ///     Domain Actions
     ///
     /// Scout never translates ExpertFindings.
     /// Each Expert owns its own translation.
@@ -115,5 +119,36 @@ namespace SmartRenamer.Observations
         /// </summary>
         public abstract List<CV_Recommendation> BuildRecommendations(
             IReadOnlyList<ExpertFinding> findings);
+
+        //---------------------------------------------------------
+        // Domain Actions
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Executes a domain-specific action requested through the
+        /// Conversation Framework.
+        ///
+        /// The default implementation deliberately does nothing.
+        /// Experts that expose executable domain capabilities override
+        /// this method.
+        ///
+        /// This keeps action knowledge inside the appropriate Expert
+        /// rather than placing domain-specific logic in the generic
+        /// Observation Framework or Conversation Framework.
+        /// </summary>
+        public virtual CV_ActionResult ExecuteAction(
+            CV_ActionRequest request)
+        {
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            return new CV_ActionResult
+            {
+                ActionId = request.ActionId,
+                Success = false,
+                Message =
+                    $"Expert '{Name}' does not handle action '{request.ActionId}'."
+            };
+        }
     }
 }

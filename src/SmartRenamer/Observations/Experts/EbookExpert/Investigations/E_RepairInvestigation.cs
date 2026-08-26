@@ -1,12 +1,11 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
-
-// Begin namespace
 {
     /// <summary>
     /// =========================================================================
@@ -15,38 +14,47 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     ///
     /// Purpose
     /// -------------------------------------------------------------------------
-    /// Coordinates repair-related investigations performed by the
-    /// Ebook Expert.
+    /// Coordinates repair-related investigations performed by the Ebook Expert.
+    ///
+    /// The Investigation discovers repair opportunities and preserves them so
+    /// that later domain operations can act on the specific ebooks involved.
     ///
     /// Responsibilities
     /// -------------------------------------------------------------------------
-    /// • Coordinate Repair Blocks.
-    /// • Coordinate Repair Consultants.
+    /// • Coordinate the Repair Block.
+    /// • Coordinate the Repair Consultant.
     /// • Collect repair opportunities.
-    /// • Report findings back to the Ebook Expert.
+    /// • Produce ExpertFindings.
+    /// • Preserve the discovered RepairOpportunities for later repair work.
     ///
     /// This Investigation does NOT
     /// -------------------------------------------------------------------------
+    /// • Perform external research.
     /// • Modify ebook files.
-    /// • Repair metadata.
+    /// • Automatically approve repairs.
     /// • Communicate with Scout.
     ///
-    /// Those responsibilities belong to Blocks and Consultants.
+    /// Those responsibilities belong to the Repair Resources,
+    /// Repair Service, Conversation Framework, and User.
     /// =========================================================================
     /// </summary>
     public sealed class E_RepairInvestigation
-
-    // Begin E_RepairInvestigation
     {
+        private RepairReport? _lastReport;
+
+        /// <summary>
+        /// Investigates repair opportunities using the shared metadata report.
+        /// </summary>
         public List<ExpertFinding> Investigate(
             MetadataReport metadataReport)
-
-        // Begin Investigate()
         {
+            if (metadataReport == null)
+                throw new ArgumentNullException(nameof(metadataReport));
+
             List<ExpertFinding> findings = new();
 
             //---------------------------------------------------------
-            // Ask the Block to discover facts.
+            // Ask the Block to discover factual repair opportunities.
             //---------------------------------------------------------
 
             RepairBlock block = new();
@@ -55,7 +63,16 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                 block.Analyze(metadataReport);
 
             //---------------------------------------------------------
-            // Ask the Consultant to interpret those facts.
+            // Preserve the complete report.
+            //
+            // The report contains the specific RepairOpportunity objects
+            // associated with the ebooks that require attention.
+            //---------------------------------------------------------
+
+            _lastReport = report;
+
+            //---------------------------------------------------------
+            // Ask the Consultant to interpret the discovered facts.
             //---------------------------------------------------------
 
             E_RepairConsultant consultant = new();
@@ -64,9 +81,17 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                 consultant.Review(report));
 
             return findings;
+        }
 
-        } // End Investigate()
-
-    } // End E_RepairInvestigation
-
-} // End namespace
+        /// <summary>
+        /// The repair opportunities discovered during the most recent
+        /// investigation.
+        ///
+        /// These are the actual domain records that can later be supplied
+        /// to E_RepairService.
+        /// </summary>
+        public IReadOnlyList<RepairOpportunity> RepairOpportunities =>
+            _lastReport?.Opportunities
+            ?? new List<RepairOpportunity>();
+    }
+}

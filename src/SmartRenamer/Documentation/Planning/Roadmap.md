@@ -142,3 +142,48 @@ Scout immediately starts using it.
 If we achieve that, the project becomes highly extensible. New capabilities won't require touching the rest of the application—they'll just plug into the existing pipeline.
 
 ## Never solve a visual problem by adding complexity until you've checked whether changing the initial conditions solves it.
+
+## 8/25/26
+
+Step 1 — Open Library ISBN Research
+
+E_IsbnResearchResource.cs
+
+Step 2 — Repair domain orchestration
+
+RepairRecommendation + new repair execution/service layer if needed
+
+Step 3 — Research result → Scout
+
+Candidate + evidence → ExpertFinding → conversation
+
+Step 4 — Approval
+
+YES and hotlink converge on the same domain operation.
+
+Step 5 — EPUB repair
+
+Already largely implemented in E_EpubRepairResource.
+
+Step 6 — Verification
+
+Re-read EPUB and verify the approved ISBN.
+
+Step 7 — Make ISBN repair the reference pattern
+
+Then systematically finish:
+
+missing title
+missing author
+missing publisher
+missing language
+missing description
+missing cover
+navigation repair
+enrichment/research capabilities
+deeper duplicate intelligence
+deeper quality intelligence
+contents/resource repair
+Step 8 — Only after that
+
+Remove E_EbookMetadataSpecialist and other obsolete paths once behavioral parity is demonstrated.

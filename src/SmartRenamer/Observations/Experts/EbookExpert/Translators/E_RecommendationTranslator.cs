@@ -25,16 +25,18 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Translators;
 /// • Preserve supporting evidence.
 /// • Preserve follow-up questions.
 /// • Preserve the meaning of the Expert's finding.
+/// • Identify an available next-step action when one exists.
 ///
 /// This class does NOT
 /// -------------------------------------------------------------------------
 /// • Analyze files.
 /// • Decide which recommendation is most important.
 /// • Render the user interface.
+/// • Execute an Ebook Expert capability.
 /// • Decide which recommendation Scout discusses next.
 ///
 /// Those responsibilities belong to the Ebook Expert,
-/// Conversation Planner, and User Interface.
+/// Conversation Planner, domain services, and User Interface.
 ///
 /// =========================================================================
 /// MIGRATION NOTE
@@ -113,7 +115,25 @@ public sealed class E_RecommendationTranslator
             // The ExpertFinding summary becomes the conversational reason.
             //---------------------------------------------------------
 
-            Reason = finding.Summary
+            Reason = finding.Summary,
+
+            //---------------------------------------------------------
+            // Identify an available next-step action.
+            //
+            // CV_Recommendation uses init-only properties for actions,
+            // so these MUST be assigned inside the object initializer.
+            //
+            // The Translator identifies the capability only.
+            // It does NOT execute the capability.
+            //---------------------------------------------------------
+
+            ActionId = IsMissingIsbnResearch(finding)
+                ? "ResearchMissingIsbn"
+                : string.Empty,
+
+            ActionText = IsMissingIsbnResearch(finding)
+                ? "Research Missing ISBNs"
+                : string.Empty
         };
 
         //---------------------------------------------------------
@@ -127,5 +147,32 @@ public sealed class E_RecommendationTranslator
             finding.Evidence);
 
         return recommendation;
+    }
+
+    /// <summary>
+    /// Determines whether this finding represents the first supported
+    /// Ebook Expert research action: recovering missing ISBN information.
+    ///
+    /// The Consultant supplies the question as part of the ExpertFinding.
+    /// The Translator recognizes that question and exposes the corresponding
+    /// domain capability through the Conversation recommendation.
+    /// </summary>
+    private static bool IsMissingIsbnResearch(
+        ExpertFinding finding)
+    {
+        if (finding.Questions.Count == 0)
+            return false;
+
+        foreach (string question in finding.Questions)
+        {
+            if (question.Contains(
+                "research the missing ISBN information",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

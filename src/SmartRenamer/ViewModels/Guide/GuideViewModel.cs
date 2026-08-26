@@ -20,7 +20,7 @@ namespace SmartRenamer.ViewModels.Guide
         private readonly ScoutThoughtBuilder thoughtBuilder = new();
         private readonly ScoutConversationEngine conversationEngine = new();
         private readonly ProjectWorkspaceViewModel workspace;
-
+       
         private ConversationStage stage = ConversationStage.Greeting;
 
         public GuideConversation Conversation { get; } = new();
@@ -62,9 +62,10 @@ namespace SmartRenamer.ViewModels.Guide
                 }
             });
         }
+
         private void Workspace_ConversationMessageGenerated(
-    object? sender,
-    CV_ConversationMessage message)
+            object? sender,
+            CV_ConversationMessage message)
         {
             if (message == null)
                 return;
@@ -74,6 +75,7 @@ namespace SmartRenamer.ViewModels.Guide
 
             Conversation.AddGuideMessage(message.Text);
         }
+
         private void AskNextQuestion()
         {
             List<ScoutThought> thoughts =
@@ -99,11 +101,101 @@ namespace SmartRenamer.ViewModels.Guide
 
             UserInput = "";
 
+            //---------------------------------------------------------
+            // NEW CONVERSATION FRAMEWORK
+            //
+            // Investigation conversations and Review All are now handled
+            // by the Workspace's authoritative Conversation Engine.
+            //
+            // The legacy ScoutConversationEngine remains temporarily for
+            // the older rename workflow below.
+            //---------------------------------------------------------
+
+            if (stage == ConversationStage.InvestigationConversation)
+            {
+                CV_UserIntent userIntent =
+                    workspace.ConversationEngine.InterpretUserInput(answer);
+
+                CV_ActionRequest? actionRequest =
+    workspace.ConversationEngine.CreateActionRequest(answer);
+
+                if (actionRequest != null)
+                {
+                    Conversation.AddGuideMessage("");
+
+                    Conversation.AddGuideMessage(
+                        $"I understand. You want me to proceed with " +
+                        $"'{actionRequest.ActionId}'.");
+
+                    return;
+                }
+
+
+                switch (userIntent.Type)
+                {
+                    case CV_UserIntentType.Approve:
+
+                        Conversation.AddGuideMessage("");
+
+                        Conversation.AddGuideMessage(
+                            "I understand. You want me to proceed with this recommendation.");
+
+                        break;
+
+                    case CV_UserIntentType.Research:
+
+                        Conversation.AddGuideMessage("");
+
+                        Conversation.AddGuideMessage(
+                            "I understand. You want me to research the missing information.");
+
+                        Conversation.AddGuideMessage(
+                            "The research request has been recognized, but the research service is not connected yet.");
+
+                        break;
+
+                    case CV_UserIntentType.ReviewAll:
+
+                        ReviewAllRequested?.Invoke(
+                            this,
+                            EventArgs.Empty);
+
+                        Conversation.AddGuideMessage(
+                            "I'll review all of the recommendations for you.");
+
+                        break;
+
+                    default:
+
+                        Conversation.AddGuideMessage(
+                            "I understand that we're discussing the findings from the investigation.");
+
+                        Conversation.AddGuideMessage(
+                            "You can ask me to research missing information or approve the recommendation.");
+
+                        break;
+                }
+
+                return;
+            }
+
+            //---------------------------------------------------------
+            // LEGACY CONVERSATION FRAMEWORK
+            //
+            // This remains temporarily for the older rename workflow.
+            // We will remove it after the new Conversation Framework
+            // has absorbed those remaining responsibilities.
+            //---------------------------------------------------------
+
             conversationEngine.ProcessAnswer(answer);
 
-            if (answer.Equals("review all", StringComparison.OrdinalIgnoreCase))
+            if (answer.Equals(
+                "review all",
+                StringComparison.OrdinalIgnoreCase))
             {
-                ReviewAllRequested?.Invoke(this, EventArgs.Empty);
+                ReviewAllRequested?.Invoke(
+                    this,
+                    EventArgs.Empty);
 
                 Conversation.AddGuideMessage(
                     "I'll review all of the recommendations for you.");
@@ -116,7 +208,9 @@ namespace SmartRenamer.ViewModels.Guide
                 case ConversationStage.Greeting:
 
                     Conversation.AddGuideMessage("");
-                    Conversation.AddGuideMessage("Opening the folder browser...");
+
+                    Conversation.AddGuideMessage(
+                        "Opening the folder browser...");
 
                     ChooseFolder();
 
@@ -126,6 +220,58 @@ namespace SmartRenamer.ViewModels.Guide
 
                     // This stage is no longer used because Scout
                     // automatically opens the folder browser.
+
+                    break;
+
+                case ConversationStage.InvestigationConversation:
+
+                    //---------------------------------------------------------
+                    // The Workspace owns the authoritative Conversation Engine.
+                    //---------------------------------------------------------
+
+                    CV_UserIntent userIntent =
+                        workspace.ConversationEngine.InterpretUserInput(answer);
+
+                    switch (userIntent.Type)
+                    {
+                        case CV_UserIntentType.Approve:
+
+                            Conversation.AddGuideMessage(
+                                "I understand. You want me to proceed with this recommendation.");
+
+                            break;
+
+                        case CV_UserIntentType.Research:
+
+                            Conversation.AddGuideMessage(
+                                "I understand. You want me to research the missing information.");
+
+                            Conversation.AddGuideMessage(
+                                "The research request has been recognized, but the research service is not connected yet.");
+
+                            break;
+
+                        case CV_UserIntentType.ReviewAll:
+
+                            ReviewAllRequested?.Invoke(
+                                this,
+                                EventArgs.Empty);
+
+                            Conversation.AddGuideMessage(
+                                "I'll review all of the recommendations for you.");
+
+                            break;
+
+                        default:
+
+                            Conversation.AddGuideMessage(
+                                "I understand that we're discussing the findings from the investigation.");
+
+                            Conversation.AddGuideMessage(
+                                "You can ask me to research missing information or approve the recommendation.");
+
+                            break;
+                    }
 
                     break;
 
@@ -144,10 +290,13 @@ namespace SmartRenamer.ViewModels.Guide
                             }
 
                             Conversation.AddGuideMessage("");
+
                             Conversation.AddGuideMessage(
                                 "Great! I'll start applying the changes.");
 
-                            PlanApproved?.Invoke(this, EventArgs.Empty);
+                            PlanApproved?.Invoke(
+                                this,
+                                EventArgs.Empty);
 
                             break;
 
@@ -216,43 +365,45 @@ namespace SmartRenamer.ViewModels.Guide
 
         private void ChooseFolder()
         {
-            System.Diagnostics.Debug.WriteLine("ChooseFolder() called.");
+            System.Diagnostics.Debug.WriteLine(
+                "ChooseFolder() called.");
 
-            WorkflowResult? result = guideInvestigator.Investigate();
+            WorkflowResult? result =
+                guideInvestigator.Investigate();
 
             if (result == null)
             {
-                Conversation.AddGuideMessage("No folder was selected.");
+                Conversation.AddGuideMessage(
+                    "No folder was selected.");
 
-                stage = ConversationStage.Greeting;
+                stage =
+                    ConversationStage.Greeting;
 
                 return;
             }
 
             currentWorkflow = result;
 
-            ProjectCreated?.Invoke(this, result);
+            //---------------------------------------------------------
+            // The investigation is complete.
+            //
+            // Scout is now discussing the findings rather than
+            // starting another folder-selection conversation.
+            //---------------------------------------------------------
+
+            stage =
+                ConversationStage.InvestigationConversation;
+
+            ProjectCreated?.Invoke(
+                this,
+                result);
 
             //---------------------------------------------------------
             // Initial investigation conversation
-            //
-            // The Workspace now presents the investigation results
-            // directly. Conversation should provide context, not
-            // duplicate the report.
-            //
-            // Keep this deliberately concise:
-            //   • Tell the user that the investigation is complete.
-            //   • State how many observations were found.
-            //   • Give one useful piece of context when available.
-            //   • Do not narrate information already visible in the UI.
-            //   • Do not tell the user to select a specific item.
-            //
-            // Review All is intentionally neutral. The user chooses
-            // what they want to discuss.
             //---------------------------------------------------------
 
             ProjectObservation? firstObservation =
-    result.Project.Observations.FirstOrDefault();
+                result.Project.Observations.FirstOrDefault();
 
             int observationCount =
                 result.Project.Observations.Count;
@@ -270,14 +421,13 @@ namespace SmartRenamer.ViewModels.Guide
             }
 
             int proposedChanges =
-                result.Preview.Count(p => p.HasChanges);
+                result.Preview.Count(
+                    p => p.HasChanges);
 
             Conversation.AddGuideMessage(
                 proposedChanges > 0
                     ? $"I also prepared a safe preview showing {proposedChanges} proposed organizational changes. Nothing has been changed."
                     : "I prepared a safe preview, and nothing has been changed.");
-
-            // Stop here temporarily.
         }
     }
 }

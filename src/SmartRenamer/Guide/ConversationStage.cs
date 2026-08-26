@@ -55,6 +55,18 @@
         PreviewConversation,
 
         /// <summary>
+        /// Scout and the user are discussing
+        /// findings discovered during an
+        /// investigation.
+        ///
+        /// This state allows Scout to respond
+        /// to follow-up questions and requests
+        /// without restarting the folder
+        /// investigation.
+        /// </summary>
+        InvestigationConversation,
+
+        /// <summary>
         /// Scout is ready to execute.
         /// </summary>
         Ready

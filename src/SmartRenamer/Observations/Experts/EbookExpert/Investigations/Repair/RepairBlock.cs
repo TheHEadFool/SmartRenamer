@@ -1,7 +1,6 @@
 ﻿using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
-using System.Linq;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 {
@@ -34,7 +33,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     internal sealed class RepairBlock
     {
         public RepairReport Analyze(
-    MetadataReport metadataReport)
+            MetadataReport metadataReport)
         {
             RepairReport report = new();
 
@@ -68,6 +67,66 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                         !metadata.HasCover
                 };
 
+                //---------------------------------------------------------
+                // Preserve aggregate repair facts and evidence.
+                //---------------------------------------------------------
+
+                if (opportunity.MissingTitle)
+                {
+                    report.MissingTitles++;
+                    report.MissingTitleBooks.Add(
+                        record.File.CurrentName);
+                }
+
+                if (opportunity.MissingAuthor)
+                {
+                    report.MissingAuthors++;
+                    report.MissingAuthorBooks.Add(
+                        record.File.CurrentName);
+                }
+
+                if (opportunity.MissingIsbn)
+                {
+                    report.MissingIsbns++;
+                    report.MissingIsbnBooks.Add(
+                        record.File.CurrentName);
+                }
+
+                if (opportunity.MissingPublisher)
+                {
+                    report.MissingPublishers++;
+                    report.MissingPublisherBooks.Add(
+                        record.File.CurrentName);
+                }
+
+                if (opportunity.MissingLanguage)
+                {
+                    report.MissingLanguages++;
+                    report.MissingLanguageBooks.Add(
+                        record.File.CurrentName);
+                }
+
+                if (opportunity.MissingDescription)
+                {
+                    report.MissingDescriptions++;
+                    report.MissingDescriptionBooks.Add(
+                        record.File.CurrentName);
+                }
+
+                if (opportunity.MissingCover)
+                {
+                    report.MissingCovers++;
+                    report.MissingCoverBooks.Add(
+                        record.File.CurrentName);
+                }
+
+                //---------------------------------------------------------
+                // Preserve the complete structured opportunity.
+                //
+                // A book is included only when at least one repair
+                // opportunity exists.
+                //---------------------------------------------------------
+
                 if (opportunity.MissingTitle ||
                     opportunity.MissingAuthor ||
                     opportunity.MissingIsbn ||
@@ -79,6 +138,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                     report.Opportunities.Add(opportunity);
                 }
             }
+
+            //---------------------------------------------------------
+            // A book is repairable for investigation purposes when
+            // at least one known repair opportunity exists.
+            //
+            // This does NOT mean Scout should automatically repair it.
+            //---------------------------------------------------------
 
             report.RepairableBooks =
                 report.Opportunities.Count;

@@ -16,39 +16,62 @@ namespace Scout.Observations.Conversation
     /// -------------------------------------------------------------------------
     /// Represents one recommendation Scout would like to discuss with the user.
     ///
-    /// Each recommendation is associated with the ExpertFinding that produced
-    /// it through Id. This allows the Conversation Framework, Review All report,
-    /// and Workspace UI to refer to the same underlying finding.
+    /// A recommendation is the conversational representation of an
+    /// ExpertFinding. Its Id allows the Conversation Framework, Review All
+    /// system, Workspace, and Expert findings to refer to the same discovery.
     ///
-    /// Future Responsibilities
-    /// -------------------------------------------------------------------------
+    /// A recommendation may also contain an optional next-step action.
+    ///
+    /// ActionId identifies the capability associated with the recommendation.
+    /// ActionText is the human-readable text presented to the user.
+    ///
+    /// CV_Recommendation does NOT execute the action.
+    /// It only describes the recommended next step.
+    ///
+    /// =========================================================================
+    /// Responsibilities
+    /// =========================================================================
+    ///
+    /// • Identify the underlying ExpertFinding.
     /// • Describe the recommendation.
-    /// • Explain why it is valuable.
-    /// • Record confidence.
-    /// • Provide supporting evidence.
-    /// • Suggest the next question Scout should ask.
-    /// • Track its current status.
+    /// • Explain why it matters.
+    /// • Preserve supporting evidence.
+    /// • Provide the question Scout can use when discussing it.
+    /// • Describe an optional next-step action.
     ///
+    /// =========================================================================
     /// This class does NOT
-    /// -------------------------------------------------------------------------
-    /// • Decide whether it should be selected.
+    /// =========================================================================
+    ///
     /// • Analyze files.
+    /// • Perform research.
+    /// • Execute actions.
+    /// • Decide which recommendation should be selected.
     /// • Communicate directly with the user.
     ///
-    /// Those responsibilities belong to the Conversation Planner
-    /// and the Experts.
+    /// Those responsibilities belong to the Experts, Investigations,
+    /// Conversation Engine, Selectors, and action/capability layer.
     ///
     /// =========================================================================
     /// MIGRATION NOTE
     /// =========================================================================
     ///
-    /// Id is being introduced during the transition from the legacy
-    /// ProjectObservation path to the Conversation Framework.
+    /// Id was introduced during the transition from the legacy
+    /// ProjectObservation path to the Expert-driven Observation Framework.
     ///
-    /// The Id allows both representations to refer to the same ExpertFinding.
+    /// The Id should correspond to the identity of the ExpertFinding represented
+    /// by this recommendation.
     ///
-    /// Once the legacy path is removed, this identity will remain useful for
-    /// connecting recommendations to reports, UI actions, and Expert findings.
+    /// This identity will remain useful after the legacy observation path is
+    /// removed because it provides a stable connection between:
+    ///
+    ///     ExpertFinding
+    ///          ↓
+    ///     CV_Recommendation
+    ///          ↓
+    ///     Conversation
+    ///          ↓
+    ///     Action / Capability
     ///
     /// =========================================================================
     /// </summary>
@@ -57,8 +80,8 @@ namespace Scout.Observations.Conversation
         /// <summary>
         /// Identity of the ExpertFinding represented by this recommendation.
         ///
-        /// This should match the Id assigned to the corresponding
-        /// ProjectObservation.
+        /// This provides the stable connection between the Expert's discovery
+        /// and Scout's conversational representation of that discovery.
         /// </summary>
         public Guid Id { get; init; }
 
@@ -70,30 +93,6 @@ namespace Scout.Observations.Conversation
         /// <summary>
         /// Question Scout can ask when discussing this recommendation.
         /// </summary>
-        /// 
-
-        /// <summary>
-        /// Stable identifier for the next-step link associated with this
-        /// recommendation.
-        ///
-        /// This identifies what Scout wants the user to explore or discuss.
-        /// It does not execute the operation.
-        ///
-        /// Future action implementations can use the same identifier when
-        /// actual execution is added.
-        /// </summary>
-        public string ActionId { get; init; } = string.Empty;
-
-        /// <summary>
-        /// Text displayed as the clickable next-step link.
-        /// </summary>
-        public string ActionText { get; init; } = string.Empty;
-
-        /// <summary>
-        /// True when this recommendation has a clickable next step.
-        /// </summary>
-        public bool HasAction =>
-            !string.IsNullOrWhiteSpace(ActionId);
         public string Question { get; init; } = string.Empty;
 
         /// <summary>
@@ -103,6 +102,9 @@ namespace Scout.Observations.Conversation
 
         /// <summary>
         /// Supporting evidence supplied by the Expert.
+        ///
+        /// The Conversation Framework may use this evidence when explaining
+        /// the recommendation to the user.
         /// </summary>
         public List<string> Evidence { get; } = new();
 
@@ -119,10 +121,46 @@ namespace Scout.Observations.Conversation
         /// <summary>
         /// Optional estimated time associated with the recommendation.
         ///
-        /// This is retained for future use. It may eventually be used to
-        /// represent Scout's progress while working, but it is not required
-        /// for the current Review All implementation.
+        /// This is informational only. It does not control execution.
         /// </summary>
         public string EstimatedTime { get; init; } = string.Empty;
+
+        // =====================================================================
+        // Next-Step Action
+        // =====================================================================
+
+        /// <summary>
+        /// Stable identifier for the next-step capability associated with this
+        /// recommendation.
+        ///
+        /// ActionId identifies what Scout wants the user to explore or do.
+        /// It does not execute the operation.
+        ///
+        /// Examples:
+        ///
+        ///     "ResearchMissingIsbn"
+        ///     "RepairMissingMetadata"
+        ///     "ReviewDuplicates"
+        ///
+        /// The actual execution of the capability belongs outside this class.
+        /// </summary>
+        public string ActionId { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Human-readable text displayed to the user for the next-step action.
+        ///
+        /// Examples:
+        ///
+        ///     "Research Missing ISBNs"
+        ///     "Repair Metadata"
+        ///     "Review Duplicates"
+        /// </summary>
+        public string ActionText { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Indicates whether this recommendation exposes a next-step action.
+        /// </summary>
+        public bool HasAction =>
+            !string.IsNullOrWhiteSpace(ActionId);
     }
 }

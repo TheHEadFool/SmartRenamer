@@ -166,6 +166,63 @@ public sealed class CV_ConversationEngine
             _currentTopic.Clear();
         }
     }
+
+    /// <summary>
+    /// Interprets a user's response using the Conversation Framework's
+    /// user-intent model.
+    /// </summary>
+    public CV_UserIntent InterpretUserInput(
+        string input)
+    {
+        return _userIntent.Interpret(input);
+    }
+
+    /// <summary>
+    /// Creates an action request for the recommendation currently being
+    /// discussed when the user's input represents approval of that
+    /// recommendation's next-step action.
+    ///
+    /// The Conversation Framework does not execute the action.
+    /// It creates the generic request that the appropriate domain Expert
+    /// can consume.
+    /// </summary>
+    public CV_ActionRequest? CreateActionRequest(
+        string userInput)
+    {
+        if (string.IsNullOrWhiteSpace(userInput))
+            return null;
+
+        CV_Recommendation? recommendation =
+            _currentTopic.Recommendation;
+
+        if (recommendation == null ||
+            !recommendation.HasAction)
+        {
+            return null;
+        }
+
+        CV_UserIntent intent =
+            _userIntent.Interpret(userInput);
+
+        if (intent.Type != CV_UserIntentType.Approve &&
+            intent.Type != CV_UserIntentType.Research)
+        {
+            return null;
+        }
+
+        return new CV_ActionRequest
+        {
+            RecommendationId =
+                recommendation.Id,
+
+            ActionId =
+                recommendation.ActionId,
+
+            UserInput =
+                userInput
+        };
+    }
+
     /// <summary>
     /// Loads the authoritative recommendations without selecting
     /// an initial conversation topic.

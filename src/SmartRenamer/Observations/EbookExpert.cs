@@ -1,10 +1,12 @@
-﻿using SmartRenamer.Models;
-using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
-using SmartRenamer.Observations.Experts.EbookExpert.Investigations;
-using SmartRenamer.Observations.Specialists;
+﻿using System;
 using System.Collections.Generic;
 using Scout.Observations.Conversation;
+using SmartRenamer.Models;
+using SmartRenamer.Observations.Experts.EbookExpert.Action;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations;
 using SmartRenamer.Observations.Experts.EbookExpert.Translators;
+using SmartRenamer.Observations.Specialists;
 
 namespace SmartRenamer.Observations
 
@@ -99,6 +101,20 @@ namespace SmartRenamer.Observations
         private readonly E_CoverInvestigation _coverInvestigation = new();
 
         //---------------------------------------------------------
+        // Domain Action Dispatcher
+        //---------------------------------------------------------
+        //
+        // The dispatcher translates generic Conversation Framework
+        // action requests into Ebook Expert domain operations.
+        //
+        // The dispatcher does not perform the investigation itself.
+        // It uses the existing investigations and domain services owned
+        // by this Expert.
+        //---------------------------------------------------------
+
+        private readonly E_ActionDispatcher _actionDispatcher = new();
+
+        //---------------------------------------------------------
         // Legacy Specialists
         //---------------------------------------------------------
 
@@ -139,6 +155,7 @@ namespace SmartRenamer.Observations
 
             MetadataReport metadataReport =
                 _metadataInvestigation.Investigate(files);
+
             //---------------------------------------------------------
             // Metadata ExpertFindings
             //---------------------------------------------------------
@@ -185,15 +202,19 @@ namespace SmartRenamer.Observations
             //---------------------------------------------------------
 
             findings.AddRange(
-                 _enrichmentInvestigation.Investigate(
-                     metadataReport));
+                _enrichmentInvestigation.Investigate(
+                    metadataReport));
 
             return findings;
 
         } // End Investigate()
 
+        /// <summary>
+        /// Translates the Expert's findings into conversation-ready
+        /// recommendations.
+        /// </summary>
         public override List<CV_Recommendation> BuildRecommendations(
-    IReadOnlyList<ExpertFinding> findings)
+            IReadOnlyList<ExpertFinding> findings)
         {
             E_RecommendationTranslator translator = new();
 
@@ -206,6 +227,37 @@ namespace SmartRenamer.Observations
             }
 
             return recommendations;
+        }
+
+        /// <summary>
+        /// Executes an Ebook Expert action requested through the
+        /// Conversation Framework.
+        ///
+        /// The action is routed through the Ebook Expert's Action Dispatcher.
+        ///
+        /// The Repair Investigation is intentionally passed through here
+        /// rather than recreated. This preserves the RepairOpportunity
+        /// objects discovered during the most recent investigation.
+        ///
+        /// Current supported action:
+        ///
+        ///     ResearchMissingIsbn
+        ///
+        /// Future Ebook actions can use this same gateway:
+        ///
+        ///     ResearchMissingCover
+        ///     ResearchMissingSummary
+        ///     RepairMissingMetadata
+        /// </summary>
+        public override CV_ActionResult ExecuteAction(
+            CV_ActionRequest request)
+        {
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            return _actionDispatcher.Execute(
+                request,
+                _repairInvestigation.RepairOpportunities);
         }
 
     } // End EbookExpert

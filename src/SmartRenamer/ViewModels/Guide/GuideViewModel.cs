@@ -14,54 +14,164 @@ using System.Linq;
 
 namespace SmartRenamer.ViewModels.Guide
 {
+    /// <summary>
+    /// =========================================================================
+    /// GuideViewModel
+    /// =========================================================================
+    ///
+    /// Purpose
+    /// -------------------------------------------------------------------------
+    /// Coordinates Scout's conversation with the user.
+    ///
+    /// The Guide is responsible for conversation presentation and user intent
+    /// handling. Domain Experts remain responsible for domain knowledge and
+    /// domain operations.
+    ///
+    /// =========================================================================
+    /// CONVERSATION ARCHITECTURE
+    /// =========================================================================
+    ///
+    /// The current architecture is:
+    ///
+    ///     ObservationEngine
+    ///          ↓
+    ///     ExpertFindings
+    ///          ↓
+    ///     CV_Recommendation
+    ///          ↓
+    ///     Workspace ConversationEngine
+    ///          ↓
+    ///     Guide
+    ///          ↓
+    ///     CV_ActionRequest
+    ///          ↓
+    ///     Domain Action Dispatcher
+    ///
+    /// The Guide must not reach directly into the ObservationEngine.
+    ///
+    /// The Guide also does not interpret domain-specific action meaning.
+    ///
+    /// =========================================================================
+    /// MIGRATION STATUS
+    /// =========================================================================
+    ///
+    /// The new Conversation Framework is authoritative for investigation
+    /// conversations.
+    ///
+    /// The older ScoutConversationEngine remains temporarily for the legacy
+    /// rename workflow until those responsibilities have been absorbed by the
+    /// newer Conversation Framework.
+    ///
+    /// =========================================================================
+    /// </summary>
     public class GuideViewModel : ObservableObject
     {
-        private readonly GuideInvestigator guideInvestigator = new();
-        private readonly ScoutThoughtBuilder thoughtBuilder = new();
-        private readonly ScoutConversationEngine conversationEngine = new();
-        private readonly ProjectWorkspaceViewModel workspace;
-       
-        private ConversationStage stage = ConversationStage.Greeting;
+        //---------------------------------------------------------
+        // Legacy rename conversation support
+        //---------------------------------------------------------
 
-        public GuideConversation Conversation { get; } = new();
+        private readonly GuideInvestigator guideInvestigator = new();
+
+        private readonly ScoutThoughtBuilder thoughtBuilder = new();
+
+        private readonly ScoutConversationEngine conversationEngine = new();
+
+        //---------------------------------------------------------
+        // Workspace
+        //---------------------------------------------------------
+
+        private readonly ProjectWorkspaceViewModel workspace;
+
+        //---------------------------------------------------------
+        // Conversation State
+        //---------------------------------------------------------
+
+        private ConversationStage stage =
+            ConversationStage.Greeting;
+
+        public GuideConversation Conversation { get; } =
+            new();
+
+        //---------------------------------------------------------
+        // Events
+        //---------------------------------------------------------
 
         public event EventHandler<WorkflowResult>? ProjectCreated;
+
         public event EventHandler? PlanApproved;
+
         public event EventHandler? ReviewAllRequested;
 
+        //---------------------------------------------------------
+        // Current Workflow
+        //---------------------------------------------------------
+
         private WorkflowResult? currentWorkflow;
+
+        //---------------------------------------------------------
+        // User Input
+        //---------------------------------------------------------
 
         private string userInput = "";
 
         public string UserInput
         {
             get => userInput;
-            set => SetProperty(ref userInput, value);
+
+            set => SetProperty(
+                ref userInput,
+                value);
         }
 
+        //---------------------------------------------------------
+        // Commands
+        //---------------------------------------------------------
+
         public RelayCommand SendCommand { get; }
+
         public RelayCommand BrowseFolderCommand { get; }
 
-        public GuideViewModel(ProjectWorkspaceViewModel workspace)
+        // =====================================================================
+        // Constructor
+        // =====================================================================
+
+        public GuideViewModel(
+            ProjectWorkspaceViewModel workspace)
         {
-            this.workspace = workspace;
+            this.workspace =
+                workspace ??
+                throw new ArgumentNullException(
+                    nameof(workspace));
 
             workspace.ConversationMessageGenerated +=
                 Workspace_ConversationMessageGenerated;
 
-            SendCommand = new RelayCommand(Send);
+            SendCommand =
+                new RelayCommand(Send);
 
-            BrowseFolderCommand = new RelayCommand(ChooseFolder);
+            BrowseFolderCommand =
+                new RelayCommand(ChooseFolder);
 
-            Conversation.Messages.Add(new GuideMessage
-            {
-                IsGuide = true,
-                Card = new FolderPickerCard
+            //---------------------------------------------------------
+            // Initial folder picker card.
+            //---------------------------------------------------------
+
+            Conversation.Messages.Add(
+                new GuideMessage
                 {
-                    Command = BrowseFolderCommand
-                }
-            });
+                    IsGuide = true,
+
+                    Card = new FolderPickerCard
+                    {
+                        Command =
+                            BrowseFolderCommand
+                    }
+                });
         }
+
+        // =====================================================================
+        // Workspace Conversation Messages
+        // =====================================================================
 
         private void Workspace_ConversationMessageGenerated(
             object? sender,
@@ -73,63 +183,124 @@ namespace SmartRenamer.ViewModels.Guide
             if (string.IsNullOrWhiteSpace(message.Text))
                 return;
 
-            Conversation.AddGuideMessage(message.Text);
+            Conversation.AddGuideMessage(
+                message.Text);
         }
+
+        // =====================================================================
+        // Legacy Question Support
+        // =====================================================================
 
         private void AskNextQuestion()
         {
             List<ScoutThought> thoughts =
-                thoughtBuilder.Build(new ProjectContext());
+                thoughtBuilder.Build(
+                    new ProjectContext());
 
             ScoutQuestion? question =
-                conversationEngine.GetNextQuestion(thoughts);
+                conversationEngine.GetNextQuestion(
+                    thoughts);
 
             if (question != null)
             {
-                Conversation.AddGuideMessage(question.Text);
+                Conversation.AddGuideMessage(
+                    question.Text);
             }
         }
+
+        // =====================================================================
+        // Send
+        // =====================================================================
 
         private void Send()
         {
             if (string.IsNullOrWhiteSpace(UserInput))
                 return;
 
-            string answer = UserInput.Trim();
+            string answer =
+                UserInput.Trim();
 
-            Conversation.AddUserMessage(answer);
+            Conversation.AddUserMessage(
+                answer);
 
             UserInput = "";
 
-            //---------------------------------------------------------
+            // =================================================================
             // NEW CONVERSATION FRAMEWORK
+            // =================================================================
             //
-            // Investigation conversations and Review All are now handled
-            // by the Workspace's authoritative Conversation Engine.
+            // Investigation conversations are owned by the Workspace's
+            // authoritative Conversation Engine.
             //
-            // The legacy ScoutConversationEngine remains temporarily for
-            // the older rename workflow below.
-            //---------------------------------------------------------
+            // The Guide:
+            //
+            //     • receives the user's answer
+            //     • asks the Conversation Engine to interpret it
+            //     • asks whether a domain action should be created
+            //     • presents the resulting conversation
+            //
+            // The Guide does NOT execute an ObservationEngine operation.
+            //
+            // Domain action execution will be connected through the dedicated
+            // action bridge rather than adding an ObservationEngine dependency
+            // to ProjectWorkspaceViewModel.
+            // =================================================================
 
-            if (stage == ConversationStage.InvestigationConversation)
+            if (stage ==
+                ConversationStage.InvestigationConversation)
             {
                 CV_UserIntent userIntent =
-                    workspace.ConversationEngine.InterpretUserInput(answer);
+                    workspace.ConversationEngine
+                        .InterpretUserInput(answer);
 
                 CV_ActionRequest? actionRequest =
-    workspace.ConversationEngine.CreateActionRequest(answer);
+                    workspace.ConversationEngine
+                        .CreateActionRequest(answer);
+
+                // -------------------------------------------------------------
+                // A recommendation has produced a concrete domain action.
+                //
+                // The Conversation Framework creates the request.
+                //
+                // The domain action dispatcher will execute it.
+                //
+                // The Guide does not know what the action means.
+                // -------------------------------------------------------------
 
                 if (actionRequest != null)
                 {
                     Conversation.AddGuideMessage("");
 
+                    //---------------------------------------------------------
+                    // The action request has been recognized.
+                    //
+                    // We deliberately do not execute it here yet because the
+                    // application-level dispatcher bridge has not been wired
+                    // into the Workspace.
+                    //
+                    // This keeps the Guide independent of the Observation
+                    // Engine and prevents the Workspace from becoming a
+                    // domain-action coordinator.
+                    //---------------------------------------------------------
+
                     Conversation.AddGuideMessage(
                         $"I understand. You want me to proceed with " +
                         $"'{actionRequest.ActionId}'.");
 
+                    //---------------------------------------------------------
+                    // The request remains available to the next action
+                    // execution layer.
+                    //---------------------------------------------------------
+
                     return;
                 }
 
+                // -------------------------------------------------------------
+                // No executable action was generated.
+                //
+                // Continue handling conversational intents that do not
+                // require a domain action.
+                // -------------------------------------------------------------
 
                 switch (userIntent.Type)
                 {
@@ -150,7 +321,7 @@ namespace SmartRenamer.ViewModels.Guide
                             "I understand. You want me to research the missing information.");
 
                         Conversation.AddGuideMessage(
-                            "The research request has been recognized, but the research service is not connected yet.");
+                            "The research request has been recognized, but no executable research action was created.");
 
                         break;
 
@@ -179,15 +350,19 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
             }
 
-            //---------------------------------------------------------
+            // =================================================================
             // LEGACY CONVERSATION FRAMEWORK
+            // =================================================================
             //
             // This remains temporarily for the older rename workflow.
-            // We will remove it after the new Conversation Framework
-            // has absorbed those remaining responsibilities.
-            //---------------------------------------------------------
+            //
+            // The InvestigationConversation stage above belongs exclusively
+            // to the newer Conversation Framework.
+            //
+            // =================================================================
 
-            conversationEngine.ProcessAnswer(answer);
+            conversationEngine.ProcessAnswer(
+                answer);
 
             if (answer.Equals(
                 "review all",
@@ -218,66 +393,18 @@ namespace SmartRenamer.ViewModels.Guide
 
                 case ConversationStage.ChooseFolder:
 
-                    // This stage is no longer used because Scout
-                    // automatically opens the folder browser.
-
-                    break;
-
-                case ConversationStage.InvestigationConversation:
-
                     //---------------------------------------------------------
-                    // The Workspace owns the authoritative Conversation Engine.
+                    // This stage is no longer used because Scout automatically
+                    // opens the folder browser.
                     //---------------------------------------------------------
-
-                    CV_UserIntent userIntent =
-                        workspace.ConversationEngine.InterpretUserInput(answer);
-
-                    switch (userIntent.Type)
-                    {
-                        case CV_UserIntentType.Approve:
-
-                            Conversation.AddGuideMessage(
-                                "I understand. You want me to proceed with this recommendation.");
-
-                            break;
-
-                        case CV_UserIntentType.Research:
-
-                            Conversation.AddGuideMessage(
-                                "I understand. You want me to research the missing information.");
-
-                            Conversation.AddGuideMessage(
-                                "The research request has been recognized, but the research service is not connected yet.");
-
-                            break;
-
-                        case CV_UserIntentType.ReviewAll:
-
-                            ReviewAllRequested?.Invoke(
-                                this,
-                                EventArgs.Empty);
-
-                            Conversation.AddGuideMessage(
-                                "I'll review all of the recommendations for you.");
-
-                            break;
-
-                        default:
-
-                            Conversation.AddGuideMessage(
-                                "I understand that we're discussing the findings from the investigation.");
-
-                            Conversation.AddGuideMessage(
-                                "You can ask me to research missing information or approve the recommendation.");
-
-                            break;
-                    }
 
                     break;
 
                 case ConversationStage.ReviewPlan:
 
-                    switch (conversationEngine.GetIntent(answer))
+                    switch (
+                        conversationEngine.GetIntent(
+                            answer))
                     {
                         case ConversationIntent.Approve:
 
@@ -363,6 +490,10 @@ namespace SmartRenamer.ViewModels.Guide
             }
         }
 
+        // =====================================================================
+        // Choose Folder
+        // =====================================================================
+
         private void ChooseFolder()
         {
             System.Diagnostics.Debug.WriteLine(
@@ -382,7 +513,8 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
             }
 
-            currentWorkflow = result;
+            currentWorkflow =
+                result;
 
             //---------------------------------------------------------
             // The investigation is complete.
@@ -403,7 +535,8 @@ namespace SmartRenamer.ViewModels.Guide
             //---------------------------------------------------------
 
             ProjectObservation? firstObservation =
-                result.Project.Observations.FirstOrDefault();
+                result.Project.Observations
+                    .FirstOrDefault();
 
             int observationCount =
                 result.Project.Observations.Count;

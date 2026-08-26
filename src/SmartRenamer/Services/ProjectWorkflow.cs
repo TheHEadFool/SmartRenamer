@@ -3,6 +3,7 @@ using SmartRenamer.Capabilities.TextReplacement;
 using SmartRenamer.Models;
 using SmartRenamer.Models.Planning;
 using SmartRenamer.Observations;
+using System;
 using System.Collections.Generic;
 
 namespace SmartRenamer.Services

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using Scout.Observations.Conversation;
 using SmartRenamer.Models;
 
@@ -45,6 +46,46 @@ namespace SmartRenamer.Observations
     ///
     /// The UI and Conversation Framework must describe the same underlying
     /// Expert understanding of the project.
+    ///
+    /// =========================================================================
+    /// ACTION ARCHITECTURE
+    /// =========================================================================
+    ///
+    /// The ObservationEngine also provides the integration boundary for
+    /// domain actions requested through the Conversation Framework.
+    ///
+    ///     CV_ActionRequest
+    ///          │
+    ///          ↓
+    ///     ObservationEngine
+    ///          │
+    ///          ↓
+    ///     Domain Expert
+    ///          │
+    ///          ↓
+    ///     Domain Action Dispatcher
+    ///          │
+    ///          ↓
+    ///     CV_ActionResult
+    ///
+    /// The ObservationEngine does not interpret ActionId values.
+    ///
+    /// It simply gives each registered Expert an opportunity to execute the
+    /// requested action.
+    ///
+    /// This allows the same action infrastructure to support future domains
+    /// such as:
+    ///
+    ///     EbookExpert
+    ///         ResearchMissingIsbn
+    ///         ResearchMissingCover
+    ///         ResearchMissingSummary
+    ///
+    ///     MusicExpert
+    ///         Future music actions
+    ///
+    ///     PhotoExpert
+    ///         Future photo actions
     ///
     /// =========================================================================
     /// IMPORTANT
@@ -115,7 +156,11 @@ namespace SmartRenamer.Observations
         public List<CV_Recommendation> Observe(
             IReadOnlyList<FileContext> files)
         {
+            if (files == null)
+                throw new ArgumentNullException(nameof(files));
+
             List<ExpertFinding> allFindings = new();
+
             List<CV_Recommendation> recommendations = new();
 
             //---------------------------------------------------------
@@ -138,7 +183,8 @@ namespace SmartRenamer.Observations
                 //-----------------------------------------------------
 
                 recommendations.AddRange(
-                    expert.BuildRecommendations(expertFindings));
+                    expert.BuildRecommendations(
+                        expertFindings));
             }
 
             //---------------------------------------------------------
@@ -148,6 +194,58 @@ namespace SmartRenamer.Observations
             Findings = allFindings;
 
             return recommendations;
+        }
+
+        //---------------------------------------------------------
+        // Domain Actions
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Routes a generic Conversation Framework action request to the
+        /// registered Expert capable of performing the action.
+        ///
+        /// The ObservationEngine does not interpret the action.
+        /// Each Expert owns the meaning and execution of its own ActionIds.
+        ///
+        /// The first successful result is returned.
+        ///
+        /// This provides one reusable action gateway for all future
+        /// Observation Experts.
+        /// </summary>
+        public CV_ActionResult ExecuteAction(
+            CV_ActionRequest request)
+        {
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            //---------------------------------------------------------
+            // Give every registered Expert an opportunity to handle
+            // the action.
+            //---------------------------------------------------------
+
+            foreach (ObservationExpert expert in _experts)
+            {
+                CV_ActionResult result =
+                    expert.ExecuteAction(request);
+
+                if (result.Success)
+                    return result;
+            }
+
+            //---------------------------------------------------------
+            // No Expert handled the request.
+            //---------------------------------------------------------
+
+            return new CV_ActionResult
+            {
+                ActionId = request.ActionId,
+
+                Success = false,
+
+                Message =
+                    $"No registered Expert could execute action " +
+                    $"'{request.ActionId}'."
+            };
         }
     }
 }

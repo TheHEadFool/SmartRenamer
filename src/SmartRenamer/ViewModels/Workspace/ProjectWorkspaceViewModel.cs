@@ -238,6 +238,20 @@ namespace SmartRenamer.ViewModels.Workspace
             }
         }
 
+        //---------------------------------------------------------
+        // Currently selected Expert recommendation
+        //---------------------------------------------------------
+
+        private CV_Recommendation? selectedRecommendation;
+
+        public CV_Recommendation? SelectedRecommendation
+        {
+            get => selectedRecommendation;
+            private set => SetProperty(
+                ref selectedRecommendation,
+                value);
+        }
+
         /// <summary>
         /// Selects an observation in the Workspace.
         ///
@@ -275,6 +289,9 @@ namespace SmartRenamer.ViewModels.Workspace
             {
                 if (recommendation.Id == observation.Id)
                 {
+
+                    SelectedRecommendation = recommendation;
+
                     CV_ConversationMessage? message =
                         ConversationEngine.DiscussRecommendation(recommendation);
 

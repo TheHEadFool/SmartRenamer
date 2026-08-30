@@ -122,5 +122,26 @@ namespace SmartRenamer.Controls
 
             Keyboard.Focus(InputBox);
         }
+        private void ActionOption_Click(
+                object sender,
+                RoutedEventArgs e)
+        {
+            if (sender is not Button button)
+                return;
+
+            if (button.DataContext is not SmartRenamer.Guide.Models.GuideMessage message)
+                return;
+
+            if (message.Payload is not Scout.Observations.Conversation.CV_ActionOption option)
+                return;
+
+            if (DataContext is not GuideViewModel guide)
+                return;
+
+            guide.SelectActionOption(option);
+
+            Keyboard.Focus(InputBox);
+        }
     }
+
 }

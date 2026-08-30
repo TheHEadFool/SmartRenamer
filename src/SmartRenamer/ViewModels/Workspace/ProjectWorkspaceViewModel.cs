@@ -289,7 +289,6 @@ namespace SmartRenamer.ViewModels.Workspace
             {
                 if (recommendation.Id == observation.Id)
                 {
-
                     SelectedRecommendation = recommendation;
 
                     CV_ConversationMessage? message =

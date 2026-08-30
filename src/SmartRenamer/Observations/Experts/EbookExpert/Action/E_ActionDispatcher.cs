@@ -1,8 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using Scout.Observations.Conversation;
+﻿using Scout.Observations.Conversation;
+using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Observations.Experts.EbookExpert.Resources;
+using System;
+using System.Collections.Generic;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 {
@@ -26,29 +27,45 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
     ///
     /// =========================================================================
     /// Responsibilities
-    /// =========================================================================
-    ///
+    /// -------------------------------------------------------------------------
     /// • Interpret Ebook-specific ActionIds.
     /// • Route actions to the appropriate Ebook domain service.
     /// • Preserve structured action results.
     /// • Return selectable options when an action produces candidates.
+    /// • Preserve user-approved selections for later Ebook operations.
     ///
     /// This class does NOT
     /// -------------------------------------------------------------------------
     /// • Interpret natural-language conversation.
-    /// • Decide whether the user approved an action.
     /// • Modify EPUB files directly.
     /// • Perform ISBN research directly.
     /// • Select an ISBN candidate automatically.
     ///
-    /// Those responsibilities belong to the Conversation Framework,
-    /// E_RepairService, Resources, and User.
+    /// The user must explicitly select the candidate.
     ///
     /// =========================================================================
     /// </summary>
     internal sealed class E_ActionDispatcher
     {
         private readonly E_RepairService _repairService = new();
+
+        //---------------------------------------------------------
+        // Approved ISBN selections
+        //---------------------------------------------------------
+        //
+        // Key:
+        //     Original ebook path
+        //
+        // Value:
+        //     ISBN explicitly selected by the user
+        //
+        // This state belongs to the Ebook Expert action layer.
+        // The UI and Conversation Framework remain domain-neutral.
+        //
+        //---------------------------------------------------------
+
+        private readonly Dictionary<string, E_RepairPlan> _repairPlans =
+    new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Executes an Ebook Expert action against the supplied repair
@@ -64,6 +81,21 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             if (opportunities == null)
                 throw new ArgumentNullException(nameof(opportunities));
 
+            //---------------------------------------------------------
+            // A request containing OptionId represents a specific
+            // candidate selected by the user.
+            //
+            // Research requests do not contain an OptionId.
+            //---------------------------------------------------------
+
+            if (!string.IsNullOrWhiteSpace(request.OptionId))
+            {
+                return SelectIsbnCandidate(
+                    request,
+                    opportunities);
+            }
+
+           
             return request.ActionId switch
             {
                 "ResearchMissingIsbn" =>
@@ -81,6 +113,202 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     }
             };
         }
+
+        /// <summary>
+        /// Records an ISBN candidate explicitly selected by the user.
+        ///
+        /// The selected ISBN is validated against the candidates produced
+        /// by the Ebook Expert's research operation.
+        ///
+        /// No EPUB is modified here.
+        /// </summary>
+        /// <summary>
+        /// Records an ISBN candidate explicitly selected by the user,
+        /// then prepares the approved repair in the Ebook Expert's
+        /// temporary working copy.
+        ///
+        /// The original ebook is never modified.
+        ///
+        /// The prepared working copy becomes the current source file for
+        /// the remainder of the Scout workflow.
+        /// </summary>
+        private CV_ActionResult SelectIsbnCandidate(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities)
+        {
+            if (string.IsNullOrWhiteSpace(request.ContextId))
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I received the ISBN selection, but I don't know which ebook it belongs to."
+                };
+            }
+
+            //---------------------------------------------------------
+            // Find the specific ebook identified by ContextId.
+            //---------------------------------------------------------
+
+            RepairOpportunity? selectedOpportunity = null;
+
+            foreach (RepairOpportunity opportunity in opportunities)
+            {
+                string originalPath =
+                    opportunity.Record?.File?.OriginalFullPath
+                    ?? string.Empty;
+
+                if (string.Equals(
+                    originalPath,
+                    request.ContextId,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    selectedOpportunity = opportunity;
+                    break;
+                }
+            }
+
+            if (selectedOpportunity == null)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I couldn't match that ISBN selection to an ebook in the current investigation."
+                };
+            }
+
+            //---------------------------------------------------------
+            // Research the candidates for this specific ebook.
+            //
+            // This is validation only. No file is modified.
+            //---------------------------------------------------------
+
+            List<IsbnResearchCandidate> candidates =
+                _repairService.ResearchMissingIsbn(
+                    selectedOpportunity);
+
+            IsbnResearchCandidate? selectedCandidate = null;
+
+            foreach (IsbnResearchCandidate candidate in candidates)
+            {
+                if (string.Equals(
+                    candidate.Isbn,
+                    request.OptionId,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    selectedCandidate = candidate;
+                    break;
+                }
+            }
+
+            if (selectedCandidate == null)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        $"I couldn't verify ISBN '{request.OptionId}' as a researched candidate for this ebook."
+                };
+            }
+
+            IsbnResearchCandidate approvedCandidate =
+    selectedCandidate;
+
+            //---------------------------------------------------------
+            // The user explicitly selected this ISBN.
+            //---------------------------------------------------------
+
+            string approvedIsbn =
+    approvedCandidate.Isbn;
+
+
+
+            //---------------------------------------------------------
+            // Prepare the repair in the Ebook Expert's temporary
+            // working copy.
+            //
+            // The original EPUB is not modified.
+            //---------------------------------------------------------
+
+            //---------------------------------------------------------
+            // Record the user's explicit approval.
+            //
+            // The repair is NOT physically performed here.
+            // It is added to the Ebook Expert's repair plan.
+            //---------------------------------------------------------
+
+            _repairService.AddRepairChange(
+                request.ContextId,
+                new E_RepairChange(
+                    "ISBN",
+                    selectedOpportunity.Record?.Metadata?.Isbn,
+                    approvedIsbn,
+                    approvedCandidate.Source,
+                    approvedCandidate.Evidence,
+                    approvedCandidate.Confidence,
+                    true));
+
+            //---------------------------------------------------------
+            // Report the approved repair.
+            //
+            // The actual EPUB modification will occur later when
+            // the approved repair plan is executed.
+            //---------------------------------------------------------
+
+            CV_ActionResult result = new()
+            {
+                ActionId = request.ActionId,
+                Success = true,
+                Message =
+                    $"I've recorded your approval of ISBN {approvedIsbn} " +
+                    "for this ebook. The repair is ready for execution."
+            };
+
+            result.Evidence.Add(
+                approvedCandidate.Evidence);
+
+            return result;
+
+
+        }
+
+        /// <summary>
+        /// Gets the ISBN explicitly approved for a specific original ebook.
+        ///
+        /// Returns null when the user has not selected an ISBN.
+        /// </summary>
+        public string? GetApprovedIsbn(
+     string originalPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalPath))
+                return null;
+
+            if (!_repairPlans.TryGetValue(
+                    originalPath,
+                    out E_RepairPlan? repairPlan))
+            {
+                return null;
+            }
+
+            foreach (E_RepairChange change in repairPlan.Changes)
+            {
+                if (string.Equals(
+                        change.RepairType,
+                        "ISBN",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return change.ApprovedValue as string;
+                }
+            }
+
+            return null;
+        }
+
+
 
         /// <summary>
         /// Researches all currently discovered missing-ISBN opportunities.
@@ -134,17 +362,17 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                         // OriginalFullPath is used rather than CurrentFullPath because
                         // the current name/path may change during the workflow.
                         ContextId =
-         opportunity.Record.File?.OriginalFullPath
-         ?? string.Empty,
+                            opportunity.Record?.File?.OriginalFullPath
+                            ?? string.Empty,
 
                         Label =
-         $"{candidate.Isbn} — {fileName}",
+                            $"{candidate.Isbn} — {fileName}",
 
                         Confidence =
-         candidate.Confidence,
+                            candidate.Confidence,
 
                         Source =
-         candidate.Source
+                            candidate.Source
                     };
 
                     option.Evidence.Add(
@@ -170,8 +398,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 ActionId = request.ActionId,
                 Success = true,
                 Message =
-        $"ISBN research completed for {researchedBooks} ebook(s). " +
-        $"{candidateCount} candidate(s) were found."
+                    $"ISBN research completed for {researchedBooks} ebook(s). " +
+                    $"{candidateCount} candidate(s) were found."
             };
 
             result.Evidence.AddRange(evidence);

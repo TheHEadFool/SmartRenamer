@@ -273,13 +273,26 @@ namespace SmartRenamer.Services
                 Plan = plan,
                 Preview = preview,
 
-                //-----------------------------------------------------
-                // New Expert-driven recommendation pipeline.
-                //-----------------------------------------------------
-
                 ObservationRecommendations =
-                    observationRecommendations
+                   observationRecommendations
             };
+        }
+
+        /// <summary>
+        /// Executes a Conversation Framework action through the
+        /// ObservationEngine owned by this workflow.
+        ///
+        /// The same ObservationEngine that performed the investigation
+        /// executes the action, preserving the domain Expert state from
+        /// that investigation.
+        /// </summary>
+        public CV_ActionResult ExecuteAction(
+            CV_ActionRequest request)
+        {
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            return observationEngine.ExecuteAction(request);
         }
     }
 }

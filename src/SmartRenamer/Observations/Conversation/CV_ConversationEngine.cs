@@ -63,7 +63,28 @@ public sealed class CV_ConversationEngine
 
     private readonly List<CV_ReviewAllItem> _reviewAllItems = new();
 
+    private readonly List<CV_ActionOption> _pendingActionOptions = new();
+
+    public void RememberActionOptions(IReadOnlyList<CV_ActionOption> options)
+    {
+        if (options == null)
+            throw new ArgumentNullException(nameof(options));
+
+        _pendingActionOptions.Clear();
+        _pendingActionOptions.AddRange(options);
+    }
+
+    /// <summary>
+    /// Clears the action options that are waiting for a user selection.
+    /// The current selection has been consumed and should not remain active.
+    /// </summary>
+    public void ClearActionOptions()
+    {
+        _pendingActionOptions.Clear();
+    }
+
     private bool _reviewingAll;
+    private bool _awaitingReviewAllApproval;
 
     //---------------------------------------------------------
     // Public State
@@ -74,6 +95,14 @@ public sealed class CV_ConversationEngine
     /// </summary>
     public bool IsReviewingAll =>
         _reviewingAll;
+
+    /// <summary>
+    /// True when Scout has asked the user whether to open
+    /// the complete Review All report and is waiting for
+    /// the user's answer.
+    /// </summary>
+    public bool IsAwaitingReviewAllApproval =>
+        _awaitingReviewAllApproval;
 
     /// <summary>
     /// Zero-based index of the recommendation currently being discussed.
@@ -99,6 +128,7 @@ public sealed class CV_ConversationEngine
     /// </summary>
     public CV_CurrentTopic CurrentTopic =>
         _currentTopic;
+
 
     /// <summary>
     /// Conversation history.
@@ -178,6 +208,26 @@ public sealed class CV_ConversationEngine
     }
 
     /// <summary>
+    /// Indicates that Scout has asked the user whether they want
+    /// to open the complete Review All report.
+    ///
+    /// The user's next affirmative response belongs to this question,
+    /// not to the recommendation currently being discussed.
+    /// </summary>
+    public void BeginReviewAllPrompt()
+    {
+        _awaitingReviewAllApproval = true;
+    }
+
+    /// <summary>
+    /// Clears the pending Review All question.
+    /// </summary>
+    public void ClearReviewAllPrompt()
+    {
+        _awaitingReviewAllApproval = false;
+    }
+
+    /// <summary>
     /// Creates an action request for the recommendation currently being
     /// discussed when the user's input represents approval of that
     /// recommendation's next-step action.
@@ -187,16 +237,49 @@ public sealed class CV_ConversationEngine
     /// can consume.
     /// </summary>
     public CV_ActionRequest? CreateActionRequest(
-        string userInput)
+    string userInput)
     {
         if (string.IsNullOrWhiteSpace(userInput))
             return null;
 
-        CV_Recommendation? recommendation =
+        // ---------------------------------------------------------
+        // First check whether the user selected one of the options
+        // returned by the previous action.
+        // ---------------------------------------------------------
+
+        foreach (CV_ActionOption option in _pendingActionOptions)
+        {
+            if (string.Equals(
+                userInput.Trim(),
+                option.Id,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                CV_Recommendation? recommendation =
+                    _currentTopic.Recommendation;
+
+                if (recommendation == null)
+                    return null;
+
+                return new CV_ActionRequest
+                {
+                    RecommendationId = recommendation.Id,
+                    ActionId = recommendation.ActionId,
+                    UserInput = userInput,
+                    OptionId = option.Id,
+                    ContextId = option.ContextId
+                };
+            }
+        }
+
+        // ---------------------------------------------------------
+        // Normal conversational action handling.
+        // ---------------------------------------------------------
+
+        CV_Recommendation? currentRecommendation =
             _currentTopic.Recommendation;
 
-        if (recommendation == null ||
-            !recommendation.HasAction)
+        if (currentRecommendation == null ||
+            !currentRecommendation.HasAction)
         {
             return null;
         }
@@ -212,16 +295,28 @@ public sealed class CV_ConversationEngine
 
         return new CV_ActionRequest
         {
-            RecommendationId =
-                recommendation.Id,
-
-            ActionId =
-                recommendation.ActionId,
-
-            UserInput =
-                userInput
+            RecommendationId = currentRecommendation.Id,
+            ActionId = currentRecommendation.ActionId,
+            UserInput = userInput
         };
     }
+
+    public CV_ActionRequest? CreateActionRequest(
+    CV_Recommendation recommendation)
+    {
+        if (recommendation == null)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(recommendation.ActionId))
+            return null;
+
+        return new CV_ActionRequest
+        {
+            ActionId = recommendation.ActionId
+        };
+    }
+
+
 
     /// <summary>
     /// Loads the authoritative recommendations without selecting

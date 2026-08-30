@@ -12,92 +12,76 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
     /// E_EpubRepairResource
     /// =========================================================================
     ///
-    /// Purpose
-    /// -------------------------------------------------------------------------
-    /// Performs safe, domain-specific modifications to EPUB files.
+    /// Performs the physical EPUB modification requested by the Ebook Expert.
     ///
-    /// Current Capability
+    /// SAFETY BOUNDARY
     /// -------------------------------------------------------------------------
-    /// Adds a missing ISBN to the EPUB package metadata.
+    /// The Resource modifies only the supplied target path.
     ///
-    /// Safety Model
-    /// -------------------------------------------------------------------------
-    /// • The original EPUB is never modified in place.
-    /// • A temporary repaired EPUB is created first.
-    /// • The original package is copied into the temporary package.
-    /// • Only the OPF metadata is changed.
-    /// • The temporary package replaces the original only after the complete
-    ///   operation succeeds.
-    /// • Temporary files are cleaned up when the operation fails.
-    ///
-    /// This Resource does NOT
-    /// -------------------------------------------------------------------------
-    /// • Decide whether an EPUB needs repair.
-    /// • Research ISBN information.
-    /// • Decide which ISBN should be used.
-    /// • Communicate with Scout.
-    /// • Generate recommendations.
-    ///
-    /// Those responsibilities belong to the Repair Investigation,
-    /// research services, Consultant, and Conversation Framework.
+    /// It never replaces, deletes, or otherwise modifies the original source
+    /// EPUB.
     ///
     /// =========================================================================
     /// </summary>
     internal sealed class E_EpubRepairResource
     {
         /// <summary>
-        /// Adds an ISBN to an EPUB that currently has no matching ISBN
-        /// identifier.
+        /// Adds an ISBN to an EPUB working copy.
         ///
-        /// The original EPUB is preserved unless the complete repair succeeds.
+        /// sourceFile identifies the original ebook whose metadata is being
+        /// repaired.
         ///
-        /// Returns true when the EPUB was successfully rewritten or already
-        /// contained the requested ISBN.
+        /// targetPath identifies the physical EPUB copy that will actually
+        /// be modified.
+        ///
+        /// The original EPUB is never modified.
         /// </summary>
         public bool AddIsbn(
-            FileContext file,
-            string isbn)
+            FileContext sourceFile,
+            string isbn,
+            string targetPath)
         {
-            if (file == null)
-                throw new ArgumentNullException(nameof(file));
+            if (sourceFile == null)
+                throw new ArgumentNullException(nameof(sourceFile));
 
             if (string.IsNullOrWhiteSpace(isbn))
                 throw new ArgumentException(
                     "ISBN cannot be empty.",
                     nameof(isbn));
 
-            if (!file.Extension.Equals(
+            if (string.IsNullOrWhiteSpace(targetPath))
+                throw new ArgumentException(
+                    "Target path cannot be empty.",
+                    nameof(targetPath));
+
+            if (!sourceFile.Extension.Equals(
                     ".epub",
                     StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }
 
-            string sourcePath = file.CurrentFullPath;
-
-            if (!File.Exists(sourcePath))
+            if (!File.Exists(targetPath))
                 return false;
 
             string temporaryPath =
-                sourcePath + ".repairing";
-
-            bool replacementCompleted = false;
+                targetPath + ".repairing";
 
             try
             {
                 //---------------------------------------------------------
-                // Remove any abandoned temporary repair package.
+                // Remove an abandoned temporary repair package.
                 //---------------------------------------------------------
 
                 if (File.Exists(temporaryPath))
                     File.Delete(temporaryPath);
 
                 //---------------------------------------------------------
-                // Work on a copy.
+                // Work on a copy of the supplied target.
                 //---------------------------------------------------------
 
                 File.Copy(
-                    sourcePath,
+                    targetPath,
                     temporaryPath,
                     overwrite: false);
 
@@ -106,9 +90,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         temporaryPath,
                         ZipArchiveMode.Update))
                 {
-                    //---------------------------------------------------------
+                    //-----------------------------------------------------
                     // Locate the EPUB package document.
-                    //---------------------------------------------------------
+                    //-----------------------------------------------------
 
                     ZipArchiveEntry? containerEntry =
                         archive.GetEntry(
@@ -145,9 +129,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     if (packageEntry == null)
                         return false;
 
-                    //---------------------------------------------------------
+                    //-----------------------------------------------------
                     // Load the OPF package document.
-                    //---------------------------------------------------------
+                    //-----------------------------------------------------
 
                     XDocument package;
 
@@ -172,9 +156,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     if (metadata == null)
                         return false;
 
-                    //---------------------------------------------------------
-                    // Do not create a duplicate identifier.
-                    //---------------------------------------------------------
+                    //-----------------------------------------------------
+                    // Do not create a duplicate ISBN.
+                    //-----------------------------------------------------
 
                     string normalizedIsbn =
                         isbn.Trim();
@@ -189,25 +173,22 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                                     StringComparison.OrdinalIgnoreCase));
 
                     if (alreadyHasIsbn)
-                    {
-                        replacementCompleted = true;
                         return true;
-                    }
 
-                    //---------------------------------------------------------
-                    // Add the new identifier to the OPF metadata.
-                    //---------------------------------------------------------
+                    //-----------------------------------------------------
+                    // Add the approved ISBN.
+                    //-----------------------------------------------------
 
                     XElement identifier =
-                        new XElement(
+                        new(
                             dc + "identifier",
                             normalizedIsbn);
 
                     metadata.Add(identifier);
 
-                    //---------------------------------------------------------
+                    //-----------------------------------------------------
                     // Replace the OPF entry inside the temporary EPUB.
-                    //---------------------------------------------------------
+                    //-----------------------------------------------------
 
                     string packageText =
                         package.ToString(
@@ -230,16 +211,17 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 }
 
                 //---------------------------------------------------------
-                // The temporary EPUB is complete.
-                // Only now replace the original.
+                // The repaired temporary EPUB is complete.
+                //
+                // Replace ONLY the target working copy.
+                //
+                // The original source EPUB is never touched.
                 //---------------------------------------------------------
 
-                File.Replace(
+                File.Copy(
                     temporaryPath,
-                    sourcePath,
-                    null);
-
-                replacementCompleted = true;
+                    targetPath,
+                    overwrite: true);
 
                 return true;
             }
@@ -250,11 +232,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             finally
             {
                 //---------------------------------------------------------
-                // Never leave an incomplete temporary EPUB behind.
+                // Never leave the internal .repairing file behind.
                 //---------------------------------------------------------
 
-                if (!replacementCompleted &&
-                    File.Exists(temporaryPath))
+                if (File.Exists(temporaryPath))
                 {
                     try
                     {
@@ -262,7 +243,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     }
                     catch
                     {
-                        // Preserve the original operation result.
+                        // Preserve the result of the repair operation.
                     }
                 }
             }

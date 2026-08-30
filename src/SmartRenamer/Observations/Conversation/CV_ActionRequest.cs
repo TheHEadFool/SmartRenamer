@@ -48,6 +48,24 @@ namespace Scout.Observations.Conversation
         public string UserInput { get; init; } = string.Empty;
 
         /// <summary>
+        /// Identifier of a specific result selected by the user.
+        ///
+        /// The Conversation Framework treats this as an opaque identifier.
+        /// It does not know whether the identifier represents an ISBN,
+        /// a cover, a book record, or another domain-specific result.
+        /// </summary>
+        public string OptionId { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Domain context associated with the selected option.
+        ///
+        /// The Conversation Framework preserves this value but does not
+        /// interpret it. The domain Expert may use it to identify the
+        /// file or other domain object associated with the selected result.
+        /// </summary>
+        public string ContextId { get; init; } = string.Empty;
+
+        /// <summary>
         /// Indicates whether this request identifies a usable action.
         /// </summary>
         public bool IsValid =>

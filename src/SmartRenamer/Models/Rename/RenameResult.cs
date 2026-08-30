@@ -29,6 +29,12 @@ namespace SmartRenamer.Models.Rename
         public string? OutputFolder { get; set; }
 
         /// <summary>
+        /// Maps each original file path to the corresponding file
+        /// created in Scout's organized copy.
+        /// </summary>
+        public Dictionary<string, string> CopiedFiles { get; } = new();
+
+        /// <summary>
         /// Records every successful rename.
         /// Used later to support Undo.
         /// </summary>

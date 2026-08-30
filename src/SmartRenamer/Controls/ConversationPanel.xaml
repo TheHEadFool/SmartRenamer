@@ -187,6 +187,43 @@
 
                                 <!-- Rich Card -->
 
+                                <Button
+                                    Padding="10"
+                                    HorizontalContentAlignment="Left"
+                                    Background="{StaticResource ConversationBubbleBrush}"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    Click="ActionOption_Click">
+
+                                    <Button.Style>
+
+                                        <Style TargetType="Button">
+
+                                            <Setter Property="Visibility"
+                                                    Value="Visible"/>
+
+                                            <Style.Triggers>
+
+                                                <DataTrigger Binding="{Binding Payload}"
+                                                             Value="{x:Null}">
+
+                                                    <Setter Property="Visibility"
+                                                            Value="Collapsed"/>
+
+                                                </DataTrigger>
+
+                                            </Style.Triggers>
+
+                                        </Style>
+
+                                    </Button.Style>
+
+                                    <TextBlock
+                                        Text="{Binding Payload.Label}"
+                                        TextWrapping="Wrap"/>
+
+                                </Button>
+
                                 <ContentPresenter
                                     Margin="0,10,0,0"
                                     Content="{Binding Card}" />

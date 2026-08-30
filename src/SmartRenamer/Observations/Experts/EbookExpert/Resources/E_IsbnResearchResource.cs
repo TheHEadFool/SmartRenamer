@@ -136,9 +136,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             }
 
             parameters.Add(
-                "fields=" +
-                Uri.EscapeDataString(
-                    "title,author_name,isbn,edition_key"));
+    "fields=" +
+    Uri.EscapeDataString(
+        "title,author_name,isbn,edition_key,publisher,publish_year"));
 
             parameters.Add("limit=10");
 
@@ -186,6 +186,30 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         doc,
                         "author_name");
 
+                string publisher =
+                GetString(
+                    doc,
+                    "publisher");
+
+                List<string> publicationYears =
+                    GetStringArray(
+                        doc,
+                        "publish_year");
+
+                string publicationYear =
+                    publicationYears.Count > 0
+                        ? publicationYears[0]
+                        : string.Empty;
+
+                List<string> editionKeys =
+                    GetStringArray(
+                        doc,
+                        "edition_key");
+
+                string editionKey =
+                    editionKeys.Count > 0
+                        ? editionKeys[0]
+                        : string.Empty;
                 double confidence =
                     CalculateConfidence(
                         metadata,
@@ -219,6 +243,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         new IsbnResearchCandidate
                         {
                             Isbn = isbn,
+                            EditionKey = editionKey,
+                            Title = title,
+                            Author = string.Join(", ", authors),
+                            Publisher = publisher,
+                            PublicationYear = publicationYear,
                             Source = sourceUrl,
                             Evidence =
                                 BuildEvidence(
@@ -498,6 +527,16 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
     internal sealed class IsbnResearchCandidate
     {
         public string Isbn { get; init; } = string.Empty;
+
+        public string EditionKey { get; init; } = string.Empty;
+
+        public string Title { get; init; } = string.Empty;
+
+        public string Author { get; init; } = string.Empty;
+
+        public string Publisher { get; init; } = string.Empty;
+
+        public string PublicationYear { get; init; } = string.Empty;
 
         public string Source { get; init; } = string.Empty;
 

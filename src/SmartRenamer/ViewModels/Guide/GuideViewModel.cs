@@ -214,6 +214,7 @@ namespace SmartRenamer.ViewModels.Guide
 
         private void Send()
         {
+
             if (string.IsNullOrWhiteSpace(UserInput))
                 return;
 
@@ -250,8 +251,27 @@ namespace SmartRenamer.ViewModels.Guide
                 ConversationStage.InvestigationConversation)
             {
                 CV_UserIntent userIntent =
-                    workspace.ConversationEngine
-                        .InterpretUserInput(answer);
+    workspace.ConversationEngine
+        .InterpretUserInput(answer);
+
+                if (workspace.ConversationEngine.IsAwaitingReviewAllApproval)
+                {
+                    if (userIntent.Type == CV_UserIntentType.Approve)
+                    {
+                        workspace.ConversationEngine.ClearReviewAllPrompt();
+
+                        ReviewAllRequested?.Invoke(
+                            this,
+                            EventArgs.Empty);
+
+                        Conversation.AddGuideMessage(
+                            "I'll review all of the recommendations for you.");
+
+                        return;
+                    }
+
+                    workspace.ConversationEngine.ClearReviewAllPrompt();
+                }
 
                 CV_ActionRequest? actionRequest =
                     workspace.ConversationEngine
@@ -272,25 +292,88 @@ namespace SmartRenamer.ViewModels.Guide
                     Conversation.AddGuideMessage("");
 
                     //---------------------------------------------------------
-                    // The action request has been recognized.
+                    // The Conversation Framework has created a concrete
+                    // domain action request.
                     //
-                    // We deliberately do not execute it here yet because the
-                    // application-level dispatcher bridge has not been wired
-                    // into the Workspace.
-                    //
-                    // This keeps the Guide independent of the Observation
-                    // Engine and prevents the Workspace from becoming a
-                    // domain-action coordinator.
+                    // The Guide does not know what the action means.
+                    // It passes the request to the GuideInvestigator, which
+                    // routes it through the same ProjectWorkflow used for
+                    // the investigation.
                     //---------------------------------------------------------
 
-                    Conversation.AddGuideMessage(
-                        $"I understand. You want me to proceed with " +
-                        $"'{actionRequest.ActionId}'.");
+                    CV_ActionResult actionResult =
+                        guideInvestigator.ExecuteAction(
+                            actionRequest);
 
                     //---------------------------------------------------------
-                    // The request remains available to the next action
-                    // execution layer.
+                    // Report a failed action.
                     //---------------------------------------------------------
+
+                    if (!actionResult.Success)
+                    {
+                        Conversation.AddGuideMessage(
+                            string.IsNullOrWhiteSpace(actionResult.Message)
+                                ? "I wasn't able to complete that action."
+                                : actionResult.Message);
+
+                        return;
+                    }
+
+                    //---------------------------------------------------------
+                    // Report the result returned by the domain Expert.
+                    //---------------------------------------------------------
+
+                    if (!string.IsNullOrWhiteSpace(actionResult.Message))
+                    {
+                        Conversation.AddGuideMessage(
+                            actionResult.Message);
+                    }
+
+                    //---------------------------------------------------------
+                    // Report supporting evidence.
+                    //---------------------------------------------------------
+
+                    foreach (string evidence in actionResult.Evidence)
+                    {
+                        if (!string.IsNullOrWhiteSpace(evidence))
+                        {
+                            Conversation.AddGuideMessage(
+                                evidence);
+                        }
+                    }
+
+                    //---------------------------------------------------------
+                    // Present structured options.
+                    //
+                    // For ISBN research these are the ISBN candidates returned
+                    // by the Ebook Expert.
+                    //---------------------------------------------------------
+
+                    if (actionResult.Options.Count > 0)
+                    {
+
+                        workspace.ConversationEngine.RememberActionOptions(
+                            actionResult.Options);
+
+                        Conversation.AddGuideMessage(
+                            "Here are the results I found:");
+
+                        foreach (CV_ActionOption option
+    in actionResult.Options)
+                        {
+                            Conversation.Messages.Add(
+                                new GuideMessage
+                                {
+                                    Speaker = GuideSpeaker.Guide,
+                                    DisplayName = "Scout",
+                                    Text = string.Empty,
+                                    Payload = option
+                                });
+                        }
+
+                        Conversation.AddGuideMessage(
+                            "Tell me which result you'd like me to use.");
+                    }
 
                     return;
                 }
@@ -489,6 +572,92 @@ namespace SmartRenamer.ViewModels.Guide
                     break;
             }
         }
+
+        /// <summary>
+        /// Executes a conversation action option selected by clicking
+        /// the option displayed in the conversation.
+        ///
+        /// Clicking is simply another way of expressing the user's choice.
+        /// It uses the same Conversation Framework action path as typed input.
+        /// </summary>
+        public void SelectActionOption(
+            CV_ActionOption option)
+        {
+            if (option == null)
+                return;
+
+            CV_ActionRequest? actionRequest =
+                workspace.ConversationEngine.CreateActionRequest(
+                    option.Id);
+
+            if (actionRequest == null)
+            {
+                Conversation.AddGuideMessage(
+                    "I couldn't process that selection.");
+
+                return;
+            }
+
+            workspace.ConversationEngine.ClearActionOptions();
+
+            Conversation.AddUserMessage(
+                option.Label);
+
+            CV_ActionResult actionResult =
+                guideInvestigator.ExecuteAction(
+                    actionRequest);
+
+            if (!actionResult.Success)
+            {
+                Conversation.AddGuideMessage(
+                    string.IsNullOrWhiteSpace(actionResult.Message)
+                        ? "I wasn't able to complete that action."
+                        : actionResult.Message);
+
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(actionResult.Message))
+            {
+                Conversation.AddGuideMessage(
+                    actionResult.Message);
+            }
+
+            foreach (string evidence in actionResult.Evidence)
+            {
+                if (!string.IsNullOrWhiteSpace(evidence))
+                {
+                    Conversation.AddGuideMessage(
+                        evidence);
+                }
+            }
+
+            if (actionResult.Options.Count > 0)
+            {
+                workspace.ConversationEngine.RememberActionOptions(
+                    actionResult.Options);
+
+                Conversation.AddGuideMessage(
+                    "Here are the results I found:");
+
+                foreach (CV_ActionOption nextOption
+                    in actionResult.Options)
+                {
+                    Conversation.Messages.Add(
+                        new GuideMessage
+                        {
+                            Speaker = GuideSpeaker.Guide,
+                            DisplayName = "Scout",
+                            Text = string.Empty,
+                            Payload = nextOption
+                        });
+                }
+
+                Conversation.AddGuideMessage(
+                    "You can choose another result or continue talking to me.");
+            }
+        }
+
 
         // =====================================================================
         // Choose Folder

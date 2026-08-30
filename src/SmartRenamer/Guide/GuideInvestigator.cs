@@ -1,6 +1,8 @@
-﻿using System.Text;
+﻿using Scout.Observations.Conversation;
 using SmartRenamer.Models;
 using SmartRenamer.Services;
+using System;
+using System.Text;
 
 namespace SmartRenamer.Guide
 {
@@ -21,6 +23,23 @@ namespace SmartRenamer.Guide
         {
             return workflow.Execute();
         }
+
+        /// <summary>
+        /// Executes a Conversation Framework action through the same
+        /// ProjectWorkflow that performed the investigation.
+        ///
+        /// This preserves the domain Expert state created during
+        /// investigation.
+        /// </summary>
+        public CV_ActionResult ExecuteAction(
+            CV_ActionRequest request)
+        {
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            return workflow.ExecuteAction(request);
+        }
+
 
         /// <summary>
         /// Converts the workflow results into

@@ -70,6 +70,8 @@ namespace SmartRenamer.Services
                     destination,
                     true);
 
+                result.CopiedFiles[item.FullPath] = destination;
+
                 result.FilesRenamed++;
 
                 progress?.Report(

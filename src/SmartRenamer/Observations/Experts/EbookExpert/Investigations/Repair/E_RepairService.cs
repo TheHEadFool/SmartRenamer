@@ -127,253 +127,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             return _isbnResearchResource.Research(
                 opportunity.Record.Metadata);
         }
-
-        /// <summary>
-        /// Creates a temporary working copy and applies an explicitly
-        /// approved ISBN to that copy.
-        ///
-        /// The original ebook is never modified.
-        /// </summary>
-        public bool PrepareIsbnRepair(
-            RepairOpportunity opportunity,
-            string approvedIsbn)
-        {
-            if (opportunity == null)
-                throw new ArgumentNullException(nameof(opportunity));
-
-            if (string.IsNullOrWhiteSpace(approvedIsbn))
-                throw new ArgumentException(
-                    "Approved ISBN cannot be empty.",
-                    nameof(approvedIsbn));
-
-            if (!opportunity.MissingIsbn)
-                return false;
-
-            if (opportunity.Record?.File == null)
-                return false;
-
-            //---------------------------------------------------------
-            // Create an isolated working copy.
-            //---------------------------------------------------------
-
-            string workingPath =
-                _repairWorkspace.CreateWorkingCopy(
-                    opportunity.Record.File);
-
-            //---------------------------------------------------------
-            // Apply the approved ISBN to the working copy.
-            //---------------------------------------------------------
-
-            bool repaired =
-                _epubRepairResource.AddIsbn(
-                    opportunity.Record.File,
-                    approvedIsbn,
-                    workingPath);
-
-            if (!repaired)
-                return false;
-
-            //---------------------------------------------------------
-            // Verify the actual working copy.
-            //---------------------------------------------------------
-
-            bool verified =
-                VerifyIsbn(
-                    opportunity,
-                    approvedIsbn,
-                    workingPath);
-
-            if (!verified)
-                return false;
-
-            //---------------------------------------------------------
-            // Preserve the prepared copy for the later Scout
-            // organization handoff.
-            //---------------------------------------------------------
-
-            string originalPath =
-                opportunity.Record.File.OriginalFullPath;
-
-            if (string.IsNullOrWhiteSpace(originalPath))
-            {
-                originalPath =
-                    opportunity.Record.File.CurrentFullPath;
-            }
-
-            if (string.IsNullOrWhiteSpace(originalPath))
-                return false;
-
-            _preparedFiles[originalPath] =
-                workingPath;
-
-            return true;
-        }
-
-        /// <summary>
-        /// Returns the prepared working copy associated with an original ebook.
-        ///
-        /// Returns null when no repaired working copy has been prepared.
-        /// </summary>
-        public string? GetPreparedFile(
-            string originalPath)
-        {
-            if (string.IsNullOrWhiteSpace(originalPath))
-                return null;
-
-            return _preparedFiles.TryGetValue(
-                originalPath,
-                out string? preparedPath)
-                ? preparedPath
-                : null;
-        }
-
-        /// <summary>
-        /// Applies an explicitly approved ISBN to a supplied target path.
-        ///
-        /// This method is retained as the low-level service operation.
-        /// </summary>
-        public bool ApplyIsbn(
-            RepairOpportunity opportunity,
-            string isbn,
-            string targetPath)
-        {
-            if (opportunity == null)
-                throw new ArgumentNullException(nameof(opportunity));
-
-            if (string.IsNullOrWhiteSpace(isbn))
-                throw new ArgumentException(
-                    "ISBN cannot be empty.",
-                    nameof(isbn));
-
-            if (string.IsNullOrWhiteSpace(targetPath))
-                throw new ArgumentException(
-                    "Target path cannot be empty.",
-                    nameof(targetPath));
-
-            //---------------------------------------------------------
-            // Do not repair an ebook that the Repair Block did not
-            // identify as missing an ISBN.
-            //---------------------------------------------------------
-
-            if (!opportunity.MissingIsbn)
-                return false;
-
-            //---------------------------------------------------------
-            // The RepairOpportunity contains the FileContext used
-            // for ebook metadata and extension information.
-            //---------------------------------------------------------
-
-            if (opportunity.Record?.File == null)
-                return false;
-
-            //---------------------------------------------------------
-            // Delegate the physical EPUB modification to the Resource.
-            //---------------------------------------------------------
-
-            return _epubRepairResource.AddIsbn(
-                opportunity.Record.File,
-                isbn,
-                targetPath);
-        }
-
-        /// <summary>
-        /// Verifies that the supplied ISBN is present in the specified
-        /// EPUB path.
-        ///
-        /// The EPUB is re-read using the shared Ebook metadata reader.
-        /// This method does not modify the ebook.
-        /// </summary>
-        public bool VerifyIsbn(
-            RepairOpportunity opportunity,
-            string isbn,
-            string targetPath)
-        {
-            if (opportunity == null)
-                throw new ArgumentNullException(nameof(opportunity));
-
-            if (string.IsNullOrWhiteSpace(isbn))
-                throw new ArgumentException(
-                    "ISBN cannot be empty.",
-                    nameof(isbn));
-
-            if (string.IsNullOrWhiteSpace(targetPath))
-                throw new ArgumentException(
-                    "Target path cannot be empty.",
-                    nameof(targetPath));
-
-            if (opportunity.Record?.File == null)
-                return false;
-
-            if (!File.Exists(targetPath))
-                return false;
-
-            //---------------------------------------------------------
-            // Build a temporary FileContext representing the prepared
-            // EPUB. The original FileContext remains unchanged.
-            //---------------------------------------------------------
-
-            FileContext workingFile = new()
-            {
-                OriginalFullPath =
-                    opportunity.Record.File.OriginalFullPath,
-
-                OriginalName =
-                    opportunity.Record.File.OriginalName,
-
-                CurrentFullPath =
-                    targetPath,
-
-                CurrentName =
-                    Path.GetFileName(targetPath),
-
-                Extension =
-                    Path.GetExtension(targetPath),
-
-                DestinationFolder =
-                    opportunity.Record.File.DestinationFolder,
-
-                DestinationName =
-                    opportunity.Record.File.DestinationName
-            };
-
-            //---------------------------------------------------------
-            // Re-read the prepared EPUB.
-            //---------------------------------------------------------
-
-            E_EbookMetadata? metadata =
-                E_EbookMetadataReader.Read(
-                    workingFile);
-
-            if (metadata == null)
-                return false;
-
-            //---------------------------------------------------------
-            // Verification succeeds only when the EPUB reports
-            // the exact ISBN supplied for the repair.
-            //---------------------------------------------------------
-
-            return string.Equals(
-                metadata.Isbn?.Trim(),
-                isbn.Trim(),
-                StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// Performs a complete approved ISBN repair in a temporary
-        /// Ebook Expert working copy.
-        ///
-        /// The original ebook is never modified.
-        /// </summary>
-        public bool RepairIsbn(
-            RepairOpportunity opportunity,
-            string approvedIsbn)
-        {
-            return PrepareIsbnRepair(
-                opportunity,
-                approvedIsbn);
-        }
-
-
+             
+         
         /// <summary>
         /// Adds one approved repair change to the repair plan belonging
         /// to the specified EPUB.
@@ -417,5 +172,113 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             repairPlan.AddChange(change);
         }
 
+
+        /// <summary>
+        /// Returns the complete repair plan for one original EPUB.
+        ///
+        /// The plan contains every repair explicitly approved by the user.
+        /// Returns null when no repairs have been approved.
+        /// </summary>
+        public E_RepairPlan? GetRepairPlan(
+            string originalPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalPath))
+                return null;
+
+            return _repairPlans.TryGetValue(
+                originalPath,
+                out E_RepairPlan? repairPlan)
+                ? repairPlan
+                : null;
+        }
+        /// <summary>
+        /// Executes all currently approved repairs for one EPUB.
+        ///
+        /// Creates ONE working copy from the original EPUB, applies every
+        /// executable repair in the plan, verifies the resulting EPUB,
+        /// and preserves the completed working copy for later handoff.
+        ///
+        /// The original EPUB is never modified.
+        /// </summary>
+        public string? ExecuteRepairPlan(
+            RepairOpportunity opportunity)
+        {
+            if (opportunity == null)
+                throw new ArgumentNullException(nameof(opportunity));
+
+            if (opportunity.Record?.File == null)
+                return null;
+
+            //---------------------------------------------------------
+            // The original EPUB path is the stable identity of the plan.
+            //---------------------------------------------------------
+
+            string originalPath =
+                opportunity.Record.File.OriginalFullPath;
+
+            if (string.IsNullOrWhiteSpace(originalPath))
+            {
+                originalPath =
+                    opportunity.Record.File.CurrentFullPath;
+            }
+
+            if (string.IsNullOrWhiteSpace(originalPath))
+                return null;
+
+            //---------------------------------------------------------
+            // Retrieve the approved repair plan.
+            //---------------------------------------------------------
+
+            E_RepairPlan? repairPlan =
+                GetRepairPlan(originalPath);
+
+            if (repairPlan == null)
+                return null;
+
+            if (repairPlan.Changes.Count == 0)
+                return null;
+
+            //---------------------------------------------------------
+            // Create ONE working copy.
+            //
+            // Every approved repair will be applied to this same copy.
+            //---------------------------------------------------------
+
+            string workingPath =
+                _repairWorkspace.CreateWorkingCopy(
+                    opportunity.Record.File);
+
+            //---------------------------------------------------------
+            // Apply every approved repair in the plan.
+            //
+            // ISBN is the first supported physical repair type.
+            //---------------------------------------------------------
+
+            foreach (E_RepairChange change in repairPlan.Changes)
+            {
+                if (!change.CanExecute)
+                    continue;
+
+                bool repaired =
+    _epubRepairResource.ApplyRepairChange(
+        opportunity.Record.File,
+        change,
+        workingPath);
+
+                if (!repaired)
+                    return null;
+
+            }
+
+            //---------------------------------------------------------
+            // Preserve the completed repaired EPUB for the later
+            // Scout output/organization stage.
+            //---------------------------------------------------------
+
+            _preparedFiles[originalPath] =
+                workingPath;
+
+            return workingPath;
+        }
     }
 }

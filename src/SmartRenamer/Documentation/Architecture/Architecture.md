@@ -1071,3 +1071,99 @@ Scout explains the result.
 ## A plugin owns its knowledge. Scout owns the conversation.
 
 ## The folders should describe roles, not implementation.
+
+
+# Scout UI Architecture
+
+## Scout Activity Indicator — Footprints
+
+### Purpose
+
+Scout needs a clear visual indication that it is actively working and when that work is complete.
+
+The original concept of using a conventional progress bar should be replaced by a thematic visual that is part of Scout's identity: **footprints moving through the sand from the files toward Scout's camp.**
+
+The footprints are not intended to represent overall project completion or the percentage of files processed.
+
+They represent the **current active operation**.
+
+---
+
+### Core Concept
+
+The Scout header already establishes two permanent destinations:
+
+**Files on the left → Scout's camp on the right**
+
+The footprints create a continuous path between those two destinations.
+
+When Scout begins an operation, footprints appear at the file side and begin moving along a meandering route toward the camp.
+
+When the footprints reach the camp, the current operation is complete.
+
+This provides an immediately understandable visual language:
+
+- **Footprints moving:** Scout is actively working.
+- **Footprints progressing toward camp:** Scout is making progress on the current operation.
+- **Footprints reaching camp:** The current operation is complete.
+- **Scout at camp / no moving footprints:** Scout is finished and ready for the next user decision or action.
+
+---
+
+### The Path
+
+The path should always have the same conceptual beginning and ending:
+
+**Files → Camp**
+
+However, the route between them may vary.
+
+Scout should have several predefined meandering routes across the sandy clearing. Different operations may use different routes so the animation feels natural rather than mechanical.
+
+Possible route characteristics include:
+
+- gentle curves
+- wandering left and right
+- shallow zig-zags
+- broad arcs
+- slightly longer exploratory paths
+- shorter direct paths
+
+The exact route does not communicate a different meaning to the user. It is primarily a visual representation of Scout moving through the current task.
+
+The route should remain continuous from the files to the camp.
+
+---
+
+### Important: Footprints Represent an Operation, Not the Entire Workflow
+
+The footprints must **not** represent the overall progress of an investigation or project.
+
+Scout's workflow is cyclical.
+
+For example, an Ebook workflow may be:
+
+```text
+Investigate
+    ↓
+Missing ISBNs
+    ↓
+Research ISBNs
+    ↓
+User chooses ISBN / Skip
+    ↓
+Missing Covers
+    ↓
+Research Covers
+    ↓
+User chooses Covers / Skip
+    ↓
+Missing Descriptions
+    ↓
+Research Descriptions
+    ↓
+User chooses Descriptions / Skip
+    ↓
+Organization
+    ↓
+Re-investigation as needed

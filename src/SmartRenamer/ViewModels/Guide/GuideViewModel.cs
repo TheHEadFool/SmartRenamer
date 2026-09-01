@@ -10,6 +10,7 @@ using SmartRenamer.Services;
 using SmartRenamer.ViewModels.Workspace;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 
 namespace SmartRenamer.ViewModels.Guide
@@ -92,6 +93,14 @@ namespace SmartRenamer.ViewModels.Guide
         public GuideConversation Conversation { get; } =
             new();
 
+        /// <summary>
+        /// The actions currently available to the user.
+        /// These are presented by the Action Button Bar.
+        /// The Guide does not interpret their domain meaning.
+        /// </summary>
+        public ObservableCollection<CV_ActionOption> ActionOptions { get; } =
+            new();
+
         //---------------------------------------------------------
         // Events
         //---------------------------------------------------------
@@ -131,6 +140,8 @@ namespace SmartRenamer.ViewModels.Guide
 
         public RelayCommand BrowseFolderCommand { get; }
 
+        public RelayCommand SelectActionOptionCommand { get; }
+
         // =====================================================================
         // Constructor
         // =====================================================================
@@ -151,6 +162,13 @@ namespace SmartRenamer.ViewModels.Guide
 
             BrowseFolderCommand =
                 new RelayCommand(ChooseFolder);
+
+            SelectActionOptionCommand =
+    new RelayCommand(parameter =>
+    {
+        if (parameter is CV_ActionOption option)
+            SelectActionOption(option);
+    });
 
             //---------------------------------------------------------
             // Initial folder picker card.
@@ -309,15 +327,8 @@ namespace SmartRenamer.ViewModels.Guide
                     // Report a failed action.
                     //---------------------------------------------------------
 
-                    if (!actionResult.Success)
-                    {
-                        Conversation.AddGuideMessage(
-                            string.IsNullOrWhiteSpace(actionResult.Message)
-                                ? "I wasn't able to complete that action."
-                                : actionResult.Message);
-
-                        return;
-                    }
+                    HandleActionResult(actionResult);
+                    return;
 
                     //---------------------------------------------------------
                     // Report the result returned by the domain Expert.
@@ -351,15 +362,22 @@ namespace SmartRenamer.ViewModels.Guide
 
                     if (actionResult.Options.Count > 0)
                     {
-
                         workspace.ConversationEngine.RememberActionOptions(
                             actionResult.Options);
+
+                        ActionOptions.Clear();
+
+                        foreach (CV_ActionOption option
+                            in actionResult.Options)
+                        {
+                            ActionOptions.Add(option);
+                        }
 
                         Conversation.AddGuideMessage(
                             "Here are the results I found:");
 
-                        foreach (CV_ActionOption option
-    in actionResult.Options)
+                        foreach (CV_ActionOption nextOption
+                            in actionResult.Options)
                         {
                             Conversation.Messages.Add(
                                 new GuideMessage
@@ -367,12 +385,12 @@ namespace SmartRenamer.ViewModels.Guide
                                     Speaker = GuideSpeaker.Guide,
                                     DisplayName = "Scout",
                                     Text = string.Empty,
-                                    Payload = option
+                                    Payload = nextOption
                                 });
                         }
 
                         Conversation.AddGuideMessage(
-                            "Tell me which result you'd like me to use.");
+                            "You can choose one of these results or continue talking to me.");
                     }
 
                     return;
@@ -600,12 +618,37 @@ namespace SmartRenamer.ViewModels.Guide
 
             workspace.ConversationEngine.ClearActionOptions();
 
+            ActionOptions.Clear();
+
             Conversation.AddUserMessage(
                 option.Label);
 
             CV_ActionResult actionResult =
-                guideInvestigator.ExecuteAction(
-                    actionRequest);
+    guideInvestigator.ExecuteAction(
+        actionRequest);
+
+            HandleActionResult(actionResult);
+        }
+
+        // =====================================================================
+        // Action Result Handling
+        // =====================================================================
+
+            /// <summary>
+            /// Handles the result of a domain action in one common place.
+            ///
+            /// Both typed user input and clicked action options arrive here.
+            /// This keeps conversation handling centralized so future workflow
+            /// cycles can continue from the same point.
+            /// </summary>
+        private void HandleActionResult(CV_ActionResult actionResult)
+        {
+            if (actionResult == null)
+                return;
+
+            // -------------------------------------------------------------
+            // Report a failed action.
+            // -------------------------------------------------------------
 
             if (!actionResult.Success)
             {
@@ -617,11 +660,19 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
             }
 
+            // -------------------------------------------------------------
+            // Report the result returned by the domain Expert.
+            // -------------------------------------------------------------
+
             if (!string.IsNullOrWhiteSpace(actionResult.Message))
             {
                 Conversation.AddGuideMessage(
                     actionResult.Message);
             }
+
+            // -------------------------------------------------------------
+            // Report supporting evidence.
+            // -------------------------------------------------------------
 
             foreach (string evidence in actionResult.Evidence)
             {
@@ -632,32 +683,21 @@ namespace SmartRenamer.ViewModels.Guide
                 }
             }
 
-            if (actionResult.Options.Count > 0)
+            // -------------------------------------------------------------
+            // Present structured options.
+            //
+            // These may be ISBN candidates, cover choices, or other
+            // domain-specific choices supplied by the Expert.
+            // -------------------------------------------------------------
+
+            ActionOptions.Clear();
+
+            foreach (CV_ActionOption option
+                in actionResult.Options)
             {
-                workspace.ConversationEngine.RememberActionOptions(
-                    actionResult.Options);
-
-                Conversation.AddGuideMessage(
-                    "Here are the results I found:");
-
-                foreach (CV_ActionOption nextOption
-                    in actionResult.Options)
-                {
-                    Conversation.Messages.Add(
-                        new GuideMessage
-                        {
-                            Speaker = GuideSpeaker.Guide,
-                            DisplayName = "Scout",
-                            Text = string.Empty,
-                            Payload = nextOption
-                        });
-                }
-
-                Conversation.AddGuideMessage(
-                    "You can choose another result or continue talking to me.");
+                ActionOptions.Add(option);
             }
         }
-
 
         // =====================================================================
         // Choose Folder

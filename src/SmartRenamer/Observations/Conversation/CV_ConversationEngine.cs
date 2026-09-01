@@ -263,7 +263,7 @@ public sealed class CV_ConversationEngine
                 return new CV_ActionRequest
                 {
                     RecommendationId = recommendation.Id,
-                    ActionId = recommendation.ActionId,
+                    ActionId = option.ActionId,
                     UserInput = userInput,
                     OptionId = option.Id,
                     ContextId = option.ContextId

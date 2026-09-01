@@ -28,6 +28,11 @@ namespace Scout.Observations.Conversation
         public string Id { get; init; } = string.Empty;
 
         /// <summary>
+        /// Identifier of the Conversation action that produced this option.
+        /// </summary>
+        public string ActionId { get; init; } = string.Empty;
+
+        /// <summary>
         /// Identifier of the domain object associated with this option.
         ///
         /// The Conversation Framework does not interpret this value.

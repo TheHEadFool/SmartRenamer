@@ -1,9 +1,10 @@
-﻿using System;
+﻿using SmartRenamer.Models;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
+using System;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Xml.Linq;
-using SmartRenamer.Models;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 {
@@ -248,5 +249,47 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 }
             }
         }
+       /// <summary>
+       /// Applies one approved repair change to the supplied EPUB working copy.
+       ///
+       /// The Resource owns the physical EPUB modification.
+       /// The original EPUB is never modified.
+       /// </summary>
+        public bool ApplyRepairChange(
+            FileContext sourceFile,
+            E_RepairChange change,
+            string targetPath)
+        {
+            if (sourceFile == null)
+                throw new ArgumentNullException(nameof(sourceFile));
+
+            if (change == null)
+                throw new ArgumentNullException(nameof(change));
+
+            if (string.IsNullOrWhiteSpace(targetPath))
+                throw new ArgumentException(
+                    "Target path cannot be empty.",
+                    nameof(targetPath));
+
+            if (!change.CanExecute)
+                return false;
+
+            if (string.Equals(
+                    change.RepairType,
+                    "ISBN",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                if (change.ApprovedValue is not string approvedIsbn)
+                    return false;
+
+                return AddIsbn(
+                    sourceFile,
+                    approvedIsbn,
+                    targetPath);
+            }
+
+            return false;
+        }
+
     }
-}
+    }

@@ -103,6 +103,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                         request,
                         opportunities),
 
+                "ExecuteRepairPlan" =>
+                    ExecuteRepairPlan(
+                        request,
+                        opportunities),
+
                 _ =>
                     new CV_ActionResult
                     {
@@ -114,6 +119,87 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             };
         }
 
+        /// <summary>
+        /// Executes all approved repairs for the EPUB identified by ContextId.
+        ///
+        /// The Repair Service creates one working copy, applies the complete
+        /// approved repair plan, verifies the result, and preserves the
+        /// completed repaired EPUB for the later output stage.
+        /// </summary>
+        private CV_ActionResult ExecuteRepairPlan(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities)
+        {
+            if (string.IsNullOrWhiteSpace(request.ContextId))
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I received the repair request, but I don't know which ebook it belongs to."
+                };
+            }
+
+            RepairOpportunity? selectedOpportunity = null;
+
+            foreach (RepairOpportunity opportunity in opportunities)
+            {
+                string originalPath =
+                    opportunity.Record?.File?.OriginalFullPath
+                    ?? string.Empty;
+
+                if (string.Equals(
+                    originalPath,
+                    request.ContextId,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    selectedOpportunity = opportunity;
+                    break;
+                }
+            }
+
+            if (selectedOpportunity == null)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I couldn't match the repair request to the ebook in the current investigation."
+                };
+            }
+
+            string? repairedPath =
+                _repairService.ExecuteRepairPlan(
+                    selectedOpportunity);
+
+            if (string.IsNullOrWhiteSpace(repairedPath))
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I couldn't complete the approved repair plan for this ebook."
+                };
+            }
+
+            CV_ActionResult result = new()
+            {
+                ActionId = request.ActionId,
+                Success = true,
+                Message =
+                    "The approved repair plan has been completed successfully. " +
+                    "The original ebook remains untouched, and the completed repaired copy " +
+                    "is ready for the final output stage."
+            };
+
+            result.Evidence.Add(
+                $"Completed repaired EPUB: {repairedPath}");
+
+            return result;
+        }
         /// <summary>
         /// Records an ISBN candidate explicitly selected by the user.
         ///
@@ -316,8 +402,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         /// Research never modifies an EPUB.
         /// </summary>
         private CV_ActionResult ResearchMissingIsbn(
-            CV_ActionRequest request,
-            IReadOnlyList<RepairOpportunity> opportunities)
+    CV_ActionRequest request,
+    IReadOnlyList<RepairOpportunity> opportunities)
         {
             List<string> evidence = new();
             List<CV_ActionOption> options = new();
@@ -329,6 +415,26 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             {
                 if (!opportunity.MissingIsbn)
                     continue;
+
+                string originalPath =
+                    opportunity.Record?.File?.OriginalFullPath
+                    ?? string.Empty;
+
+                // ---------------------------------------------------------
+                // If the action is associated with a specific ebook,
+                // research only that ebook.
+                //
+                // This prevents ISBN candidates from multiple ebooks
+                // being mixed into one set of choices.
+                // ---------------------------------------------------------
+                if (!string.IsNullOrWhiteSpace(request.ContextId) &&
+                    !string.Equals(
+                        originalPath,
+                        request.ContextId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
 
                 researchedBooks++;
 
@@ -356,14 +462,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     {
                         // The candidate itself.
                         Id = candidate.Isbn,
+                        ActionId = request.ActionId,
 
                         // Identifies the specific ebook this candidate belongs to.
                         //
-                        // OriginalFullPath is used rather than CurrentFullPath because
-                        // the current name/path may change during the workflow.
-                        ContextId =
-                            opportunity.Record?.File?.OriginalFullPath
-                            ?? string.Empty,
+                        // OriginalFullPath is used rather than CurrentFullPath
+                        // because the current name/path may change during the
+                        // workflow.
+                        ContextId = originalPath,
 
                         Label =
                             $"{candidate.Isbn} — {fileName}",
@@ -389,7 +495,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     ActionId = request.ActionId,
                     Success = false,
                     Message =
-                        "No ebooks with missing ISBN information were available for research."
+                        string.IsNullOrWhiteSpace(request.ContextId)
+                            ? "No ebooks with missing ISBN information were available for research."
+                            : "The selected ebook could not be found among the current missing-ISBN opportunities."
                 };
             }
 

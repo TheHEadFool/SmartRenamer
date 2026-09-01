@@ -203,7 +203,7 @@
         Margin="20,0"
         Style="{StaticResource CardBorder}">
 
-                <Grid Margin="25">
+                <Grid Margin="20,2,20,10">
 
                     <!-- ================================================= -->
                     <!-- NORMAL MODE -->
@@ -227,12 +227,17 @@
                         </Grid.Style>
 
                         <Grid.RowDefinitions>
+                            <!-- Recommendation -->
                             <RowDefinition Height="Auto"/>
+
+                            <!-- Supporting Evidence - priority area -->
+                            <RowDefinition Height="*"/>
+
+                            <!-- Rename Preview heading -->
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="25"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="25"/>
-                            <RowDefinition Height="*"/>
+
+                            <!-- Rename Preview - compact verification area -->
+                            <RowDefinition Height="110"/>
                         </Grid.RowDefinitions>
 
                         <TextBlock
@@ -241,46 +246,52 @@
                 FontWeight="Bold"
                 Text="Scout's Recommendation"/>
 
-                        <StackPanel Grid.Row="3">
+                        <StackPanel Grid.Row="1">
 
                             <TextBlock
-                    FontSize="20"
-                    FontWeight="SemiBold"
-                    Text="Supporting Evidence"/>
+        FontSize="20"
+        FontWeight="SemiBold"
+        Margin="0,0,0,6"
+        Text="Supporting Evidence"/>
 
                             <Border
-                    Margin="0,10,0,0"
-                    Padding="12"
-                    Background="#EEF5FF"
-                    CornerRadius="10">
+        Padding="12"
+        Background="#EEF5FF"
+        CornerRadius="10">
 
-                                <StackPanel>
+                                <ScrollViewer
+            VerticalScrollBarVisibility="Auto"
+            HorizontalScrollBarVisibility="Disabled">
 
-                                    <TextBlock
-                            Text="{Binding Workspace.SelectedObservation.Description}"
-                            TextWrapping="Wrap"
-                            FontSize="13"
-                            Margin="0,0,0,12"/>
+                                    <StackPanel>
 
-                                    <TextBlock
-                            Text="{Binding Workspace.SelectedObservation.WhyItMatters}"
-                            TextWrapping="Wrap"
-                            FontSize="13"
-                            Margin="0,0,0,12"/>
+                                        <TextBlock
+                    Text="{Binding Workspace.SelectedObservation.Description}"
+                    TextWrapping="Wrap"
+                    FontSize="13"
+                    Margin="0,0,0,12"/>
 
-                                    <TextBlock
-                            Text="{Binding Workspace.SelectedObservation.ActionTitle}"
-                            FontWeight="SemiBold"
-                            FontSize="14"
-                            TextWrapping="Wrap"/>
+                                        <TextBlock
+                    Text="{Binding Workspace.SelectedObservation.WhyItMatters}"
+                    TextWrapping="Wrap"
+                    FontSize="13"
+                    Margin="0,0,0,12"/>
 
-                                </StackPanel>
+                                        <TextBlock
+                    Text="{Binding Workspace.SelectedObservation.ActionTitle}"
+                    FontWeight="SemiBold"
+                    FontSize="14"
+                    TextWrapping="Wrap"/>
+
+                                    </StackPanel>
+
+                                </ScrollViewer>
 
                             </Border>
 
                         </StackPanel>
 
-                        <Grid Grid.Row="5">
+                        <Grid Grid.Row="2">
 
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -314,7 +325,7 @@
 
                             <Border
                     Grid.Row="1"
-                    Margin="0,15,0,0"
+                    Margin="0,6,0,0"
                     BorderBrush="#D8D8D8"
                     BorderThickness="1"
                     CornerRadius="8">
@@ -533,28 +544,41 @@ DataContext="{Binding Guide}"/>
 
         </Grid>
 
-        <!-- Status -->
+        <!-- Action Button Bar -->
 
         <Border Grid.Row="2"
-                Margin="0,20,0,0"
-                Padding="12"
-                CornerRadius="10"
-                Background="White"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1">
+        Margin="0,20,0,0"
+        Padding="12"
+        CornerRadius="10"
+        Background="White"
+        BorderBrush="{StaticResource BorderBrush}"
+        BorderThickness="1">
 
-            <DockPanel>
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                  VerticalScrollBarVisibility="Disabled">
 
-                <TextBlock
-                    FontWeight="SemiBold"
-                    Text="Ready"/>
+                <ItemsControl ItemsSource="{Binding Guide.ActionOptions}">
 
-                <TextBlock
-                    HorizontalAlignment="Right"
-                    Foreground="{StaticResource SecondaryTextBrush}"
-                    Text="Version 0.5 Development"/>
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
 
-            </DockPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Content="{Binding Label}"
+                            Margin="0,0,8,0"
+                            Padding="18,8"
+                            Command="{Binding DataContext.Guide.SelectActionOptionCommand,
+                                      RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+
+                </ItemsControl>
+
+            </ScrollViewer>
 
         </Border>
 

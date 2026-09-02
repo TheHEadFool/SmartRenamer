@@ -64,9 +64,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         //
         //---------------------------------------------------------
 
-        private readonly Dictionary<string, E_RepairPlan> _repairPlans =
-    new(StringComparer.OrdinalIgnoreCase);
-
         /// <summary>
         /// Executes an Ebook Expert action against the supplied repair
         /// opportunities.
@@ -88,14 +85,18 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             // Research requests do not contain an OptionId.
             //---------------------------------------------------------
 
-            if (!string.IsNullOrWhiteSpace(request.OptionId))
+            if (!string.IsNullOrWhiteSpace(request.OptionId) &&
+    string.Equals(
+        request.ActionId,
+        "ResearchMissingIsbn",
+        StringComparison.OrdinalIgnoreCase))
             {
                 return SelectIsbnCandidate(
                     request,
                     opportunities);
             }
 
-           
+
             return request.ActionId switch
             {
                 "ResearchMissingIsbn" =>
@@ -190,15 +191,15 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 ActionId = request.ActionId,
                 Success = true,
                 Message =
-                    "The approved repair plan has been completed successfully. " +
-                    "The original ebook remains untouched, and the completed repaired copy " +
-                    "is ready for the final output stage."
+        "The approved repair has been applied. " +
+        "The repaired EPUB is ready for the next investigation pass."
             };
 
             result.Evidence.Add(
                 $"Completed repaired EPUB: {repairedPath}");
 
             return result;
+
         }
         /// <summary>
         /// Records an ISBN candidate explicitly selected by the user.
@@ -207,16 +208,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         /// by the Ebook Expert's research operation.
         ///
         /// No EPUB is modified here.
-        /// </summary>
-        /// <summary>
-        /// Records an ISBN candidate explicitly selected by the user,
-        /// then prepares the approved repair in the Ebook Expert's
-        /// temporary working copy.
-        ///
-        /// The original ebook is never modified.
-        ///
-        /// The prepared working copy becomes the current source file for
-        /// the remainder of the Scout workflow.
         /// </summary>
         private CV_ActionResult SelectIsbnCandidate(
             CV_ActionRequest request,
@@ -314,10 +305,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
 
             //---------------------------------------------------------
-            // Prepare the repair in the Ebook Expert's temporary
-            // working copy.
+            // The original EPUB is not modified here.
             //
-            // The original EPUB is not modified.
+            // The approved ISBN is recorded in the repair plan.
+            // The actual repair occurs later when the repair plan
+            // is explicitly executed.
             //---------------------------------------------------------
 
             //---------------------------------------------------------
@@ -357,6 +349,17 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             result.Evidence.Add(
                 approvedCandidate.Evidence);
 
+            result.Options.Add(
+                new CV_ActionOption
+    {
+                    Id = "ApplyRepair",
+                    ActionId = "ExecuteRepairPlan",
+                    ContextId = request.ContextId,
+                    Label = "Apply this repair",
+                    Confidence = 1.0,
+                    Source = "Ebook Expert"
+    });
+
             return result;
 
 
@@ -373,12 +376,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             if (string.IsNullOrWhiteSpace(originalPath))
                 return null;
 
-            if (!_repairPlans.TryGetValue(
-                    originalPath,
-                    out E_RepairPlan? repairPlan))
-            {
+            E_RepairPlan? repairPlan =
+    _repairService.GetRepairPlan(originalPath);
+
+            if (repairPlan == null)
                 return null;
-            }
 
             foreach (E_RepairChange change in repairPlan.Changes)
             {

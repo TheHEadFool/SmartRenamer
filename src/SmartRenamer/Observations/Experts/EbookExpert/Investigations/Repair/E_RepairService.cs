@@ -271,12 +271,38 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             }
 
             //---------------------------------------------------------
-            // Preserve the completed repaired EPUB for the later
-            // Scout output/organization stage.
+            // The repaired working copy is now the current version
+            // of this EPUB.
+            //
+            // OriginalFullPath remains unchanged as the stable
+            // identity of the source ebook.
+            //
+            // CurrentFullPath moves forward to the repaired copy so
+            // the next Ebook Expert investigation reads the repaired
+            // EPUB rather than starting over from the original.
+            //---------------------------------------------------------
+
+            opportunity.Record.File.CurrentFullPath =
+                workingPath;
+
+            opportunity.Record.File.CurrentName =
+                Path.GetFileName(workingPath);
+
+            //---------------------------------------------------------
+            // Preserve the completed repaired EPUB for later
+            // workflow/output handling.
             //---------------------------------------------------------
 
             _preparedFiles[originalPath] =
                 workingPath;
+
+            //---------------------------------------------------------
+            // These approved changes have now been physically applied.
+            // A later repair cycle must create a new plan containing
+            // only newly approved changes.
+            //---------------------------------------------------------
+
+            repairPlan.Changes.Clear();
 
             return workingPath;
         }

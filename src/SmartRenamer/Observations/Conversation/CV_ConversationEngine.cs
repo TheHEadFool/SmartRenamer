@@ -254,15 +254,8 @@ public sealed class CV_ConversationEngine
                 option.Id,
                 StringComparison.OrdinalIgnoreCase))
             {
-                CV_Recommendation? recommendation =
-                    _currentTopic.Recommendation;
-
-                if (recommendation == null)
-                    return null;
-
                 return new CV_ActionRequest
                 {
-                    RecommendationId = recommendation.Id,
                     ActionId = option.ActionId,
                     UserInput = userInput,
                     OptionId = option.Id,

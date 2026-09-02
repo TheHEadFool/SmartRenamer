@@ -7,30 +7,30 @@ namespace Scout.Observations.Conversation
     /// CV_ActionRequest
     /// =========================================================================
     ///
-    /// Represents a user's decision to invoke the next-step action associated
-    /// with the recommendation currently being discussed.
+    /// Represents a user's request to execute an action through the
+    /// Conversation Framework.
     ///
-    /// This is deliberately generic.
+    /// The request supports two valid forms:
     ///
-    /// The Conversation Framework knows WHAT action the user approved.
-    /// The domain Expert knows HOW that action is performed.
+    /// 1. Recommendation action
+    ///    - RecommendationId identifies the recommendation.
+    ///    - ActionId identifies the action.
     ///
-    /// Examples:
+    /// 2. Selected action option
+    ///    - ActionId identifies the action.
+    ///    - OptionId identifies the selected result.
+    ///    - ContextId identifies the domain object associated with that result.
     ///
-    ///     ResearchMissingIsbn
-    ///     ResearchMissingCover
-    ///     ResearchMissingSummary
-    ///
-    /// The ActionId is therefore a routing key, not an implementation.
+    /// The Conversation Framework does not interpret domain-specific meaning.
+    /// The appropriate Expert does that.
     ///
     /// =========================================================================
     /// </summary>
     public sealed class CV_ActionRequest
     {
         /// <summary>
-        /// Identity of the recommendation from which this action originated.
-        ///
-        /// This preserves the connection to the original ExpertFinding.
+        /// Identity of the recommendation from which this action originated,
+        /// when the request came from a recommendation.
         /// </summary>
         public Guid RecommendationId { get; init; }
 
@@ -42,8 +42,8 @@ namespace Scout.Observations.Conversation
         /// <summary>
         /// Original user input that caused the action request.
         ///
-        /// This is preserved for conversation history, diagnostics,
-        /// and future intent analysis.
+        /// This is preserved for conversation history,
+        /// diagnostics, and future intent analysis.
         /// </summary>
         public string UserInput { get; init; } = string.Empty;
 
@@ -67,9 +67,15 @@ namespace Scout.Observations.Conversation
 
         /// <summary>
         /// Indicates whether this request identifies a usable action.
+        ///
+        /// A request is valid when it has an ActionId and either:
+        ///
+        /// - a RecommendationId, for a normal recommendation action, or
+        /// - an OptionId, for a selected action result.
         /// </summary>
         public bool IsValid =>
-            RecommendationId != Guid.Empty &&
-            !string.IsNullOrWhiteSpace(ActionId);
+            !string.IsNullOrWhiteSpace(ActionId) &&
+            (RecommendationId != Guid.Empty ||
+             !string.IsNullOrWhiteSpace(OptionId));
     }
 }

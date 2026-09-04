@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security.Policy;
 using System.Text.Json;
 using System.Threading;
 
@@ -186,13 +187,18 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         doc,
                         "author_name");
 
+                List<string> publishers =
+                    GetStringArray(
+                        doc,
+                        "publisher");
+
                 string publisher =
-                GetString(
-                    doc,
-                    "publisher");
+                    publishers.Count > 0
+                        ? publishers[0]
+                        : string.Empty;
 
                 List<string> publicationYears =
-                    GetStringArray(
+                    GetStringArrayOrNumbers(
                         doc,
                         "publish_year");
 
@@ -214,7 +220,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     CalculateConfidence(
                         metadata,
                         title,
-                        authors);
+                        authors,
+                        publisher);
 
                 //---------------------------------------------------------
                 // We do not want weak matches becoming repair candidates.
@@ -239,21 +246,61 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     if (!seenIsbns.Add(isbn))
                         continue;
 
+                    IsbnEditionVerification verification =
+                        VerifyIsbnEdition(
+                            isbn,
+                            metadata);
+
+                    confidence =
+    CalculateVerifiedConfidence(
+        metadata,
+        confidence,
+        publicationYear,
+        verification);
+
                     candidates.Add(
                         new IsbnResearchCandidate
                         {
                             Isbn = isbn,
-                            EditionKey = editionKey,
-                            Title = title,
+                            EditionKey =
+    verification.Found
+        ? verification.EditionKey
+        : editionKey,
+                            Title =
+    verification.Found &&
+    !string.IsNullOrWhiteSpace(
+        verification.Title)
+        ? verification.Title
+        : title,
                             Author = string.Join(", ", authors),
-                            Publisher = publisher,
-                            PublicationYear = publicationYear,
+                            Publisher =
+    verification.Found &&
+    !string.IsNullOrWhiteSpace(
+        verification.Publisher)
+        ? verification.Publisher
+        : publisher,
+                            PublicationYear =
+    verification.Found &&
+    !string.IsNullOrWhiteSpace(
+        verification.PublicationDate)
+        ? verification.PublicationDate
+        : publicationYear,
                             Source = sourceUrl,
                             Evidence =
-                                BuildEvidence(
-                                    title,
-                                    authors,
-                                    confidence),
+    BuildEvidence(
+        title,
+        authors,
+        publisher,
+        publicationYear,
+        confidence)
+    + " " +
+    BuildEditionEvidence(
+        verification),
+                            EditionVerified = verification.Found,
+                            VerifiedEditionTitle = verification.Title,
+                            VerifiedEditionPublisher = verification.Publisher,
+                            VerifiedEditionPublicationDate = verification.PublicationDate,
+                            VerifiedEditionKey = verification.EditionKey,
                             Confidence = confidence
                         });
                 }
@@ -265,6 +312,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         left.Confidence));
 
             return candidates;
+
+
+
         }
 
         /// <summary>
@@ -276,7 +326,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
         private static double CalculateConfidence(
             E_EbookMetadata metadata,
             string resultTitle,
-            List<string> resultAuthors)
+            List<string> resultAuthors,
+            string resultPublisher)
         {
             double score = 0.0;
 
@@ -294,12 +345,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         foundTitle,
                         StringComparison.OrdinalIgnoreCase))
                 {
-                    score += 0.70;
+                    score += 0.50;
                 }
                 else if (foundTitle.Contains(sourceTitle) ||
                          sourceTitle.Contains(foundTitle))
                 {
-                    score += 0.45;
+                    score += 0.30;
                 }
             }
 
@@ -319,29 +370,154 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                             foundAuthor,
                             StringComparison.OrdinalIgnoreCase))
                     {
-                        score += 0.30;
+                        score += 0.25;
                         break;
                     }
 
                     if (foundAuthor.Contains(sourceAuthor) ||
                         sourceAuthor.Contains(foundAuthor))
                     {
-                        score += 0.20;
+                        score += 0.15;
                         break;
                     }
                 }
             }
 
-            return Math.Min(score, 1.0);
-        }
+            string sourcePublisher =
+                NormalizeText(metadata.Publisher);
 
+            string foundPublisher =
+                NormalizeText(resultPublisher);
+
+            if (!string.IsNullOrWhiteSpace(sourcePublisher) &&
+                !string.IsNullOrWhiteSpace(foundPublisher))
+            {
+                if (string.Equals(
+                        sourcePublisher,
+                        foundPublisher,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    score += 0.25;
+                }
+                else if (foundPublisher.Contains(sourcePublisher) ||
+                         sourcePublisher.Contains(foundPublisher))
+                {
+                    score += 0.15;
+                }
+
+            }
+
+
+                return Math.Min(
+                    score,
+                    1.0);
+            }
+
+
+        /// <summary>
+        /// Strengthens or rejects a search candidate using the
+        /// ISBN-specific edition verification.
+        /// </summary>
+        private static double CalculateVerifiedConfidence(
+    E_EbookMetadata metadata,
+    double searchConfidence,
+    string searchPublicationYear,
+    IsbnEditionVerification verification)
+        {
+            if (!verification.Found)
+                return searchConfidence;
+
+            double score =
+                searchConfidence;
+
+            string sourceTitle =
+                NormalizeText(
+                    metadata.Title);
+
+            string verifiedTitle =
+                NormalizeText(
+                    verification.Title);
+
+            if (!string.IsNullOrWhiteSpace(sourceTitle) &&
+                !string.IsNullOrWhiteSpace(verifiedTitle))
+            {
+                if (string.Equals(
+                        sourceTitle,
+                        verifiedTitle,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    score += 0.15;
+                }
+                else if (verifiedTitle.Contains(sourceTitle) ||
+                         sourceTitle.Contains(verifiedTitle))
+                {
+                    score += 0.08;
+                }
+            }
+
+            string sourcePublisher =
+                NormalizeText(
+                    metadata.Publisher);
+
+            string verifiedPublisher =
+                NormalizeText(
+                    verification.Publisher);
+
+            if (!string.IsNullOrWhiteSpace(sourcePublisher) &&
+                !string.IsNullOrWhiteSpace(verifiedPublisher))
+            {
+                if (string.Equals(
+                        sourcePublisher,
+                        verifiedPublisher,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    score += 0.15;
+                }
+                else if (verifiedPublisher.Contains(sourcePublisher) ||
+                         sourcePublisher.Contains(verifiedPublisher))
+                {
+                    score += 0.08;
+                }
+
+
+
+            }
+
+            string searchYear =
+    ExtractPublicationYear(searchPublicationYear);
+
+            string verifiedYear =
+                ExtractPublicationYear(
+                    verification.PublicationDate);
+
+            if (!string.IsNullOrWhiteSpace(searchYear) &&
+                !string.IsNullOrWhiteSpace(verifiedYear))
+            {
+                if (string.Equals(
+                        searchYear,
+                        verifiedYear,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    score += 0.10;
+                }
+                else
+                {
+                    score -= 0.20;
+                }
+            }
+            return Math.Min(
+                score,
+                1.0);
+        }
         /// <summary>
         /// Produces human-readable evidence describing the research match.
         /// </summary>
         private static string BuildEvidence(
-            string title,
-            List<string> authors,
-            double confidence)
+    string title,
+    List<string> authors,
+    string publisher,
+    string publicationYear,
+    double confidence)
         {
             string authorText =
                 authors.Count > 0
@@ -350,9 +526,53 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
             return
                 $"Open Library match: \"{title}\" by {authorText}. " +
+                $"Publisher: {publisher}. " +
+                $"Publication year: {publicationYear}. " +
                 $"Match confidence: {confidence:0.00}.";
         }
+        /// <summary>
+        /// Produces evidence describing the edition-specific ISBN verification.
+        /// </summary>
+        private static string BuildEditionEvidence(
+            IsbnEditionVerification verification)
+        {
+            if (!verification.Found)
+            {
+                return
+                    "ISBN-specific edition verification was not available.";
+            }
 
+            string title =
+                string.IsNullOrWhiteSpace(
+                    verification.Title)
+                    ? "unknown title"
+                    : verification.Title;
+
+            string publisher =
+                string.IsNullOrWhiteSpace(
+                    verification.Publisher)
+                    ? "unknown publisher"
+                    : verification.Publisher;
+
+            string publicationDate =
+                string.IsNullOrWhiteSpace(
+                    verification.PublicationDate)
+                    ? "unknown publication date"
+                    : verification.PublicationDate;
+
+            string editionKey =
+                string.IsNullOrWhiteSpace(
+                    verification.EditionKey)
+                    ? "unknown edition key"
+                    : verification.EditionKey;
+
+            return
+                $"ISBN-specific verification: {verification.Isbn}. " +
+                $"Edition: \"{title}\". " +
+                $"Publisher: {publisher}. " +
+                $"Publication date: {publicationDate}. " +
+                $"Edition key: {editionKey}.";
+        }
         /// <summary>
         /// Reads a string property from a JSON document.
         /// </summary>
@@ -389,6 +609,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 return values;
             }
 
+
+
             foreach (JsonElement item in value.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.String)
@@ -403,7 +625,42 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
             return values;
         }
+        private static List<string> GetStringArrayOrNumbers(
+    JsonElement element,
+    string propertyName)
+        {
+            List<string> values = new();
 
+            if (!element.TryGetProperty(
+                    propertyName,
+                    out JsonElement value) ||
+                value.ValueKind != JsonValueKind.Array)
+            {
+                return values;
+            }
+
+            foreach (JsonElement item in value.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                {
+                    string? text =
+                        item.GetString();
+
+                    if (!string.IsNullOrWhiteSpace(text))
+                        values.Add(text.Trim());
+
+                    continue;
+                }
+
+                if (item.ValueKind == JsonValueKind.Number)
+                {
+                    values.Add(
+                        item.ToString());
+                }
+            }
+
+            return values;
+        }
         /// <summary>
         /// Normalizes an ISBN by removing punctuation and spaces.
         /// </summary>
@@ -488,6 +745,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
         /// </summary>
         private static string NormalizeText(
             string? value)
+
+
+
         {
             if (string.IsNullOrWhiteSpace(value))
                 return string.Empty;
@@ -506,6 +766,30 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
         /// <summary>
         /// Creates the shared HTTP client used for Open Library requests.
         /// </summary>
+        /// 
+
+        private static string ExtractPublicationYear(
+    string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            for (int i = 0; i <= value.Length - 4; i++)
+            {
+                string part =
+                    value.Substring(i, 4);
+
+                if (part.All(char.IsDigit) &&
+                    part[0] >= '1' &&
+                    part[0] <= '2')
+                {
+                    return part;
+                }
+            }
+
+            return string.Empty;
+        }
+
         private static HttpClient CreateHttpClient()
         {
             HttpClient client = new();
@@ -518,6 +802,117 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     "1.0"));
 
             return client;
+        }
+        /// <summary>
+        /// Looks up a specific ISBN through Open Library's ISBN endpoint.
+        ///
+        /// Unlike the Search API, this request is tied to the supplied ISBN
+        /// and therefore identifies the edition associated with that ISBN.
+        ///
+        /// No ebook is modified by this operation.
+        /// </summary>
+        private static IsbnEditionVerification VerifyIsbnEdition(
+            string isbn,
+            E_EbookMetadata metadata)
+        {
+            if (string.IsNullOrWhiteSpace(isbn))
+            {
+                return new IsbnEditionVerification();
+            }
+
+            try
+            {
+                string requestUrl =
+                    "https://openlibrary.org/isbn/" +
+                    Uri.EscapeDataString(isbn) +
+                    ".json";
+
+                using HttpRequestMessage request =
+                    new(
+                        HttpMethod.Get,
+                        requestUrl);
+
+                using HttpResponseMessage response =
+                    HttpClient
+                        .Send(
+                            request,
+                            HttpCompletionOption.ResponseHeadersRead,
+                            CancellationToken.None);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return new IsbnEditionVerification();
+                }
+
+                string json =
+                    response.Content
+                        .ReadAsStringAsync()
+                        .GetAwaiter()
+                        .GetResult();
+
+                using JsonDocument document =
+                    JsonDocument.Parse(json);
+
+                JsonElement root =
+                    document.RootElement;
+
+                string title =
+                    GetString(
+                        root,
+                        "title");
+
+                List<string> publishers =
+                    GetStringArray(
+                        root,
+                        "publishers");
+
+                string publisher =
+                    publishers.Count > 0
+                        ? publishers[0]
+                        : string.Empty;
+
+                string publicationDate =
+                    GetString(
+                        root,
+                        "publish_date");
+
+                string editionKey =
+                    GetString(
+                        root,
+                        "key");
+
+                return new IsbnEditionVerification
+                {
+                    Found = true,
+                    Isbn = isbn,
+                    Title = title,
+                    Publisher = publisher,
+                    PublicationDate = publicationDate,
+                    EditionKey = editionKey
+                };
+            }
+            catch
+            {
+                return new IsbnEditionVerification();
+            }
+        }
+        /// <summary>
+        /// Represents the edition information returned by an ISBN-specific
+        /// Open Library lookup.
+        /// </summary>
+        private sealed class IsbnEditionVerification
+        {
+            public bool Found { get; init; }
+
+            public string Isbn { get; init; } = string.Empty;
+
+            public string Title { get; init; } = string.Empty;
+
+            public string Publisher { get; init; } = string.Empty;
+
+            public string PublicationDate { get; init; } = string.Empty;
+
+            public string EditionKey { get; init; } = string.Empty;
         }
     }
 
@@ -537,6 +932,16 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
         public string Publisher { get; init; } = string.Empty;
 
         public string PublicationYear { get; init; } = string.Empty;
+
+        public bool EditionVerified { get; init; }
+
+        public string VerifiedEditionTitle { get; init; } = string.Empty;
+
+        public string VerifiedEditionPublisher { get; init; } = string.Empty;
+
+        public string VerifiedEditionPublicationDate { get; init; } = string.Empty;
+
+        public string VerifiedEditionKey { get; init; } = string.Empty;
 
         public string Source { get; init; } = string.Empty;
 

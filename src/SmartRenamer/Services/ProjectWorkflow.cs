@@ -125,6 +125,18 @@ namespace SmartRenamer.Services
         /// </summary>
         private readonly ObservationEngine observationEngine = new();
 
+
+        //---------------------------------------------------------
+        // Active Project Files
+        //---------------------------------------------------------
+        //
+        // Retained so a repair action can re-observe the same
+        // FileContext collection after the physical file changes.
+        //
+
+        private IReadOnlyList<FileContext>? activeFiles;
+
+
         //---------------------------------------------------------
         // New Workflow
         //---------------------------------------------------------
@@ -158,6 +170,12 @@ namespace SmartRenamer.Services
         /// </summary>
         public WorkflowResult Execute(ProjectContext context)
         {
+
+            ArgumentNullException.ThrowIfNull(context);
+
+            activeFiles =
+                context.Folder.FileContexts;
+
             //---------------------------------------------------------
             // Analyze the project.
             //---------------------------------------------------------
@@ -289,10 +307,39 @@ namespace SmartRenamer.Services
         public CV_ActionResult ExecuteAction(
             CV_ActionRequest request)
         {
-            if (request == null)
-                throw new ArgumentNullException(nameof(request));
+            ArgumentNullException.ThrowIfNull(request);
 
             return observationEngine.ExecuteAction(request);
         }
+
+        //---------------------------------------------------------
+        // Re-observation
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Runs the Observation Framework again against the current
+        /// FileContext collection.
+        ///
+        /// This is intentionally smaller than Execute().
+        ///
+        /// A repair action may change the physical file represented by
+        /// a FileContext. The repaired file must therefore be observed
+        /// again without rebuilding the entire project workflow.
+        ///
+        /// The existing ObservationEngine is reused so persistent Expert
+        /// state is preserved.
+        /// </summary>
+        public List<CV_Recommendation> Reobserve()
+        {
+            if (activeFiles == null)
+                throw new InvalidOperationException(
+                    "Cannot re-observe because no project is currently active.");
+
+            return observationEngine.Observe(activeFiles);
+        }
+
     }
+
+
+
 }

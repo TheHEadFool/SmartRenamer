@@ -5,7 +5,8 @@ using SmartRenamer.Observations.Experts.EbookExpert.Resources;
 using System;
 using System.Collections.Generic;
 
-namespace SmartRenamer.Observations.Experts.EbookExpert.Action
+namespace 
+    SmartRenamer.Observations.Experts.EbookExpert.Action
 {
     /// <summary>
     /// =========================================================================
@@ -72,11 +73,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             CV_ActionRequest request,
             IReadOnlyList<RepairOpportunity> opportunities)
         {
-            if (request == null)
-                throw new ArgumentNullException(nameof(request));
+            ArgumentNullException.ThrowIfNull(request);
 
-            if (opportunities == null)
-                throw new ArgumentNullException(nameof(opportunities));
+            ArgumentNullException.ThrowIfNull(opportunities);
 
             //---------------------------------------------------------
             // A request containing OptionId represents a specific
@@ -407,8 +406,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
     CV_ActionRequest request,
     IReadOnlyList<RepairOpportunity> opportunities)
         {
-            List<string> evidence = new();
-            List<CV_ActionOption> options = new();
+            List<string> evidence = [];
+            List<CV_ActionOption> options = [];
 
             int researchedBooks = 0;
             int candidateCount = 0;
@@ -456,42 +455,44 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     continue;
                 }
 
-                foreach (IsbnResearchCandidate candidate in candidates)
+                IsbnResearchCandidate candidate =
+    candidates[0];
+
+                candidateCount++;
+
+                CV_ActionOption option = new()
                 {
-                    candidateCount++;
+                    // The best researched candidate for this ebook.
+                    Id = candidate.Isbn,
+                    ActionId = request.ActionId,
 
-                    CV_ActionOption option = new()
-                    {
-                        // The candidate itself.
-                        Id = candidate.Isbn,
-                        ActionId = request.ActionId,
+                    // Identifies the specific ebook this candidate belongs to.
+                    //
+                    // OriginalFullPath is used rather than CurrentFullPath
+                    // because the current name/path may change during the
+                    // workflow.
+                    ContextId = originalPath,
 
-                        // Identifies the specific ebook this candidate belongs to.
-                        //
-                        // OriginalFullPath is used rather than CurrentFullPath
-                        // because the current name/path may change during the
-                        // workflow.
-                        ContextId = originalPath,
+                    Label =
+                        $"{candidate.Isbn} — {fileName}",
 
-                        Label =
-                            $"{candidate.Isbn} — {fileName}",
+                    Confidence =
+                        candidate.Confidence,
 
-                        Confidence =
-                            candidate.Confidence,
+                    Source =
+                        candidate.Source
+                };
 
-                        Source =
-                            candidate.Source
-                    };
+                option.Evidence.Add(
+                    candidate.Evidence);
 
-                    option.Evidence.Add(
-                        candidate.Evidence);
+                evidence.Add(
+                    $"{fileName}: {candidate.Evidence}");
 
-                    options.Add(option);
-                }
-            }
+                options.Add(option);
 
-            if (researchedBooks == 0)
-            {
+                if (researchedBooks == 0)
+            
                 return new CV_ActionResult
                 {
                     ActionId = request.ActionId,
@@ -509,7 +510,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 Success = true,
                 Message =
                     $"ISBN research completed for {researchedBooks} ebook(s). " +
-                    $"{candidateCount} candidate(s) were found."
+                    $"{candidateCount} best match(es) were found."
             };
 
             result.Evidence.AddRange(evidence);

@@ -365,6 +365,9 @@ namespace SmartRenamer.ViewModels.Guide
                         workspace.ConversationEngine.RememberActionOptions(
                             actionResult.Options);
 
+                        workspace.ConversationEngine.RememberActionOptions(
+    actionResult.Options);
+
                         ActionOptions.Clear();
 
                         foreach (CV_ActionOption option
@@ -689,6 +692,9 @@ namespace SmartRenamer.ViewModels.Guide
             // These may be ISBN candidates, cover choices, or other
             // domain-specific choices supplied by the Expert.
             // -------------------------------------------------------------
+
+            workspace.ConversationEngine.RememberActionOptions(
+    actionResult.Options);
 
             ActionOptions.Clear();
 

@@ -138,6 +138,26 @@ namespace SmartRenamer.Observations
             "Keeping ebooks organized by author, series, or subject makes your library easier to browse and enjoy.";
 
         /// <summary>
+        /// Initializes Ebook Expert project-specific repair state.
+        /// </summary>
+        public override void BeginProject(
+            string sourceFolderPath,
+            IReadOnlyList<FileContext> files)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
+            ArgumentNullException.ThrowIfNull(files);
+
+            _repairInvestigation.BeginExpedition(
+                sourceFolderPath,
+                files);
+        }
+
+        /// <summary>
+        /// Initializes Ebook Expert project-specific repair state.
+        /// </summary>
+        
+
+        /// <summary>
         /// =========================================================================
         /// Generation 2 Entry Point
         /// =========================================================================

@@ -31,5 +31,21 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         public bool MissingDescription { get; init; }
 
         public bool MissingCover { get; init; }
+
+        /// <summary>
+        /// True when this ebook has no remaining missing metadata fields
+        /// identified by the Repair Block.
+        ///
+        /// This is a factual completion state. It does not approve or
+        /// perform any repair.
+        /// </summary>
+        public bool IsComplete =>
+            !MissingTitle &&
+            !MissingAuthor &&
+            !MissingIsbn &&
+            !MissingPublisher &&
+            !MissingLanguage &&
+            !MissingDescription &&
+            !MissingCover;
     }
 }

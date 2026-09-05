@@ -110,6 +110,17 @@ namespace SmartRenamer.Observations
         /// </summary>
         public abstract List<ExpertFinding> Investigate(
             IReadOnlyList<FileContext> files);
+        /// <summary>
+        /// Gives the Expert an opportunity to initialize domain-specific
+        /// project state before investigation begins.
+        ///
+        /// The default implementation does nothing.
+        /// </summary>
+        public virtual void BeginProject(
+            string sourceFolderPath,
+            IReadOnlyList<FileContext> files)
+        {
+        }
 
         /// <summary>
         /// Converts this Expert's findings into conversation-ready
@@ -139,8 +150,7 @@ namespace SmartRenamer.Observations
         public virtual CV_ActionResult ExecuteAction(
             CV_ActionRequest request)
         {
-            if (request == null)
-                throw new ArgumentNullException(nameof(request));
+            ArgumentNullException.ThrowIfNull(request);
 
             return new CV_ActionResult
             {

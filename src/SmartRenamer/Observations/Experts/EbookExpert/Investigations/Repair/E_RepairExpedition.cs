@@ -51,6 +51,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
         private readonly List<FileContext> _deferred = new();
 
+        private readonly HashSet<string> _completed = new(
+            StringComparer.OrdinalIgnoreCase);
+
         //---------------------------------------------------------
         // Source folder identity
         //---------------------------------------------------------
@@ -79,6 +82,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
         public IReadOnlyList<FileContext> DeferredFiles =>
             _deferred;
+
+        public IReadOnlyCollection<string> CompletedFiles => _completed;
 
         //---------------------------------------------------------
         // State
@@ -120,6 +125,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
             _pending.Clear();
             _deferred.Clear();
+            _completed.Clear();
 
             CurrentFile = null;
 
@@ -181,6 +187,26 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         /// The expedition can therefore continue with the next EPUB instead
         /// of stopping the entire folder operation.
         /// </summary>
+
+        public void CompleteCurrent()
+        {
+            if (CurrentFile == null)
+                throw new InvalidOperationException(
+                    "Cannot complete an EPUB because there is no current EPUB.");
+
+            string originalPath = CurrentFile.OriginalFullPath;
+
+            if (string.IsNullOrWhiteSpace(originalPath))
+                throw new InvalidOperationException(
+                    "Cannot complete the current EPUB because its original path is missing.");
+
+            _completed.Add(originalPath);
+
+            CurrentFile = null;
+
+            MoveNext();
+        }
+
         public void DeferCurrent()
         {
             if (CurrentFile == null)
@@ -204,6 +230,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         {
             _pending.Clear();
             _deferred.Clear();
+            _completed.Clear();
 
             CurrentFile = null;
             SourceFolderPath = null;

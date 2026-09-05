@@ -27,6 +27,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         //---------------------------------------------------------
 
         public List<RepairOpportunity> Opportunities { get; } = new();
+
+        /// <summary>
+        /// True when the repair investigation found no remaining repair
+        /// opportunities in the collection.
+        /// </summary>
+        public bool IsComplete =>
+            Opportunities.Count == 0 ||
+            Opportunities.TrueForAll(opportunity => opportunity.IsComplete);
         public int MissingTitles { get; set; }
 
         public int MissingAuthors { get; set; }

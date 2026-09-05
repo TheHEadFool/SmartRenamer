@@ -154,10 +154,11 @@ namespace SmartRenamer.Observations
         /// the same factual Expert findings.
         /// </summary>
         public List<CV_Recommendation> Observe(
-            IReadOnlyList<FileContext> files)
+            IReadOnlyList<FileContext> files,
+            string sourceFolderPath)
         {
-            if (files == null)
-                throw new ArgumentNullException(nameof(files));
+            ArgumentNullException.ThrowIfNull(files);
+            ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
 
             List<ExpertFinding> allFindings = new();
 
@@ -169,6 +170,10 @@ namespace SmartRenamer.Observations
 
             foreach (ObservationExpert expert in _experts)
             {
+                expert.BeginProject(
+                    sourceFolderPath,
+                    files);
+
                 List<ExpertFinding> expertFindings =
                     expert.Investigate(files);
 

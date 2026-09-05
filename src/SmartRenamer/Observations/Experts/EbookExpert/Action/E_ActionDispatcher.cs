@@ -189,6 +189,7 @@ namespace
             {
                 ActionId = request.ActionId,
                 Success = true,
+                RequiresReobservation = true,
                 Message =
         "The approved repair has been applied. " +
         "The repaired EPUB is ready for the next investigation pass."

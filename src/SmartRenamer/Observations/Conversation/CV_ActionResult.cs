@@ -45,6 +45,13 @@ namespace Scout.Observations.Conversation
         public bool Success { get; init; }
 
         /// <summary>
+        /// Indicates that the completed action changed the underlying
+        /// file state and the current project should be observed again.
+        /// </summary>
+        public bool RequiresReobservation { get; init; }
+
+
+        /// <summary>
         /// Human-readable description of the result.
         /// </summary>
         public string Message { get; init; } = string.Empty;

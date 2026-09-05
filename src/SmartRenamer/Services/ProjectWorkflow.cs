@@ -135,7 +135,7 @@ namespace SmartRenamer.Services
         //
 
         private IReadOnlyList<FileContext>? activeFiles;
-
+        private string? activeSourceFolderPath;
 
         //---------------------------------------------------------
         // New Workflow
@@ -175,6 +175,8 @@ namespace SmartRenamer.Services
 
             activeFiles =
                 context.Folder.FileContexts;
+            activeSourceFolderPath =
+                context.Folder.FolderPath;
 
             //---------------------------------------------------------
             // Analyze the project.
@@ -213,8 +215,9 @@ namespace SmartRenamer.Services
             //---------------------------------------------------------
 
             List<CV_Recommendation> observationRecommendations =
-                observationEngine.Observe(
-                    context.Folder.FileContexts);
+    observationEngine.Observe(
+        context.Folder.FileContexts,
+        context.Folder.FolderPath);
 
             //---------------------------------------------------------
             // Observation Framework → Existing UI
@@ -305,11 +308,32 @@ namespace SmartRenamer.Services
         /// that investigation.
         /// </summary>
         public CV_ActionResult ExecuteAction(
-            CV_ActionRequest request)
+    CV_ActionRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
 
-            return observationEngine.ExecuteAction(request);
+            CV_ActionResult result =
+                observationEngine.ExecuteAction(request);
+
+            //---------------------------------------------------------
+            // A successful domain action may change the physical
+            // state represented by the active FileContext collection.
+            //
+            // When the domain reports that re-observation is required,
+            // run the existing ObservationEngine again against the
+            // same FileContext objects.
+            //
+            // The workflow remains domain-neutral. It does not inspect
+            // the ActionId to determine what happened.
+            //---------------------------------------------------------
+
+            if (result.Success &&
+                result.RequiresReobservation)
+            {
+                Reobserve();
+            }
+
+            return result;
         }
 
         //---------------------------------------------------------
@@ -331,11 +355,14 @@ namespace SmartRenamer.Services
         /// </summary>
         public List<CV_Recommendation> Reobserve()
         {
-            if (activeFiles == null)
+            if (activeFiles == null ||
+                string.IsNullOrWhiteSpace(activeSourceFolderPath))
                 throw new InvalidOperationException(
                     "Cannot re-observe because no project is currently active.");
 
-            return observationEngine.Observe(activeFiles);
+            return observationEngine.Observe(
+                activeFiles,
+                activeSourceFolderPath);
         }
 
     }

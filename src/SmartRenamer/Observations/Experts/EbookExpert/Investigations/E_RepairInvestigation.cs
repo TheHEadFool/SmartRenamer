@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
@@ -41,6 +42,20 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     public sealed class E_RepairInvestigation
     {
         private RepairReport? _lastReport;
+        private readonly E_RepairExpedition _repairExpedition = new();
+
+
+        public void BeginExpedition(
+            string sourceFolderPath,
+            IReadOnlyList<FileContext> files)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
+            ArgumentNullException.ThrowIfNull(files);
+
+            _repairExpedition.Begin(
+                sourceFolderPath,
+                files);
+        }
 
         /// <summary>
         /// Investigates repair opportunities using the shared metadata report.
@@ -48,8 +63,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         public List<ExpertFinding> Investigate(
             MetadataReport metadataReport)
         {
-            if (metadataReport == null)
-                throw new ArgumentNullException(nameof(metadataReport));
+            ArgumentNullException.ThrowIfNull(metadataReport);
 
             List<ExpertFinding> findings = new();
 
@@ -93,5 +107,41 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         public IReadOnlyList<RepairOpportunity> RepairOpportunities =>
             _lastReport?.Opportunities
             ?? new List<RepairOpportunity>();
+
+        /// <summary>
+        /// True when the most recent repair investigation found no remaining
+        /// repair opportunities.
+        /// </summary>
+        public bool IsComplete =>
+            _lastReport?.IsComplete ?? false;
+
+        /// <summary>
+        /// Determines whether the specified EPUB has any remaining repair
+        /// opportunities in the most recent investigation.
+        ///
+        /// The original full path is the stable identity of the EPUB.
+        /// </summary>
+        public bool IsCompleteFor(string originalFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalFullPath))
+                throw new ArgumentException(
+                    "Original EPUB path cannot be empty.",
+                    nameof(originalFullPath));
+
+            RepairOpportunity? opportunity =
+                _lastReport?.Opportunities.FirstOrDefault(
+                    item => string.Equals(
+                        item.Record?.File?.OriginalFullPath,
+                        originalFullPath,
+                        StringComparison.OrdinalIgnoreCase));
+
+            // If the EPUB no longer appears in the repair opportunities,
+            // the current investigation considers it complete.
+            return opportunity == null || opportunity.IsComplete;
+        }
+
     }
+
+
+
 }

@@ -46,11 +46,19 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
 
         public void BeginExpedition(
-            string sourceFolderPath,
-            IReadOnlyList<FileContext> files)
+    string sourceFolderPath,
+    IReadOnlyList<FileContext> files)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
             ArgumentNullException.ThrowIfNull(files);
+
+            if (string.Equals(
+                    _repairExpedition.SourceFolderPath,
+                    sourceFolderPath,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
 
             _repairExpedition.Begin(
                 sourceFolderPath,
@@ -73,8 +81,28 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
             RepairBlock block = new();
 
+            MetadataReport currentMetadataReport =
+                new();
+
+            if (_repairExpedition.CurrentFile != null)
+            {
+                SmartRenamer.Observations.Experts.EbookExpert.Data.Models.MetadataRecord? currentRecord =
+                    metadataReport.Records.FirstOrDefault(
+                        record =>
+                            string.Equals(
+                                record.File?.OriginalFullPath,
+                                _repairExpedition.CurrentFile.OriginalFullPath,
+                                StringComparison.OrdinalIgnoreCase));
+
+                if (currentRecord != null)
+                {
+                    currentMetadataReport.Records.Add(
+                        currentRecord);
+                }
+            }
+
             RepairReport report =
-                block.Analyze(metadataReport);
+                block.Analyze(currentMetadataReport);
 
             //---------------------------------------------------------
             // Preserve the complete report.
@@ -92,7 +120,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             E_RepairConsultant consultant = new();
 
             findings.AddRange(
-                consultant.Review(report));
+     consultant.Review(report));
 
             return findings;
         }
@@ -114,6 +142,42 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         /// </summary>
         public bool IsComplete =>
             _lastReport?.IsComplete ?? false;
+
+        public FileContext? CurrentFile =>
+    _repairExpedition.CurrentFile;
+
+public IReadOnlyList<FileContext> DeferredFiles =>
+    _repairExpedition.DeferredFiles;
+
+public bool HasDeferredFiles =>
+    _repairExpedition.HasDeferredFiles;
+
+public bool ExpeditionIsComplete =>
+    _repairExpedition.IsComplete;
+
+        public bool CompleteCurrentIfComplete()
+        {
+            if (_repairExpedition.CurrentFile == null)
+                return false;
+
+            if (!IsCompleteFor(
+                    _repairExpedition.CurrentFile.OriginalFullPath))
+                return false;
+
+            _repairExpedition.CompleteCurrent();
+
+            return true;
+        }
+
+        public bool DeferCurrent()
+        {
+            if (_repairExpedition.CurrentFile == null)
+                return false;
+
+            _repairExpedition.DeferCurrent();
+
+            return true;
+        }
 
         /// <summary>
         /// Determines whether the specified EPUB has any remaining repair

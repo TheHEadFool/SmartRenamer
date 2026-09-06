@@ -213,6 +213,8 @@ namespace SmartRenamer.Observations
                 _repairInvestigation.Investigate(
                     metadataReport));
 
+
+
             findings.AddRange(
                 _coverInvestigation.Investigate(
                     metadataReport));
@@ -270,10 +272,29 @@ namespace SmartRenamer.Observations
         ///     RepairMissingMetadata
         /// </summary>
         public override CV_ActionResult ExecuteAction(
-            CV_ActionRequest request)
+    CV_ActionRequest request)
         {
             if (request == null)
                 throw new ArgumentNullException(nameof(request));
+
+            if (string.Equals(
+                    request.ActionId,
+                    "SkipCurrentEbook",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                bool deferred =
+                    _repairInvestigation.DeferCurrent();
+
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = deferred,
+                    RequiresReobservation = deferred,
+                    Message = deferred
+                        ? "I've set this ebook aside and will continue with the next one."
+                        : "There is no current ebook to skip."
+                };
+            }
 
             return _actionDispatcher.Execute(
                 request,

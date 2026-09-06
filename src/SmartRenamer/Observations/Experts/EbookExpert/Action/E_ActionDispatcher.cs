@@ -5,8 +5,7 @@ using SmartRenamer.Observations.Experts.EbookExpert.Resources;
 using System;
 using System.Collections.Generic;
 
-namespace 
-    SmartRenamer.Observations.Experts.EbookExpert.Action
+namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 {
     /// <summary>
     /// =========================================================================
@@ -85,16 +84,15 @@ namespace
             //---------------------------------------------------------
 
             if (!string.IsNullOrWhiteSpace(request.OptionId) &&
-    string.Equals(
-        request.ActionId,
-        "ResearchMissingIsbn",
-        StringComparison.OrdinalIgnoreCase))
+                string.Equals(
+                    request.ActionId,
+                    "ResearchMissingIsbn",
+                    StringComparison.OrdinalIgnoreCase))
             {
                 return SelectIsbnCandidate(
                     request,
                     opportunities);
             }
-
 
             return request.ActionId switch
             {
@@ -191,16 +189,16 @@ namespace
                 Success = true,
                 RequiresReobservation = true,
                 Message =
-        "The approved repair has been applied. " +
-        "The repaired EPUB is ready for the next investigation pass."
+                    "The approved repair has been applied. " +
+                    "The repaired EPUB is ready for the next investigation pass."
             };
 
             result.Evidence.Add(
                 $"Completed repaired EPUB: {repairedPath}");
 
             return result;
-
         }
+
         /// <summary>
         /// Records an ISBN candidate explicitly selected by the user.
         ///
@@ -293,16 +291,14 @@ namespace
             }
 
             IsbnResearchCandidate approvedCandidate =
-    selectedCandidate;
+                selectedCandidate;
 
             //---------------------------------------------------------
             // The user explicitly selected this ISBN.
             //---------------------------------------------------------
 
             string approvedIsbn =
-    approvedCandidate.Isbn;
-
-
+                approvedCandidate.Isbn;
 
             //---------------------------------------------------------
             // The original EPUB is not modified here.
@@ -351,18 +347,16 @@ namespace
 
             result.Options.Add(
                 new CV_ActionOption
-    {
+                {
                     Id = "ApplyRepair",
                     ActionId = "ExecuteRepairPlan",
                     ContextId = request.ContextId,
                     Label = "Apply this repair",
                     Confidence = 1.0,
                     Source = "Ebook Expert"
-    });
+                });
 
             return result;
-
-
         }
 
         /// <summary>
@@ -371,13 +365,13 @@ namespace
         /// Returns null when the user has not selected an ISBN.
         /// </summary>
         public string? GetApprovedIsbn(
-     string originalPath)
+            string originalPath)
         {
             if (string.IsNullOrWhiteSpace(originalPath))
                 return null;
 
             E_RepairPlan? repairPlan =
-    _repairService.GetRepairPlan(originalPath);
+                _repairService.GetRepairPlan(originalPath);
 
             if (repairPlan == null)
                 return null;
@@ -396,16 +390,14 @@ namespace
             return null;
         }
 
-
-
         /// <summary>
         /// Researches all currently discovered missing-ISBN opportunities.
         ///
         /// Research never modifies an EPUB.
         /// </summary>
         private CV_ActionResult ResearchMissingIsbn(
-    CV_ActionRequest request,
-    IReadOnlyList<RepairOpportunity> opportunities)
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities)
         {
             List<string> evidence = [];
             List<CV_ActionOption> options = [];
@@ -422,13 +414,14 @@ namespace
                     opportunity.Record?.File?.OriginalFullPath
                     ?? string.Empty;
 
-                // ---------------------------------------------------------
+                //---------------------------------------------------------
                 // If the action is associated with a specific ebook,
                 // research only that ebook.
                 //
                 // This prevents ISBN candidates from multiple ebooks
                 // being mixed into one set of choices.
-                // ---------------------------------------------------------
+                //---------------------------------------------------------
+
                 if (!string.IsNullOrWhiteSpace(request.ContextId) &&
                     !string.Equals(
                         originalPath,
@@ -456,44 +449,67 @@ namespace
                     continue;
                 }
 
-                IsbnResearchCandidate candidate =
-    candidates[0];
+                //---------------------------------------------------------
+                // Preserve every researched candidate.
+                //
+                // The research resource has already ranked the candidates
+                // and calculated their evidence and confidence.
+                //
+                // The dispatcher must not silently reduce that candidate
+                // set to candidates[0]. A later Ebook-domain decision can
+                // determine whether the evidence supports automatic action
+                // or whether the user must choose between candidates.
+                //---------------------------------------------------------
 
-                candidateCount++;
-
-                CV_ActionOption option = new()
+                foreach (IsbnResearchCandidate candidate in candidates)
                 {
-                    // The best researched candidate for this ebook.
-                    Id = candidate.Isbn,
-                    ActionId = request.ActionId,
+                    candidateCount++;
 
-                    // Identifies the specific ebook this candidate belongs to.
-                    //
-                    // OriginalFullPath is used rather than CurrentFullPath
-                    // because the current name/path may change during the
-                    // workflow.
-                    ContextId = originalPath,
+                    CV_ActionOption option = new()
+                    {
+                        Id = candidate.Isbn,
+                        ActionId = request.ActionId,
 
-                    Label =
-                        $"{candidate.Isbn} — {fileName}",
+                        // Stable identity of the ebook this candidate
+                        // belongs to.
+                        ContextId = originalPath,
 
-                    Confidence =
-                        candidate.Confidence,
+                        Label =
+                            $"{candidate.Isbn} — {fileName}",
 
-                    Source =
-                        candidate.Source
-                };
+                        Confidence =
+                            candidate.Confidence,
 
-                option.Evidence.Add(
-                    candidate.Evidence);
+                        Source =
+                            candidate.Source
+                    };
+
+                    option.Evidence.Add(
+                        candidate.Evidence);
+
+                    options.Add(option);
+                }
 
                 evidence.Add(
-                    $"{fileName}: {candidate.Evidence}");
+                    $"{fileName}: found {candidates.Count} ISBN candidate(s).");
 
-                options.Add(option);
+                foreach (IsbnResearchCandidate candidate in candidates)
+                {
+                    evidence.Add(
+                        $"{fileName}: {candidate.Evidence}");
+                }
+            }
 
-                if (researchedBooks == 0)
-            
+            //---------------------------------------------------------
+            // This check must occur after the search loop.
+            //
+            // Previously it was inside the loop after researchedBooks
+            // had already been incremented, which made the condition
+            // impossible to reach correctly.
+            //---------------------------------------------------------
+
+            if (researchedBooks == 0)
+            {
                 return new CV_ActionResult
                 {
                     ActionId = request.ActionId,
@@ -511,7 +527,7 @@ namespace
                 Success = true,
                 Message =
                     $"ISBN research completed for {researchedBooks} ebook(s). " +
-                    $"{candidateCount} best match(es) were found."
+                    $"{candidateCount} candidate(s) were found."
             };
 
             result.Evidence.AddRange(evidence);

@@ -129,7 +129,6 @@ public sealed class CV_ConversationEngine
     public CV_CurrentTopic CurrentTopic =>
         _currentTopic;
 
-
     /// <summary>
     /// Conversation history.
     /// </summary>
@@ -209,7 +208,8 @@ public sealed class CV_ConversationEngine
 
     /// <summary>
     /// Indicates that Scout has asked the user whether they want
-    /// to open the complete Review All report.
+    /// to open the complete Review All report and is waiting for
+    /// the user's answer.
     ///
     /// The user's next affirmative response belongs to this question,
     /// not to the recommendation currently being discussed.
@@ -228,16 +228,19 @@ public sealed class CV_ConversationEngine
     }
 
     /// <summary>
-    /// Creates an action request for the recommendation currently being
-    /// discussed when the user's input represents approval of that
-    /// recommendation's next-step action.
+    /// Creates an action request for the user's input.
+    ///
+    /// A user-directed authorization request is allowed to exist
+    /// independently of the current recommendation. This permits
+    /// the user to delegate appropriate actions to Scout even when
+    /// no recommendation is currently selected.
     ///
     /// The Conversation Framework does not execute the action.
-    /// It creates the generic request that the appropriate domain Expert
-    /// can consume.
+    /// It creates the generic request that the appropriate domain
+    /// Expert can consume.
     /// </summary>
     public CV_ActionRequest? CreateActionRequest(
-    string userInput)
+        string userInput)
     {
         if (string.IsNullOrWhiteSpace(userInput))
             return null;
@@ -250,9 +253,9 @@ public sealed class CV_ConversationEngine
         foreach (CV_ActionOption option in _pendingActionOptions)
         {
             if (string.Equals(
-                userInput.Trim(),
-                option.Id,
-                StringComparison.OrdinalIgnoreCase))
+                    userInput.Trim(),
+                    option.Id,
+                    StringComparison.OrdinalIgnoreCase))
             {
                 return new CV_ActionRequest
                 {
@@ -262,6 +265,28 @@ public sealed class CV_ConversationEngine
                     ContextId = option.ContextId
                 };
             }
+        }
+
+        CV_UserIntent intent =
+            _userIntent.Interpret(userInput);
+
+        // ---------------------------------------------------------
+        // Standalone user-directed action handling.
+        //
+        // This does not require a current recommendation.
+        //
+        // The Conversation Framework only transports the request.
+        // The appropriate Expert determines what the action means.
+        // ---------------------------------------------------------
+
+        if (intent.Type == CV_UserIntentType.AuthorizeAutomaticAction)
+        {
+            return new CV_ActionRequest
+            {
+                ActionId = "AuthorizeAutomaticAction",
+                UserInput = userInput,
+                IsStandaloneAction = true
+            };
         }
 
         // ---------------------------------------------------------
@@ -276,9 +301,6 @@ public sealed class CV_ConversationEngine
         {
             return null;
         }
-
-        CV_UserIntent intent =
-            _userIntent.Interpret(userInput);
 
         if (intent.Type != CV_UserIntentType.Approve &&
             intent.Type != CV_UserIntentType.Research)
@@ -295,7 +317,7 @@ public sealed class CV_ConversationEngine
     }
 
     public CV_ActionRequest? CreateActionRequest(
-    CV_Recommendation recommendation)
+        CV_Recommendation recommendation)
     {
         if (recommendation == null)
             return null;
@@ -308,8 +330,6 @@ public sealed class CV_ConversationEngine
             ActionId = recommendation.ActionId
         };
     }
-
-
 
     /// <summary>
     /// Loads the authoritative recommendations without selecting
@@ -337,6 +357,7 @@ public sealed class CV_ConversationEngine
         _currentRecommendationIndex = -1;
         _currentTopic.Clear();
     }
+
     //---------------------------------------------------------
     // Review All
     //---------------------------------------------------------
@@ -363,8 +384,6 @@ public sealed class CV_ConversationEngine
             _currentTopic.Clear();
             return;
         }
-
-
 
         //---------------------------------------------------------
         // Review All displays the complete report.
@@ -432,7 +451,6 @@ public sealed class CV_ConversationEngine
         return true;
     }
 
-
     //---------------------------------------------------------
     // Discuss Recommendation
     //---------------------------------------------------------
@@ -444,7 +462,7 @@ public sealed class CV_ConversationEngine
     /// simply moves Scout's conversational focus to that finding.
     /// </summary>
     public CV_ConversationMessage? DiscussRecommendation(
-    CV_Recommendation recommendation)
+        CV_Recommendation recommendation)
     {
         if (recommendation == null)
             throw new ArgumentNullException(nameof(recommendation));
@@ -464,7 +482,6 @@ public sealed class CV_ConversationEngine
         CV_ConversationMessage? message =
             _planner.BuildNextMessage(recommendation);
 
-        
         return message;
     }
 

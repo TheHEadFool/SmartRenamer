@@ -10,7 +10,7 @@ namespace Scout.Observations.Conversation
     /// Represents a user's request to execute an action through the
     /// Conversation Framework.
     ///
-    /// The request supports two valid forms:
+    /// The request supports three valid forms:
     ///
     /// 1. Recommendation action
     ///    - RecommendationId identifies the recommendation.
@@ -20,6 +20,11 @@ namespace Scout.Observations.Conversation
     ///    - ActionId identifies the action.
     ///    - OptionId identifies the selected result.
     ///    - ContextId identifies the domain object associated with that result.
+    ///
+    /// 3. Standalone user-directed action
+    ///    - ActionId identifies the requested action.
+    ///    - No recommendation or selected option is required.
+    ///    - IsStandaloneAction identifies this form explicitly.
     ///
     /// The Conversation Framework does not interpret domain-specific meaning.
     /// The appropriate Expert does that.
@@ -66,16 +71,28 @@ namespace Scout.Observations.Conversation
         public string ContextId { get; init; } = string.Empty;
 
         /// <summary>
+        /// Indicates that this request is a standalone user-directed action.
+        ///
+        /// A standalone action does not originate from a recommendation or
+        /// selected action option. The Conversation Framework only transports
+        /// the request; the appropriate Expert determines its meaning.
+        /// </summary>
+        public bool IsStandaloneAction { get; init; }
+
+        /// <summary>
         /// Indicates whether this request identifies a usable action.
         ///
-        /// A request is valid when it has an ActionId and either:
+        /// A request is valid when it has an ActionId and identifies one of
+        /// the supported request forms:
         ///
-        /// - a RecommendationId, for a normal recommendation action, or
-        /// - an OptionId, for a selected action result.
+        /// - a RecommendationId, for a normal recommendation action,
+        /// - an OptionId, for a selected action result, or
+        /// - IsStandaloneAction, for a user-directed action.
         /// </summary>
         public bool IsValid =>
             !string.IsNullOrWhiteSpace(ActionId) &&
             (RecommendationId != Guid.Empty ||
-             !string.IsNullOrWhiteSpace(OptionId));
+             !string.IsNullOrWhiteSpace(OptionId) ||
+             IsStandaloneAction);
     }
 }

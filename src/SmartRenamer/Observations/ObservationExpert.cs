@@ -122,6 +122,26 @@ namespace SmartRenamer.Observations
         {
         }
 
+        //---------------------------------------------------------
+        // Re-observation Completion
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Gives the Expert an opportunity to advance any domain-specific
+        /// workflow after a successful re-observation pass.
+        ///
+        /// The generic Observation Framework does not know what "complete"
+        /// means for any particular domain.
+        ///
+        /// The default implementation deliberately does nothing.
+        /// Domain Experts may override this method when they own an
+        /// expedition or other workflow that must advance only after
+        /// the repaired state has been observed again.
+        /// </summary>
+        public virtual bool CompleteCurrentIfComplete()
+        {
+            return false;
+        }
         /// <summary>
         /// Converts this Expert's findings into conversation-ready
         /// recommendations.

@@ -153,9 +153,17 @@ namespace SmartRenamer.Observations
         }
 
         /// <summary>
-        /// Initializes Ebook Expert project-specific repair state.
+        /// Allows the Ebook Expert to determine whether the current
+        /// repair expedition item is complete after re-observation.
+        ///
+        /// Completion is deliberately evaluated by the Ebook Expert
+        /// because only the domain expert knows what "complete" means
+        /// for an ebook repair expedition.
         /// </summary>
-        
+        public override bool CompleteCurrentIfComplete()
+        {
+            return _repairInvestigation.CompleteCurrentIfComplete();
+        }
 
         /// <summary>
         /// =========================================================================
@@ -213,8 +221,6 @@ namespace SmartRenamer.Observations
                 _repairInvestigation.Investigate(
                     metadataReport));
 
-
-
             findings.AddRange(
                 _coverInvestigation.Investigate(
                     metadataReport));
@@ -261,8 +267,9 @@ namespace SmartRenamer.Observations
         /// rather than recreated. This preserves the RepairOpportunity
         /// objects discovered during the most recent investigation.
         ///
-        /// Current supported action:
+        /// Current supported actions:
         ///
+        ///     AuthorizeAutomaticAction
         ///     ResearchMissingIsbn
         ///
         /// Future Ebook actions can use this same gateway:
@@ -272,10 +279,48 @@ namespace SmartRenamer.Observations
         ///     RepairMissingMetadata
         /// </summary>
         public override CV_ActionResult ExecuteAction(
-    CV_ActionRequest request)
+            CV_ActionRequest request)
         {
             if (request == null)
                 throw new ArgumentNullException(nameof(request));
+
+            //---------------------------------------------------------
+            // User-level authorization
+            //---------------------------------------------------------
+            //
+            // The Conversation Framework only recognizes and transports
+            // the user's delegation.
+            //
+            // Ebook Expert determines what that delegation means within
+            // the ebook domain.
+            //
+            //---------------------------------------------------------
+
+            if (string.Equals(
+                    request.ActionId,
+                    "AuthorizeAutomaticAction",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                _repairInvestigation.AuthorizeAutomaticRepairs();
+
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = true,
+                    RequiresReobservation = false,
+                    Message =
+                        "I can now handle qualifying ebook repairs that I can safely determine. I'll still ask you when a repair is ambiguous."
+                };
+            }
+
+            //---------------------------------------------------------
+            // Legacy whole-ebook defer action
+            //---------------------------------------------------------
+            //
+            // This remains temporarily supported while the repair
+            // opportunity-level skip behavior is being rebuilt.
+            //
+            //---------------------------------------------------------
 
             if (string.Equals(
                     request.ActionId,
@@ -295,6 +340,10 @@ namespace SmartRenamer.Observations
                         : "There is no current ebook to skip."
                 };
             }
+
+            //---------------------------------------------------------
+            // Ebook domain action dispatcher
+            //---------------------------------------------------------
 
             return _actionDispatcher.Execute(
                 request,

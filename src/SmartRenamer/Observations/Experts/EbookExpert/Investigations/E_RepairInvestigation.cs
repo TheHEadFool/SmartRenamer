@@ -43,6 +43,15 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     {
         private RepairReport? _lastReport;
         private readonly E_RepairExpedition _repairExpedition = new();
+        private readonly E_RepairAuthorization _repairAuthorization = new();
+
+        public E_RepairAuthorization RepairAuthorization =>
+            _repairAuthorization;
+
+        public void AuthorizeAutomaticRepairs()
+        {
+            _repairAuthorization.AuthorizeAutomaticRepairs();
+        }
 
 
         public void BeginExpedition(
@@ -59,6 +68,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             {
                 return;
             }
+
+            _repairAuthorization.Clear();
 
             _repairExpedition.Begin(
                 sourceFolderPath,

@@ -30,6 +30,7 @@ namespace Scout.Observations.Conversation
     /// • Recognize approval.
     /// • Recognize research requests.
     /// • Recognize Review All.
+    /// • Recognize user delegation of appropriate actions to Scout.
     ///
     /// Future Responsibilities
     /// -------------------------------------------------------------------------
@@ -41,12 +42,13 @@ namespace Scout.Observations.Conversation
     /// This class does NOT
     /// -------------------------------------------------------------------------
     /// • Decide what Scout should do next.
+    /// • Decide whether an action is safe.
     /// • Perform research.
     /// • Modify files.
     /// • Render the user interface.
     ///
     /// Those responsibilities belong to the Conversation Engine,
-    /// Ebook Expert, Resources, and User Interface.
+    /// domain Experts, Resources, and User Interface.
     /// =========================================================================
     /// </summary>
     public sealed class CV_UserIntent
@@ -100,6 +102,12 @@ namespace Scout.Observations.Conversation
                 return this;
             }
 
+            if (IsAutomaticActionAuthorizationRequest(normalized))
+            {
+                Type = CV_UserIntentType.AuthorizeAutomaticAction;
+                return this;
+            }
+
             Type = CV_UserIntentType.Unknown;
             return this;
         }
@@ -148,6 +156,46 @@ namespace Scout.Observations.Conversation
                 input.Contains("review all recommendations") ||
                 input.Contains("show me everything");
         }
+
+        /// <summary>
+        /// Recognizes natural-language requests that delegate appropriate
+        /// actions to Scout.
+        ///
+        /// This recognizes the meaning of the request rather than requiring
+        /// one specific phrase.
+        ///
+        /// The intent only establishes that the user is delegating authority.
+        /// It does NOT determine whether any particular action is safe or
+        /// appropriate. That decision belongs to the applicable Expert.
+        /// </summary>
+        private static bool IsAutomaticActionAuthorizationRequest(
+            string input)
+        {
+            bool containsDelegation =
+                input.Contains("trust you") ||
+                input.Contains("trust scout") ||
+                input.Contains("you can") ||
+                input.Contains("go ahead and") ||
+                input.Contains("take care of") ||
+                input.Contains("handle") ||
+                input.Contains("do them all") ||
+                input.Contains("fix them all") ||
+                input.Contains("fix everything") ||
+                input.Contains("do everything");
+
+            bool containsAction =
+                input.Contains("fix") ||
+                input.Contains("repair") ||
+                input.Contains("handle") ||
+                input.Contains("take care of") ||
+                input.Contains("do them") ||
+                input.Contains("do everything") ||
+                input.Contains("do all");
+
+            return
+                containsDelegation &&
+                containsAction;
+        }
     }
 
     /// <summary>
@@ -163,6 +211,8 @@ namespace Scout.Observations.Conversation
 
         Research,
 
-        ReviewAll
+        ReviewAll,
+
+        AuthorizeAutomaticAction
     }
 }

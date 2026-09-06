@@ -331,6 +331,8 @@ namespace SmartRenamer.Services
                 result.RequiresReobservation)
             {
                 Reobserve();
+
+                observationEngine.CompleteCurrentIfComplete();
             }
 
             return result;

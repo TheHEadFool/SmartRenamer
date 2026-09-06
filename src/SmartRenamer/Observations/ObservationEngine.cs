@@ -202,6 +202,32 @@ namespace SmartRenamer.Observations
         }
 
         //---------------------------------------------------------
+        // Re-observation Completion
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Gives each registered Expert an opportunity to determine
+        /// whether its current domain-specific workflow is complete
+        /// after a re-observation pass.
+        ///
+        /// The ObservationEngine does not know what "complete" means.
+        /// Each Expert owns that decision.
+        ///
+        /// The first Expert that advances its current workflow reports
+        /// success.
+        /// </summary>
+        public bool CompleteCurrentIfComplete()
+        {
+            foreach (ObservationExpert expert in _experts)
+            {
+                if (expert.CompleteCurrentIfComplete())
+                    return true;
+            }
+
+            return false;
+        }
+
+        //---------------------------------------------------------
         // Domain Actions
         //---------------------------------------------------------
 

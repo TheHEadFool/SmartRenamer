@@ -26,6 +26,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     /// • Track EPUBs still waiting to be processed.
     /// • Track EPUBs that require user input.
     /// • Preserve the original source folder identity.
+    /// • Preserve the current confidence threshold for this expedition.
     ///
     /// This class does NOT
     /// -------------------------------------------------------------------------
@@ -43,6 +44,28 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     /// </summary>
     internal sealed class E_RepairExpedition
     {
+        //---------------------------------------------------------
+        // Confidence policy
+        //---------------------------------------------------------
+        //
+        // The normal threshold is deliberately separate from the
+        // minimum safety floor.
+        //
+        // The expedition will eventually be able to lower the
+        // CurrentConfidenceThreshold progressively when unresolved
+        // EPUBs remain.
+        //
+        // The 50% floor is not the normal operating threshold.
+        //
+        //---------------------------------------------------------
+
+        public const double NormalConfidenceThreshold = 1.00;
+
+        public const double MinimumConfidenceThreshold = 0.50;
+
+        public double CurrentConfidenceThreshold { get; private set; } =
+            NormalConfidenceThreshold;
+
         //---------------------------------------------------------
         // Expedition state
         //---------------------------------------------------------
@@ -129,6 +152,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
             CurrentFile = null;
 
+            // Every new expedition begins at the normal confidence threshold.
+            CurrentConfidenceThreshold =
+                NormalConfidenceThreshold;
+
             SourceFolderPath =
                 sourceFolderPath;
 
@@ -177,17 +204,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         }
 
         //---------------------------------------------------------
-        // Defer
+        // Complete / Defer
         //---------------------------------------------------------
 
         /// <summary>
-        /// Removes the current EPUB from active processing and places it
-        /// at the end of the expedition's deferred work.
-        ///
-        /// The expedition can therefore continue with the next EPUB instead
-        /// of stopping the entire folder operation.
+        /// Marks the current EPUB as completed and advances to the next EPUB.
         /// </summary>
-
         public void CompleteCurrent()
         {
             if (CurrentFile == null)
@@ -207,6 +229,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             MoveNext();
         }
 
+        /// <summary>
+        /// Removes the current EPUB from active processing and places it
+        /// at the end of the expedition's deferred work.
+        ///
+        /// The expedition can therefore continue with the next EPUB instead
+        /// of stopping the entire folder operation.
+        /// </summary>
         public void DeferCurrent()
         {
             if (CurrentFile == null)
@@ -234,6 +263,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
             CurrentFile = null;
             SourceFolderPath = null;
+
+            CurrentConfidenceThreshold =
+                NormalConfidenceThreshold;
         }
     }
 }

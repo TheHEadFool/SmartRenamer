@@ -52,7 +52,7 @@ namespace SmartRenamer.Services
             ".xlsx",
             ".ppt",
             ".pptx",
-            ".txt" ,
+            ".txt",
             ".epub"
         };
 
@@ -90,6 +90,19 @@ namespace SmartRenamer.Services
             {
                 FileInfo info = new(file);
 
+                string parentFolder =
+                    info.DirectoryName ?? folderPath;
+
+                string relativeFolder =
+                    string.Equals(
+                        parentFolder,
+                        folderPath,
+                        StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty
+                    : Path.GetRelativePath(
+                        folderPath,
+                        parentFolder);
+
                 summary.FileContexts.Add(new FileContext
                 {
                     OriginalFullPath = file,
@@ -98,8 +111,9 @@ namespace SmartRenamer.Services
                     CurrentName = info.Name,
                     DestinationFolder = "",
                     DestinationName = info.Name,
-                    Extension = info.Extension.ToLowerInvariant(),
-                    Status = "Discovered"
+                    Status = "Discovered",
+                    ParentFolder = parentFolder,
+                    RelativeFolder = relativeFolder
                 });
             }
 
@@ -120,7 +134,8 @@ namespace SmartRenamer.Services
 
                 summary.TotalBytes += info.Length;
 
-                string extension = info.Extension.ToLowerInvariant();
+                string extension =
+                    info.Extension.ToLowerInvariant();
 
                 if (extensions.Add(extension))
                     summary.Extensions.Add(extension);
@@ -149,11 +164,17 @@ namespace SmartRenamer.Services
 
             if (files.Any())
             {
-                DateTime oldest = files.Min(File.GetCreationTime);
-                DateTime newest = files.Max(File.GetCreationTime);
+                DateTime oldest =
+                    files.Min(File.GetCreationTime);
 
-                summary.OldestFileDate = oldest.ToShortDateString();
-                summary.NewestFileDate = newest.ToShortDateString();
+                DateTime newest =
+                    files.Max(File.GetCreationTime);
+
+                summary.OldestFileDate =
+                    oldest.ToShortDateString();
+
+                summary.NewestFileDate =
+                    newest.ToShortDateString();
             }
 
             summary.Extensions.Sort();

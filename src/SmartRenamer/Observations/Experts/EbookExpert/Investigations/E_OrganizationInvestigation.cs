@@ -34,12 +34,27 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     /// • Communicate with Scout.
     ///
     /// Those responsibilities belong to Consultants and Blocks.
+    ///
+    /// Report Lifetime
+    /// -------------------------------------------------------------------------
+    /// The OrganizationReport is retained in memory while the current
+    /// expedition is active so that later stages can use the organization
+    /// facts discovered during investigation.
+    ///
+    /// The report is working expedition data. It is not permanent library
+    /// state and should be released when the expedition is complete.
     /// =========================================================================
     /// </summary>
     public sealed class E_OrganizationInvestigation
 
     // Begin E_OrganizationInvestigation
     {
+        /// <summary>
+        /// The organization report produced by the current investigation.
+        /// This remains available for the lifetime of the current expedition.
+        /// </summary>
+        public OrganizationReport? Report { get; private set; }
+
         public List<ExpertFinding> Investigate(
             MetadataReport metadataReport)
 
@@ -53,7 +68,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
             OrganizationBlock block = new();
 
-            OrganizationReport report =
+            Report =
                 block.Analyze(metadataReport);
 
             //---------------------------------------------------------
@@ -63,7 +78,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             E_OrganizationConsultant consultant = new();
 
             findings.AddRange(
-                consultant.Review(report));
+                consultant.Review(Report));
 
             return findings;
 

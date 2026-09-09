@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using SmartRenamer.Models;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization
 {
@@ -16,6 +17,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
     /// -------------------------------------------------------------------------
     /// • Preserve organization statistics.
     /// • Preserve organization evidence.
+    /// • Preserve which organization dimensions are actually available.
     /// • Remain completely neutral.
     ///
     /// This class does NOT
@@ -29,6 +31,19 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
     /// </summary>
     public class OrganizationReport
     {
+        //-----------------------------------------------------
+        // Available Organization Dimensions
+        //-----------------------------------------------------
+
+        /// <summary>
+        /// Organization dimensions for which this collection
+        /// contains usable metadata.
+        ///
+        /// This describes what Scout knows, not what the user
+        /// has chosen to do with it.
+        /// </summary>
+        public List<OrganizationDimension> AvailableDimensions { get; } = new();
+
         //-----------------------------------------------------
         // Series
         //-----------------------------------------------------

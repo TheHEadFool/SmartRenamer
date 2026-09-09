@@ -13,14 +13,30 @@ namespace SmartRenamer.Models
         /// This allows Observation Experts to inspect the actual files
         /// without needing to know where they originated.
         /// </summary>
-        
+
         public string ProjectGoal { get; set; } = "";
 
+        /// <summary>
+        /// Scout protects the user's source collection.
+        ///
+        /// Repair and organization operate on working copies or create
+        /// separate destination representations rather than modifying
+        /// the source originals.
+        /// </summary>
         public bool KeepOriginals { get; set; } = true;
 
         public string ProjectType { get; set; } = "Unknown";
 
         public int Confidence { get; set; }
+
+        /// <summary>
+        /// Collection-level organization choices for this project.
+        ///
+        /// These settings remain with the project so that organization
+        /// planning can be performed incrementally as individual files
+        /// complete their investigations and repairs.
+        /// </summary>
+        public OrganizationOptions Organization { get; set; } = new();
 
         // Complete analysis profile
         public ProjectProfile Profile { get; set; } = new();

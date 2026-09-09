@@ -1,0 +1,26 @@
+﻿<UserControl x:Class="Scout.Controls.ConversationCards.OrganizationOptionsCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Border Margin="5"
+            Padding="15"
+            CornerRadius="10"
+            BorderBrush="#D6D6D6"
+            BorderThickness="1"
+            Background="#F8F8F8">
+
+        <StackPanel>
+
+            <TextBlock FontSize="18"
+                       FontWeight="SemiBold"
+                       Text="📚 Organize Your Library"/>
+
+            <TextBlock Margin="0,10,0,15"
+                       TextWrapping="Wrap"
+                       Text="Choose how Scout should organize the books it finds, and where the organized library should be created."/>
+
+        </StackPanel>
+
+    </Border>
+
+</UserControl>

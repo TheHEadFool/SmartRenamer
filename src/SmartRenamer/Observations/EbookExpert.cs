@@ -5,6 +5,7 @@ using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Action;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Observations.Experts.EbookExpert.Translators;
 using SmartRenamer.Observations.Specialists;
 
@@ -125,6 +126,14 @@ namespace SmartRenamer.Observations
 
         public override IReadOnlyList<ObservationSpecialist> Specialists =>
             _specialists;
+
+        /// <summary>
+        /// The organization report produced during the current ebook expedition.
+        /// This is working expedition data and remains available until the
+        /// expedition lifecycle releases it.
+        /// </summary>
+        public OrganizationReport? OrganizationReport =>
+            _organizationInvestigation.Report;
 
         //---------------------------------------------------------
 
@@ -347,7 +356,9 @@ namespace SmartRenamer.Observations
 
             return _actionDispatcher.Execute(
                 request,
-                _repairInvestigation.RepairOpportunities);
+                _repairInvestigation.RepairOpportunities,
+                _repairInvestigation.RepairAuthorization
+                    .AutomaticallyHandleQualifyingRepairs);
         }
 
     } // End EbookExpert

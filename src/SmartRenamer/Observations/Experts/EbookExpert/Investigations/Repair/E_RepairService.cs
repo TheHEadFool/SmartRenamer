@@ -4,6 +4,7 @@ using System.IO;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.BuildingBlocks;
 using SmartRenamer.Observations.Experts.EbookExpert.Resources;
+using Scout.Observations.Experts.EbookExpert.Investigations.Repair;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 {
@@ -22,6 +23,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     /// Current Capabilities
     /// -------------------------------------------------------------------------
     /// • Research a missing ISBN.
+    /// • Evaluate ISBN research using additional EPUB content evidence.
     /// • Prepare an approved ISBN in a temporary working copy.
     /// • Verify an ISBN after repair.
     ///
@@ -52,6 +54,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     internal sealed class E_RepairService
     {
         private readonly E_IsbnResearchResource _isbnResearchResource = new();
+
+        private readonly E_IsbnRepairEvidenceEvaluator
+            _isbnRepairEvidenceEvaluator = new();
 
         private readonly E_EpubRepairResource _epubRepairResource = new();
 
@@ -96,7 +101,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         private readonly Dictionary<string, E_RepairPlan> _repairPlans =
             new(StringComparer.OrdinalIgnoreCase);
 
-
         /// <summary>
         /// Researches possible ISBN values for a repair opportunity.
         ///
@@ -127,8 +131,68 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             return _isbnResearchResource.Research(
                 opportunity.Record.Metadata);
         }
-             
-         
+
+        /// <summary>
+        /// Evaluates researched ISBN candidates using additional evidence
+        /// found inside the EPUB itself.
+        ///
+        /// This operation does not select, approve, or apply a repair.
+        /// It produces generic repair decision candidates for the
+        /// E_RepairDecisionEngine.
+        /// </summary>
+        public List<RepairDecisionCandidate> EvaluateIsbnCandidates(
+            RepairOpportunity opportunity,
+            IReadOnlyList<IsbnResearchCandidate> candidates,
+            int maxDocuments = 10)
+        {
+            if (opportunity == null)
+                throw new ArgumentNullException(nameof(opportunity));
+
+            if (candidates == null)
+                throw new ArgumentNullException(nameof(candidates));
+
+            if (opportunity.Record?.Metadata == null)
+                return new List<RepairDecisionCandidate>();
+
+            if (candidates.Count == 0)
+                return new List<RepairDecisionCandidate>();
+
+            //---------------------------------------------------------
+            // The current EPUB path is the file that should be examined.
+            //
+            // CurrentFullPath may point to a repaired working copy.
+            // OriginalFullPath remains the stable identity of the EPUB.
+            //---------------------------------------------------------
+
+            string epubPath =
+                opportunity.Record.File?.CurrentFullPath
+                ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(epubPath))
+            {
+                epubPath =
+                    opportunity.Record.File?.OriginalFullPath
+                    ?? string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(epubPath))
+                return new List<RepairDecisionCandidate>();
+
+            //---------------------------------------------------------
+            // Let the ISBN-specific evidence evaluator interpret the
+            // research candidates against the actual EPUB content.
+            //
+            // The evaluator remains responsible for deciding what
+            // constitutes supporting ISBN evidence.
+            //---------------------------------------------------------
+
+            return _isbnRepairEvidenceEvaluator.Evaluate(
+                opportunity.Record.Metadata,
+                epubPath,
+                candidates,
+                maxDocuments);
+        }
+
         /// <summary>
         /// Adds one approved repair change to the repair plan belonging
         /// to the specified EPUB.
@@ -172,7 +236,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             repairPlan.AddChange(change);
         }
 
-
         /// <summary>
         /// Returns the complete repair plan for one original EPUB.
         ///
@@ -191,6 +254,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 ? repairPlan
                 : null;
         }
+
         /// <summary>
         /// Executes all currently approved repairs for one EPUB.
         ///
@@ -260,14 +324,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                     continue;
 
                 bool repaired =
-    _epubRepairResource.ApplyRepairChange(
-        opportunity.Record.File,
-        change,
-        workingPath);
+                    _epubRepairResource.ApplyRepairChange(
+                        opportunity.Record.File,
+                        change,
+                        workingPath);
 
                 if (!repaired)
                     return null;
-
             }
 
             //---------------------------------------------------------

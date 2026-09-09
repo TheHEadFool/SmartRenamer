@@ -1,4 +1,5 @@
 ﻿using Scout.Observations.Conversation;
+using Scout.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Observations.Experts.EbookExpert.Resources;
@@ -48,6 +49,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
     internal sealed class E_ActionDispatcher
     {
         private readonly E_RepairService _repairService = new();
+        private readonly E_RepairDecisionEngine _repairDecisionEngine = new();
 
         //---------------------------------------------------------
         // Approved ISBN selections
@@ -70,7 +72,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         /// </summary>
         public CV_ActionResult Execute(
             CV_ActionRequest request,
-            IReadOnlyList<RepairOpportunity> opportunities)
+            IReadOnlyList<RepairOpportunity> opportunities,
+            bool automaticAuthorization)
         {
             ArgumentNullException.ThrowIfNull(request);
 
@@ -99,7 +102,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 "ResearchMissingIsbn" =>
                     ResearchMissingIsbn(
                         request,
-                        opportunities),
+                        opportunities,
+                        automaticAuthorization),
 
                 "ExecuteRepairPlan" =>
                     ExecuteRepairPlan(
@@ -396,14 +400,16 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         /// Research never modifies an EPUB.
         /// </summary>
         private CV_ActionResult ResearchMissingIsbn(
-            CV_ActionRequest request,
-            IReadOnlyList<RepairOpportunity> opportunities)
+    CV_ActionRequest request,
+    IReadOnlyList<RepairOpportunity> opportunities,
+    bool automaticAuthorization)
         {
             List<string> evidence = [];
             List<CV_ActionOption> options = [];
 
             int researchedBooks = 0;
             int candidateCount = 0;
+            bool repairExecuted = false;
 
             foreach (RepairOpportunity opportunity in opportunities)
             {
@@ -450,50 +456,135 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 }
 
                 //---------------------------------------------------------
-                // Preserve every researched candidate.
+                // Evaluate the researched candidates against additional
+                // evidence found inside the EPUB.
                 //
-                // The research resource has already ranked the candidates
-                // and calculated their evidence and confidence.
-                //
-                // The dispatcher must not silently reduce that candidate
-                // set to candidates[0]. A later Ebook-domain decision can
-                // determine whether the evidence supports automatic action
-                // or whether the user must choose between candidates.
+                // The evidence evaluator does not approve or apply a
+                // repair. It produces the generic candidates that the
+                // Ebook repair decision engine evaluates.
                 //---------------------------------------------------------
 
-                foreach (IsbnResearchCandidate candidate in candidates)
+                List<RepairDecisionCandidate> evaluatedCandidates =
+                    _repairService.EvaluateIsbnCandidates(
+                        opportunity,
+                        candidates);
+
+                RepairDecisionResult decision =
+                    _repairDecisionEngine.Evaluate(
+                        evaluatedCandidates,
+                        E_RepairDecisionEngine.MinimumConfidenceThreshold,
+                        automaticAuthorization);
+
+                if (decision.State ==
+                    RepairRecommendation.RepairDecisionState.SafeToApply &&
+                    decision.SelectedCandidate != null)
                 {
+                    //---------------------------------------------------------
+                    // Scout has been authorized to handle qualifying repairs.
+                    //
+                    // The decision engine identified exactly one preferred
+                    // candidate that meets the current confidence threshold.
+                    //
+                    // Add the approved change to the repair plan, then execute
+                    // that plan. The repair service creates the repaired EPUB
+                    // and updates the FileContext.CurrentFullPath.
+                    //---------------------------------------------------------
+
+                    RepairDecisionCandidate selectedCandidate =
+                        decision.SelectedCandidate;
+
                     candidateCount++;
 
-                    CV_ActionOption option = new()
+                    string approvedIsbn =
+                        selectedCandidate.Value?.ToString() ?? string.Empty;
+
+                    _repairService.AddRepairChange(
+                        originalPath,
+                        new E_RepairChange(
+                            "ISBN",
+                            opportunity.Record?.Metadata?.Isbn,
+                            approvedIsbn,
+                            selectedCandidate.Source,
+                            selectedCandidate.Evidence,
+                            selectedCandidate.Confidence,
+                            true));
+
+                    _repairService.ExecuteRepairPlan(opportunity);
+
+                    repairExecuted = true;
+
+                    evidence.Add(
+                        $"{fileName}: Scout authorized and selected ISBN " +
+                        $"{approvedIsbn} for automatic repair.");
+
+                    evidence.Add(
+                        $"{fileName}: {selectedCandidate.Evidence}");
+
+                    evidence.Add(
+                        $"{fileName}: repair applied successfully; " +
+                        "the EPUB will be re-observed.");
+                }
+                else if (decision.State ==
+                         RepairRecommendation.RepairDecisionState.UserDecisionRequired)
+                {
+                    //---------------------------------------------------------
+                    // Scout is not authorized to choose among these candidates.
+                    //
+                    // Present only the candidates that survived the decision
+                    // engine's confidence threshold.
+                    //---------------------------------------------------------
+
+                    foreach (RepairDecisionCandidate candidate in decision.Candidates)
                     {
-                        Id = candidate.Isbn,
-                        ActionId = request.ActionId,
+                        candidateCount++;
 
-                        // Stable identity of the ebook this candidate
-                        // belongs to.
-                        ContextId = originalPath,
+                        CV_ActionOption option = new()
+                        {
+                            Id = candidate.Value?.ToString() ?? string.Empty,
+                            ActionId = request.ActionId,
 
-                        Label =
-                            $"{candidate.Isbn} — {fileName}",
+                            // Stable identity of the ebook this candidate
+                            // belongs to.
+                            ContextId = originalPath,
 
-                        Confidence =
-                            candidate.Confidence,
+                            Label =
+                                $"{candidate.Value} — {fileName}",
 
-                        Source =
-                            candidate.Source
-                    };
+                            Confidence =
+                                candidate.Confidence,
 
-                    option.Evidence.Add(
-                        candidate.Evidence);
+                            Source =
+                                candidate.Source
+                        };
 
-                    options.Add(option);
+                        option.Evidence.Add(
+                            candidate.Evidence);
+
+                        options.Add(option);
+                    }
+
+                    evidence.Add(
+                        $"{fileName}: user selection is required because " +
+                        "Scout could not safely choose a single candidate.");
+                }
+                else if (decision.State ==
+                         RepairRecommendation.RepairDecisionState.InsufficientEvidence)
+                {
+                    //---------------------------------------------------------
+                    // The available evidence is not sufficient for a repair.
+                    //
+                    // Do not present unsupported candidates as choices.
+                    //---------------------------------------------------------
+
+                    evidence.Add(
+                        $"{fileName}: there was not enough evidence to " +
+                        "select an ISBN safely.");
                 }
 
                 evidence.Add(
-                    $"{fileName}: found {candidates.Count} ISBN candidate(s).");
+                    $"{fileName}: found {evaluatedCandidates.Count} ISBN candidate(s) after EPUB evidence evaluation.");
 
-                foreach (IsbnResearchCandidate candidate in candidates)
+                foreach (RepairDecisionCandidate candidate in evaluatedCandidates)
                 {
                     evidence.Add(
                         $"{fileName}: {candidate.Evidence}");
@@ -502,10 +593,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
             //---------------------------------------------------------
             // This check must occur after the search loop.
-            //
-            // Previously it was inside the loop after researchedBooks
-            // had already been incremented, which made the condition
-            // impossible to reach correctly.
             //---------------------------------------------------------
 
             if (researchedBooks == 0)
@@ -525,14 +612,21 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             {
                 ActionId = request.ActionId,
                 Success = true,
+                RequiresReobservation = repairExecuted,
                 Message =
-                    $"ISBN research completed for {researchedBooks} ebook(s). " +
-                    $"{candidateCount} candidate(s) were found."
+        $"ISBN research completed for {researchedBooks} ebook(s). " +
+        $"{candidateCount} candidate(s) were found."
             };
 
             result.Evidence.AddRange(evidence);
             result.Options.AddRange(options);
 
+            //---------------------------------------------------------
+            // A successful automatic repair changes the EPUB's current
+            // file state. ProjectWorkflow will respond by re-observing it.
+            //---------------------------------------------------------
+
+         
             return result;
         }
     }

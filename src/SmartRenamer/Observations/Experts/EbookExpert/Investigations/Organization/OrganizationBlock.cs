@@ -20,6 +20,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
     /// -------------------------------------------------------------------------
     /// • Observe organization.
     /// • Collect organization evidence.
+    /// • Determine which metadata dimensions are available.
     /// • Produce an OrganizationReport.
     ///
     /// This Block does NOT
@@ -41,15 +42,15 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
             new(StringComparer.OrdinalIgnoreCase);
 
         private readonly Dictionary<string, List<string>> _publishers =
-    new(StringComparer.OrdinalIgnoreCase);
+            new(StringComparer.OrdinalIgnoreCase);
 
         private readonly Dictionary<string, List<string>> _languages =
-    new(StringComparer.OrdinalIgnoreCase);
+            new(StringComparer.OrdinalIgnoreCase);
 
         //---------------------------------------------------------
 
         public OrganizationReport Analyze(
-    MetadataReport metadataReport)
+            MetadataReport metadataReport)
         {
             OrganizationReport report = new();
 
@@ -61,6 +62,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
             {
                 FileContext file = record.File;
                 E_EbookMetadata metadata = record.Metadata;
+
+                AddAvailableDimensions(
+                    metadata,
+                    report);
 
                 if (string.IsNullOrWhiteSpace(metadata.Series))
                 {
@@ -78,12 +83,66 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                 CollectLanguage(
                     metadata,
                     file);
-
             }
 
             BuildSeriesReport(report);
 
             return report;
+        }
+
+        //---------------------------------------------------------
+        // Available Organization Dimensions
+        //---------------------------------------------------------
+
+        private void AddAvailableDimensions(
+            E_EbookMetadata metadata,
+            OrganizationReport report)
+        {
+            AddDimensionIfAvailable(
+                metadata.Title,
+                OrganizationDimension.Title,
+                report);
+
+            AddDimensionIfAvailable(
+                metadata.Author,
+                OrganizationDimension.Author,
+                report);
+
+            AddDimensionIfAvailable(
+                metadata.Series,
+                OrganizationDimension.Series,
+                report);
+
+            AddDimensionIfAvailable(
+                metadata.Publisher,
+                OrganizationDimension.Publisher,
+                report);
+
+            AddDimensionIfAvailable(
+                metadata.Isbn,
+                OrganizationDimension.ISBN,
+                report);
+
+            AddDimensionIfAvailable(
+                metadata.Language,
+                OrganizationDimension.Language,
+                report);
+        }
+
+        private void AddDimensionIfAvailable(
+            string value,
+            OrganizationDimension dimension,
+            OrganizationReport report)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            if (!report.AvailableDimensions.Contains(dimension))
+            {
+                report.AvailableDimensions.Add(dimension);
+            }
         }
 
         //---------------------------------------------------------
@@ -113,9 +172,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
             books.Add(file.CurrentName);
         }
 
+        //---------------------------------------------------------
+
         private void CollectPublisher(
-    E_EbookMetadata metadata,
-    FileContext file)
+            E_EbookMetadata metadata,
+            FileContext file)
         {
             if (string.IsNullOrWhiteSpace(metadata.Publisher))
             {
@@ -135,11 +196,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
 
             books.Add(file.CurrentName);
         }
+
         //---------------------------------------------------------
 
         private void CollectLanguage(
-    E_EbookMetadata metadata,
-    FileContext file)
+            E_EbookMetadata metadata,
+            FileContext file)
         {
             if (string.IsNullOrWhiteSpace(metadata.Language))
             {
@@ -160,12 +222,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
             books.Add(file.CurrentName);
         }
 
+        //---------------------------------------------------------
+
         private void BuildSeriesReport(
             OrganizationReport report)
-
-            
         {
-
             report.SeriesCount = _series.Count;
 
             report.PublisherCount = _publishers.Count;
@@ -188,7 +249,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                     report.LargestSeriesSize = count;
                 }
 
-
                 OrganizationEvidence evidence = new()
                 {
                     Category = "Series",
@@ -198,8 +258,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                 evidence.Files.AddRange(pair.Value);
 
                 report.Evidence.Add(evidence);
-
-
             }
         }
     }

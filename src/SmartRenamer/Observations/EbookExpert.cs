@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Scout.Observations.Conversation;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Action;
@@ -10,8 +11,6 @@ using SmartRenamer.Observations.Experts.EbookExpert.Translators;
 using SmartRenamer.Observations.Specialists;
 
 namespace SmartRenamer.Observations
-
-// Begin namespace
 {
     // =========================================================================
     // PROJECT STATUS
@@ -77,10 +76,62 @@ namespace SmartRenamer.Observations
     // existing Recommendation panel without replacing the current UI.
     // =========================================================================
     public sealed class EbookExpert
-
-    // Begin EbookExpert
         : ObservationExpert
     {
+        //---------------------------------------------------------
+        // Discovery Capability
+        //---------------------------------------------------------
+        //
+        // The Ebook Expert declares what Scout should make available
+        // as candidate files during discovery.
+        //
+        // IMPORTANT
+        // ---------------------------------------------------------
+        // These extensions are candidate hints only.
+        //
+        // They do NOT mean that every matching file is an ebook.
+        // Ebook Expert remains responsible for domain classification.
+        //
+        // .epub is the first candidate format because it is the format
+        // the current Ebook Expert demonstrably understands end-to-end.
+        //
+        //---------------------------------------------------------
+
+        private static readonly ExpertDiscoveryRequest _discoveryRequest =
+            new()
+            {
+                CandidateExtensions =
+                [
+                    ".epub"
+                ]
+            };
+
+        public override ExpertDiscoveryRequest? DiscoveryRequest =>
+            _discoveryRequest;
+
+        //---------------------------------------------------------
+        // Ebook discovery scope
+        //---------------------------------------------------------
+        //
+        // This is an Ebook Expert domain decision.
+        //
+        // Scout may provide the files it discovered, but Ebook Expert
+        // determines whether EPUBs in nested folders belong to this
+        // Ebook expedition.
+        //
+        // 2A establishes the domain setting.
+        //
+        // 2B will connect the user's conversation choice to this setting.
+        //
+        // The current default is true so existing behavior is preserved.
+        //
+        //---------------------------------------------------------
+
+        public bool SearchNestedFolders { get; set; } = true;
+
+        private IReadOnlyList<FileContext> _ebookFiles =
+            Array.Empty<FileContext>();
+
         //---------------------------------------------------------
         // Investigations
         //---------------------------------------------------------
@@ -147,7 +198,8 @@ namespace SmartRenamer.Observations
             "Keeping ebooks organized by author, series, or subject makes your library easier to browse and enjoy.";
 
         /// <summary>
-        /// Initializes Ebook Expert project-specific repair state.
+        /// Initializes Ebook Expert project-specific repair state and establishes
+        /// the Ebook collection that this Expert will investigate.
         /// </summary>
         public override void BeginProject(
             string sourceFolderPath,
@@ -156,9 +208,56 @@ namespace SmartRenamer.Observations
             ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
             ArgumentNullException.ThrowIfNull(files);
 
+            //---------------------------------------------------------
+            // Ebook discovery
+            //---------------------------------------------------------
+            //
+            // The generic Scout scan may contain many kinds of files.
+            // Ebook Expert now establishes its own domain collection.
+            //
+            // SearchNestedFolders = true:
+            //     EPUBs from the selected folder and all nested folders
+            //     are included.
+            //
+            // SearchNestedFolders = false:
+            //     only EPUBs directly inside the selected source folder
+            //     are included.
+            //
+            //---------------------------------------------------------
+
+            List<FileContext> ebookFiles = new();
+
+            foreach (FileContext file in files)
+            {
+                if (file == null)
+                    continue;
+
+                if (!string.Equals(
+        file.Extension,
+        ".epub",
+        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!SearchNestedFolders &&
+                    !string.IsNullOrWhiteSpace(file.RelativeFolder))
+                {
+                    continue;
+                }
+
+                ebookFiles.Add(file);
+            }
+
+            _ebookFiles = ebookFiles;
+
+            //---------------------------------------------------------
+            // Repair Expedition
+            //---------------------------------------------------------
+
             _repairInvestigation.BeginExpedition(
                 sourceFolderPath,
-                files);
+                _ebookFiles);
         }
 
         /// <summary>
@@ -191,7 +290,7 @@ namespace SmartRenamer.Observations
             //---------------------------------------------------------
 
             MetadataReport metadataReport =
-                _metadataInvestigation.Investigate(files);
+                _metadataInvestigation.Investigate(_ebookFiles);
 
             //---------------------------------------------------------
             // Metadata ExpertFindings
@@ -220,7 +319,7 @@ namespace SmartRenamer.Observations
 
             findings.AddRange(
                 _duplicateInvestigation.Investigate(
-                    files));
+                    _ebookFiles));
 
             findings.AddRange(
                 _qualityInvestigation.Investigate(

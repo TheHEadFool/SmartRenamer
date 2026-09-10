@@ -48,6 +48,27 @@ namespace SmartRenamer.Observations
     /// Expert understanding of the project.
     ///
     /// =========================================================================
+    /// DISCOVERY ARCHITECTURE
+    /// =========================================================================
+    ///
+    /// Experts may optionally declare discovery requirements through the
+    /// generic ExpertDiscoveryRequest contract.
+    ///
+    /// The ObservationEngine collects those requests from the registered
+    /// Experts.
+    ///
+    /// IMPORTANT
+    /// -------------------------------------------------------------------------
+    /// The ObservationEngine does not interpret domain-specific extensions.
+    ///
+    /// An Expert's discovery request describes candidate files that may be
+    /// relevant to that Expert. The Expert remains responsible for deciding
+    /// whether a candidate actually belongs to its domain.
+    ///
+    /// This allows Scout to move toward one physical scan shared by all
+    /// Experts without placing domain knowledge into FolderScanner.
+    ///
+    /// =========================================================================
     /// ACTION ARCHITECTURE
     /// =========================================================================
     ///
@@ -124,6 +145,62 @@ namespace SmartRenamer.Observations
             new MusicExpert(),
             new EbookExpert()
         ];
+
+        //---------------------------------------------------------
+        // Discovery Requirements
+        //---------------------------------------------------------
+        //
+        // Every registered Expert may optionally provide a discovery
+        // request. The ObservationEngine collects those requests without
+        // interpreting them.
+        //
+        // This is the first handshake between the Expert-owned discovery
+        // contract and the shared Scout infrastructure.
+        //
+        //---------------------------------------------------------
+
+        public IReadOnlyList<ExpertDiscoveryRequest> DiscoveryRequests
+        {
+            get
+            {
+                List<ExpertDiscoveryRequest> requests = new();
+
+                foreach (ObservationExpert expert in _experts)
+                {
+                    ExpertDiscoveryRequest? request =
+                        expert.DiscoveryRequest;
+
+                    if (request != null)
+                        requests.Add(request);
+                }
+
+                return requests;
+            }
+        }
+
+        public IReadOnlyList<ExpertDiscoveryBinding> DiscoveryBindings
+        {
+            get
+            {
+                List<ExpertDiscoveryBinding> bindings = new();
+
+                foreach (ObservationExpert expert in _experts)
+                {
+                    ExpertDiscoveryRequest? request =
+                        expert.DiscoveryRequest;
+
+                    if (request != null)
+                    {
+                        bindings.Add(
+                            new ExpertDiscoveryBinding(
+                                expert,
+                                request));
+                    }
+                }
+
+                return bindings;
+            }
+        }
 
         //---------------------------------------------------------
         // Most Recent Findings

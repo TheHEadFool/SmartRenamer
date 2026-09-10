@@ -3,9 +3,18 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using SmartRenamer.Models;
+using SmartRenamer.Observations;
 
 namespace SmartRenamer.Services
 {
+    /// <summary>
+    /// Scans folders and creates the shared FileContext collection used by Scout.
+    ///
+    /// The scanner is deliberately domain-neutral. It does not know what an
+    /// EPUB, music file, photograph, document, or any other file type means.
+    /// Domain Experts provide candidate extension hints through
+    /// ExpertDiscoveryRequest.
+    /// </summary>
     public class FolderScanner
     {
         private static readonly string[] ImageExtensions =
@@ -56,6 +65,12 @@ namespace SmartRenamer.Services
             ".epub"
         };
 
+        /// <summary>
+        /// Performs the single physical folder scan and creates the shared
+        /// FileContext collection.
+        ///
+        /// Legacy FolderSummary classification is preserved.
+        /// </summary>
         public FolderSummary Scan(string folderPath)
         {
             FolderSummary summary = new()
@@ -180,6 +195,59 @@ namespace SmartRenamer.Services
             summary.Extensions.Sort();
 
             return summary;
+        }
+
+        /// <summary>
+        /// Filters an existing shared FileContext collection using the
+        /// candidate extension hints supplied by Experts.
+        ///
+        /// This performs no additional physical folder scan. It simply
+        /// evaluates the FileContexts already produced by Scan().
+        ///
+        /// Candidate extensions are hints only. They do not establish
+        /// domain classification; the appropriate Expert remains responsible
+        /// for deciding whether a candidate actually belongs to its domain.
+        /// </summary>
+        public IReadOnlyList<FileContext> GetCandidates(
+            IReadOnlyList<FileContext> files,
+            IReadOnlyList<ExpertDiscoveryRequest> requests)
+        {
+            ArgumentNullException.ThrowIfNull(files);
+            ArgumentNullException.ThrowIfNull(requests);
+
+            HashSet<string> candidateExtensions =
+                new(StringComparer.OrdinalIgnoreCase);
+
+            foreach (ExpertDiscoveryRequest request in requests)
+            {
+                if (request == null)
+                    continue;
+
+                foreach (string extension in request.CandidateExtensions)
+                {
+                    if (string.IsNullOrWhiteSpace(extension))
+                        continue;
+
+                    string normalizedExtension =
+                        extension.StartsWith(".")
+                            ? extension
+                            : "." + extension;
+
+                    candidateExtensions.Add(
+                        normalizedExtension.ToLowerInvariant());
+                }
+            }
+
+            if (candidateExtensions.Count == 0)
+                return Array.Empty<FileContext>();
+
+            return files
+                .Where(file =>
+                    !string.IsNullOrWhiteSpace(file.CurrentFullPath) &&
+                    candidateExtensions.Contains(
+                        Path.GetExtension(file.CurrentFullPath)
+                            .ToLowerInvariant()))
+                .ToList();
         }
     }
 }

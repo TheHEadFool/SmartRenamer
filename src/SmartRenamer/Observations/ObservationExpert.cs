@@ -30,10 +30,11 @@ namespace SmartRenamer.Observations
     ///
     /// Responsibilities
     /// -------------------------------------------------------------------------
+    /// • Describe its domain.
+    /// • Optionally describe the discovery information it needs.
     /// • Investigate files.
     /// • Produce ExpertFindings.
     /// • Translate findings into conversation recommendations.
-    /// • Describe its domain.
     /// • Optionally execute domain-specific actions.
     ///
     /// This class does NOT
@@ -41,6 +42,7 @@ namespace SmartRenamer.Observations
     /// • Render the user interface.
     /// • Manage conversations.
     /// • Execute rename operations directly.
+    /// • Know the discovery rules of any particular domain.
     ///
     /// =========================================================================
     ///
@@ -48,6 +50,8 @@ namespace SmartRenamer.Observations
     /// -------------------------------------------------------------------------
     /// Every Expert is responsible for:
     ///
+    ///     Discovery Requirements
+    ///          ↓
     ///     FileContext
     ///          ↓
     ///     Investigations
@@ -60,8 +64,23 @@ namespace SmartRenamer.Observations
     ///          ↓
     ///     Domain Actions
     ///
-    /// Scout never translates ExpertFindings.
-    /// Each Expert owns its own translation.
+    /// The discovery capability is deliberately optional.
+    ///
+    /// Scout infrastructure may ask an Expert whether it provides discovery
+    /// requirements. An Expert that does not yet participate in the discovery
+    /// contract may return null and continue using the existing workflow.
+    ///
+    /// IMPORTANT
+    /// -------------------------------------------------------------------------
+    /// The discovery capability describes what an Expert wants Scout to make
+    /// available as candidates. It does NOT determine whether a file actually
+    /// belongs to the Expert's domain.
+    ///
+    /// Domain classification remains the responsibility of the Expert.
+    ///
+    /// For example, EbookExpert may eventually request PDFs, TXT files,
+    /// DOC/DOCX files, EPUBs and other ebook candidates. EbookExpert, not
+    /// FolderScanner, determines which of those candidates are actually books.
     ///
     /// =========================================================================
     ///
@@ -72,22 +91,28 @@ namespace SmartRenamer.Observations
     /// Remaining Experts will be migrated individually to preserve their
     /// internal architecture and domain knowledge.
     ///
-    /// TODO (Generation 2 Migration)
-    /// -------------------------------------------------------------------------
-    /// □ MusicExpert
-    /// □ PhotoExpert
-    /// □ VideoExpert
-    /// □ DocumentExpert
-    /// □ DownloadExpert
-    /// □ SpreadsheetExpert
-    /// □ PresentationExpert
-    /// □ ArchiveExpert
-    /// □ SoftwareProjectExpert
-    ///
     /// =========================================================================
     /// </summary>
     public abstract class ObservationExpert
     {
+        //---------------------------------------------------------
+        // Discovery Capability
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Describes the discovery requirements requested by this Expert.
+        ///
+        /// The default implementation returns null because discovery support
+        /// is being introduced incrementally. Experts may override this
+        /// property when they are ready to participate in the Expert-owned
+        /// discovery contract.
+        ///
+        /// The request describes candidate discovery requirements only.
+        /// It does not classify files as belonging to the Expert's domain.
+        /// </summary>
+        public virtual ExpertDiscoveryRequest? DiscoveryRequest =>
+            null;
+
         //---------------------------------------------------------
         // Identity
         //---------------------------------------------------------
@@ -110,6 +135,7 @@ namespace SmartRenamer.Observations
         /// </summary>
         public abstract List<ExpertFinding> Investigate(
             IReadOnlyList<FileContext> files);
+
         /// <summary>
         /// Gives the Expert an opportunity to initialize domain-specific
         /// project state before investigation begins.
@@ -142,6 +168,11 @@ namespace SmartRenamer.Observations
         {
             return false;
         }
+
+        //---------------------------------------------------------
+        // Recommendations
+        //---------------------------------------------------------
+
         /// <summary>
         /// Converts this Expert's findings into conversation-ready
         /// recommendations.
@@ -180,5 +211,28 @@ namespace SmartRenamer.Observations
                     $"Expert '{Name}' does not handle action '{request.ActionId}'."
             };
         }
+    }
+
+    /// <summary>
+    /// Describes the generic discovery requirements requested by an Expert.
+    ///
+    /// This is a Scout infrastructure contract, not a domain classification
+    /// system. The actual meaning of candidate files remains with the Expert.
+    ///
+    /// The contract will be expanded only as the discovery architecture
+    /// establishes additional generic requirements.
+    /// </summary>
+    public sealed class ExpertDiscoveryRequest
+    {
+        /// <summary>
+        /// File extensions that Scout may use as candidate discovery hints.
+        ///
+        /// These are NOT declarations that files with these extensions belong
+        /// to the Expert's domain.
+        ///
+        /// Domain Experts remain responsible for classification.
+        /// </summary>
+        public IReadOnlyList<string> CandidateExtensions { get; init; } =
+            Array.Empty<string>();
     }
 }

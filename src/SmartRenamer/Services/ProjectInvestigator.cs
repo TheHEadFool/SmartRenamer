@@ -10,14 +10,27 @@ namespace SmartRenamer.Services
 
         private readonly ProjectAnalyzer projectAnalyzer = new();
 
-        public ProjectContext? Investigate()
+        /// <summary>
+        /// Lets the caller select a folder without beginning investigation.
+        ///
+        /// This allows the Guide to ask any required user questions
+        /// between folder selection and Expert investigation.
+        /// </summary>
+        public string? PickFolder()
         {
-            string? folder = folderPicker.PickFolder();
+            return folderPicker.PickFolder();
+        }
 
+        /// <summary>
+        /// Investigates a folder that has already been selected.
+        /// </summary>
+        public ProjectContext? Investigate(string folder)
+        {
             if (string.IsNullOrWhiteSpace(folder))
                 return null;
 
-            FolderSummary summary = folderScanner.Scan(folder);
+            FolderSummary summary =
+                folderScanner.Scan(folder);
 
             ProjectContext context = new()
             {
@@ -29,6 +42,23 @@ namespace SmartRenamer.Services
             projectAnalyzer.Analyze(context);
 
             return context;
+        }
+
+        /// <summary>
+        /// Existing convenience entry point.
+        ///
+        /// Preserved so existing callers continue to work exactly
+        /// as they did before.
+        /// </summary>
+        public ProjectContext? Investigate()
+        {
+            string? folder =
+                PickFolder();
+
+            if (string.IsNullOrWhiteSpace(folder))
+                return null;
+
+            return Investigate(folder);
         }
     }
 }

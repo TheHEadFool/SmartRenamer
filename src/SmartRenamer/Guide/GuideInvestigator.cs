@@ -8,16 +8,59 @@ namespace SmartRenamer.Guide
 {
     /// <summary>
     /// Connects Scout to the Intelligence Engine.
+    ///
     /// Scout doesn't investigate folders directly.
     /// Scout asks the workflow to investigate,
     /// analyze, and prepare a rename preview.
+    ///
+    /// Folder selection can also be performed separately so the
+    /// Conversation layer can collect required user choices before
+    /// investigation begins.
     /// </summary>
     public class GuideInvestigator
     {
         private readonly ProjectWorkflow workflow = new();
 
+        private readonly ProjectInvestigator projectInvestigator = new();
+
         /// <summary>
-        /// Runs the complete intelligence workflow.
+        /// Lets the user select a folder without beginning investigation.
+        ///
+        /// The Guide can use this to ask required questions before
+        /// the Intelligence Engine begins its investigation.
+        /// </summary>
+        public string? PickFolder()
+        {
+            return projectInvestigator.PickFolder();
+        }
+
+        /// <summary>
+        /// Investigates a folder that has already been selected.
+        ///
+        /// The folder is scanned and converted into a ProjectContext
+        /// first. The existing ProjectWorkflow then performs the normal
+        /// intelligence workflow against that context.
+        /// </summary>
+        public WorkflowResult? Investigate(string folder)
+        {
+            if (string.IsNullOrWhiteSpace(folder))
+                return null;
+
+            ProjectContext? context =
+                projectInvestigator.Investigate(folder);
+
+            if (context == null)
+                return null;
+
+            return workflow.Execute(context);
+        }
+
+        /// <summary>
+        /// Runs the complete intelligence workflow using the existing
+        /// folder-selection path.
+        ///
+        /// Preserved so existing callers continue to work while the
+        /// conversation-driven folder-selection path is introduced.
         /// </summary>
         public WorkflowResult? Investigate()
         {
@@ -39,7 +82,6 @@ namespace SmartRenamer.Guide
 
             return workflow.ExecuteAction(request);
         }
-
 
         /// <summary>
         /// Converts the workflow results into

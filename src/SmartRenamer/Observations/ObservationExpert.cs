@@ -113,6 +113,20 @@ namespace SmartRenamer.Observations
         public virtual ExpertDiscoveryRequest? DiscoveryRequest =>
             null;
 
+        /// <summary>
+        /// Applies a user-selected discovery option to this Expert.
+        ///
+        /// The generic Observation Framework transports the user's choice,
+        /// but the domain Expert owns the meaning of that choice.
+        ///
+        /// The default implementation deliberately does nothing because
+        /// discovery choices are optional and domain-specific.
+        /// </summary>
+        public virtual void ApplyDiscoveryChoice(string optionId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
+        }
+
         //---------------------------------------------------------
         // Identity
         //---------------------------------------------------------
@@ -234,5 +248,47 @@ namespace SmartRenamer.Observations
         /// </summary>
         public IReadOnlyList<string> CandidateExtensions { get; init; } =
             Array.Empty<string>();
+
+        /// <summary>
+        /// User-selectable discovery choices offered by this Expert.
+        ///
+        /// The options are generic transport objects. The meaning of each
+        /// option belongs entirely to the Expert that supplied the request.
+        /// </summary>
+        public IReadOnlyList<ExpertDiscoveryOption> Options { get; init; } =
+            Array.Empty<ExpertDiscoveryOption>();
+    }
+
+    /// <summary>
+    /// Represents one user-selectable discovery option supplied by an Expert.
+    ///
+    /// Scout infrastructure transports this option without interpreting
+    /// its domain-specific meaning.
+    /// </summary>
+    public sealed class ExpertDiscoveryOption
+    {
+        /// <summary>
+        /// Creates a discovery option.
+        /// </summary>
+        public ExpertDiscoveryOption(
+            string id,
+            string label)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(id);
+            ArgumentException.ThrowIfNullOrWhiteSpace(label);
+
+            Id = id;
+            Label = label;
+        }
+
+        /// <summary>
+        /// Stable identifier used when the user selects this option.
+        /// </summary>
+        public string Id { get; }
+
+        /// <summary>
+        /// User-facing label for this option.
+        /// </summary>
+        public string Label { get; }
     }
 }

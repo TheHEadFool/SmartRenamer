@@ -156,6 +156,39 @@ namespace SmartRenamer.Services
         }
 
         //---------------------------------------------------------
+        // Discovery Choices
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Returns the discovery choices currently offered by the registered
+        /// Observation Experts.
+        ///
+        /// ProjectWorkflow exposes this generic bridge so the Guide can collect
+        /// required user choices without reaching directly into the
+        /// ObservationEngine.
+        /// </summary>
+        public IReadOnlyList<ExpertDiscoveryBinding> DiscoveryBindings =>
+            observationEngine.DiscoveryBindings;
+
+        /// <summary>
+        /// Applies a user-selected discovery choice to the Expert that owns it.
+        ///
+        /// The workflow transports the choice; the domain Expert owns its
+        /// meaning.
+        /// </summary>
+        public void ApplyDiscoveryChoice(
+            string expertName,
+            string optionId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expertName);
+            ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
+
+            observationEngine.ApplyDiscoveryChoice(
+                expertName,
+                optionId);
+        }
+
+        //---------------------------------------------------------
         // Existing Project Workflow
         //---------------------------------------------------------
 

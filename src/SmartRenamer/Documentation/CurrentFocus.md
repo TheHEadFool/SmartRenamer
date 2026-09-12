@@ -1,33 +1,39 @@
 ﻿# Current Sprint
 
 Last Updated:
-2026-08-22
+2026-09-12
 
 ----------------------------------------------------
 Current Goal
 ----------------------------------------------------
 
-Make the Ebook Expert capable of actually fixing a problem it discovers.
+Map and complete the Repair → Organization boundary.
 
-The Ebook Expert is the reference implementation for future Scout Experts.
+The Missing ISBN repair slice is now demonstrated through creation of a
+repaired working copy in the temporary workspace. Organization is not yet
+executing the final organized copy, so the current workflow stops there.
 
-The next milestone is the first complete Repair vertical slice:
+The next milestone is a single-ebook Organization vertical slice:
 
-Missing ISBN
+Repair Handoff
     ↓
-Research
+Organization Context
     ↓
-User Approval
+Organization Decision
     ↓
-EPUB Repair
+Organization Job / Operation
     ↓
-Verification
+Copy to organized destination
+    ↓
+Verify
+    ↓
+Release working copy
 
 ----------------------------------------------------
 Current Architecture
 ----------------------------------------------------
 
-Files
+Observation
     ↓
 Ebook Expert
     ↓
@@ -47,16 +53,21 @@ Conversation
     ↓
 User Action
     ↓
-Domain Operation
+Domain Action
     ↓
-Verification
+Repair / Organization
 
-Metadata research is acquired once and shared with downstream
-Investigations through MetadataReport.
+MetadataReport is the shared collection-wide metadata source for downstream
+Ebook Expert Investigations.
+
+Repair keeps OriginalFullPath as the stable source identity and may place a
+repaired representation at CurrentFullPath. Originals remain protected.
 
 ----------------------------------------------------
-Completed
+Completed / Demonstrated
 ----------------------------------------------------
+
+✔ Ebook Expert Investigation architecture
 
 ✔ Metadata
     - Block
@@ -71,12 +82,12 @@ Completed
     - Investigation
     - Consultant
 
-✔ Organization
+✔ Organization Investigation
     - Block
     - Report
     - Evidence
-    - Investigation
     - Consultant
+    - Investigation
 
 ✔ Duplicates
     - Block
@@ -90,6 +101,12 @@ Completed
     - Investigation
     - Consultant
 
+✔ Enrichment
+    - Block
+    - Report
+    - Investigation
+    - Consultant
+
 ✔ Repair Investigation
     - RepairBlock
     - RepairReport
@@ -98,274 +115,142 @@ Completed
     - E_RepairConsultant
     - E_RepairInvestigation
 
-✔ Enrichment
-    - Block
-    - Report
-    - Investigation
-    - Consultant
+✔ Missing ISBN action path
+    - Research through Open Library
+    - Candidate presentation
+    - User selection / approval
+    - Repair plan
+    - Working-copy creation
+    - EPUB ISBN modification
 
-✔ Recommendation Pipeline
-    - ExpertFinding
-    - E_RecommendationTranslator
-    - CV_Recommendation
+✔ Conversation action options are visibly clickable.
 
-✔ Conversation integration
-    - Findings can become recommendations.
-    - Recommendations can become conversation topics.
-    - Review All can present recommendations.
+✔ Repair actions can return a re-observation requirement.
 
 ----------------------------------------------------
 Current Repair State
 ----------------------------------------------------
 
-Repair can currently identify missing ebook information.
+The Missing ISBN vertical slice is operational through the repaired working
+copy. The repaired EPUB is deliberately placed in the temporary workspace.
 
-RepairReport preserves:
+The current endpoint is:
 
-- Repair opportunities
-- Missing metadata counts
-- Collection statistics
-- Evidence
+Original EPUB
+    ↓
+Research ISBN
+    ↓
+User selects candidate
+    ↓
+Repair Plan
+    ↓
+Create protected working copy
+    ↓
+Apply ISBN repair
+    ↓
+Repaired EPUB in Temp
 
-RepairOpportunity identifies the specific missing information
-for an ebook.
+The workflow does not yet have a completed Repair Handoff → Organization →
+organized destination path. That is the next architectural connection.
 
-RepairRecommendation describes a possible repair and records:
+Verification should continue to use the normal ObservationEngine/re-observation
+path rather than creating a separate verification architecture.
 
-- Description
-- RequiresResearch
-- IsSafeToApply
+----------------------------------------------------
+Organization State
+----------------------------------------------------
 
-Repair does NOT yet perform the repair.
+Organization Investigation is implemented and can analyze collection metadata.
+It can identify available organization dimensions and collection relationships.
+
+Existing domain pieces include:
+
+- OrganizationBlock
+- OrganizationReport
+- OrganizationEvidence
+- OrganizationContext
+- OrganizationOptions
+- E_OrganizationConsultant
+- E_OrganizationInvestigation
+- OrganizationOptionsCard
+
+These pieces are not yet connected into the actual filesystem organization
+operation.
+
+The old Services/OrganizationPlanner.cs path is legacy generic infrastructure
+and is not the new Ebook Expert organization architecture. Do not feed repaired
+ebooks into it merely because it already copies files.
 
 ----------------------------------------------------
 Next Task
 ----------------------------------------------------
 
-Complete the first real Repair capability:
+Trace Organization forwards and backwards from the current project source.
 
-Missing ISBN.
+Determine the smallest sequence needed to connect:
 
-The first implementation should:
-
-1. Identify an ebook with a missing ISBN.
-
-2. Use the existing MetadataRecord as the research context.
-
-3. Determine whether the missing ISBN can reasonably be researched.
-
-4. Produce a research request containing the available identifying
-   information.
-
-5. Obtain a candidate ISBN and supporting evidence.
-
-6. Allow Scout to present the candidate to the user.
-
-7. Require user approval before changing the EPUB.
-
-8. Have the Ebook Expert perform the EPUB-specific repair.
-
-9. Re-read the EPUB.
-
-10. Verify that the ISBN was actually written correctly.
-
-11. Report the result back through the existing Scout pipeline.
-
-----------------------------------------------------
-Research Rules
-----------------------------------------------------
-
-Research belongs to the domain Investigation that owns the
-research question.
-
-Research assistants:
-
-• Acquire information.
-• Preserve objective evidence.
-• Do not interpret findings.
-• Do not make recommendations.
-• Do not communicate directly with Scout.
-
-Consultants interpret research.
-
-The Ebook Expert owns all EPUB-specific research and repair knowledge.
-
-Scout must remain domain-neutral.
-
-----------------------------------------------------
-After First Repair Works
-----------------------------------------------------
-
-Extend the Repair pattern to:
-
-- Missing titles
-- Missing authors
-- Missing publishers
-- Missing languages
-- Missing descriptions
-- Missing covers
-- Navigation repair
-- Other safely recoverable EPUB defects
-
-Do not build all repair types simultaneously.
-
-Prove one complete vertical slice first.
-
-----------------------------------------------------
-Legacy Migration
-----------------------------------------------------
-
-E_EbookMetadataSpecialist remains legacy infrastructure.
-
-Do not remove it until the new Metadata Investigation has been
-verified to replace all required behavior.
-
-Migration is a later task.
-
-----------------------------------------------------
-Known Future Work
-----------------------------------------------------
-
-Do not interrupt the current Repair milestone for:
-
-- Recommendation ranking
-- Conversation redesign
-- New Experts
-- Music migration
-- Photo migration
-- Drag and drop
-- Favorites
-- Recent folders
-- Keyboard shortcuts
-- Folder watching
-- Scheduled organization
-- Semantic duplicate improvements
-- STL support
-- Cockatrice support
-- Other backlog or parking-lot features
-
-These remain valid future work.
-
-----------------------------------------------------
-Do NOT Change
-----------------------------------------------------
-
-Architecture:
-
-Files
+E_RepairHandoff
     ↓
-Block
+OrganizationContext
     ↓
-Report
+Organization decision
     ↓
-Consultant
+Organization Job / Operation
     ↓
-ExpertFinding
+Safe copy
+    ↓
+Verification
 
-Research:
+The first implementation should prove one repaired EPUB can become one
+organized EPUB without modifying the original.
 
-Research once.
-Preserve objective evidence.
-Reuse existing research downstream.
+Do not build collection-scale organization, bulk queues, or advanced conflict
+resolution until this single-item path is proven.
 
-Domain ownership:
+----------------------------------------------------
+Safety Rules
+----------------------------------------------------
 
-Ebook-specific knowledge remains inside Ebook Expert.
+• Originals are never modified.
+• Repair works on a protected working copy.
+• Organization copies the working representation to a separate destination.
+• Copy → verify → release temporary working copy is the initial safe model.
+• Destructive move/delete behavior is a separate future capability.
 
-Scout owns:
-
-- Conversation
-- User intent
-- User approval
-- General coordination
-
-Ebook Expert owns:
-
-- EPUB knowledge
-- EPUB research
-- EPUB repair
-- EPUB verification
-
-Development rules:
+----------------------------------------------------
+Development Rules
+----------------------------------------------------
 
 • One file.
 • One logical change.
 • Build immediately.
 • Green before continuing.
-
-Whole file ≤150 lines.
-Method only >150 lines.
-
-The live project is the source of truth.
-
-----------------------------------------------------
-Definition of the Next Milestone
-----------------------------------------------------
-
-The Repair milestone is complete when Scout can demonstrate:
-
-"I found an ebook missing an ISBN."
-
-↓
-
-"I researched the available information."
-
-↓
-
-"Here is the ISBN I found and the evidence supporting it."
-
-↓
-
-"Would you like me to add it?"
-
-↓
-
-User approves.
-
-↓
-
-Ebook Expert modifies the EPUB.
-
-↓
-
-Ebook Expert verifies the modification.
-
-↓
-
-Scout reports:
-
-"The ISBN was successfully added and verified."
+• The live project is the source of truth.
+• Prefer complete-file replacement.
+• Do not refactor unrelated systems.
+• Trace the data before changing the design.
 
 ----------------------------------------------------
-Current Focus
+Reference Expert Goal
 ----------------------------------------------------
 
-Do not add another architectural layer.
+The Ebook Expert remains the reference implementation for future Scout Experts.
 
-Do not recreate existing Report properties.
+The reference path must demonstrate:
 
-Do not redesign the Conversation Framework.
+Research
+    ↓
+Interpretation
+    ↓
+Conversation
+    ↓
+Approval
+    ↓
+Domain Operation
+    ↓
+Verification
+    ↓
+Handoff / Completion
 
-Do not start another Expert.
-
-Make the Ebook Expert actually fix one real problem.
-
-First:
-
-Missing ISBN.
-
-Then:
-
-Research.
-
-Then:
-
-Approval.
-
-Then:
-
-Repair.
-
-Then:
-
-Verification.
+Only after the Ebook Expert proves this pattern should the architecture be
+generalized to additional Experts.

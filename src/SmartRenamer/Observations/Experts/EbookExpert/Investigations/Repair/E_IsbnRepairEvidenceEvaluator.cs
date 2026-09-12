@@ -111,7 +111,7 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
                     authorAppearsInContent,
                     publisherAppearsInContent);
 
-            return new RepairDecisionCandidate
+            RepairDecisionCandidate evaluatedCandidate = new()
             {
                 Value = candidate.Isbn,
                 Source = candidate.Source,
@@ -120,6 +120,57 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
                 IsPreferred =
                     isbnAppearsInContent
             };
+
+            AddCandidateDetail(
+                evaluatedCandidate,
+                "ISBN",
+                candidate.Isbn);
+
+            AddCandidateDetail(
+                evaluatedCandidate,
+                "Title",
+                candidate.Title);
+
+            AddCandidateDetail(
+                evaluatedCandidate,
+                "Author",
+                candidate.Author);
+
+            AddCandidateDetail(
+                evaluatedCandidate,
+                "Publisher",
+                candidate.Publisher);
+
+            AddCandidateDetail(
+                evaluatedCandidate,
+                "Publication year",
+                candidate.PublicationYear);
+
+            if (candidate.EditionVerified)
+            {
+                AddCandidateDetail(
+                    evaluatedCandidate,
+                    "Edition verification",
+                    "Independently verified");
+            }
+
+            return evaluatedCandidate;
+        }
+
+        /// <summary>
+        /// Adds one factual candidate detail when the research resource
+        /// supplied a value for it.
+        /// </summary>
+        private static void AddCandidateDetail(
+            RepairDecisionCandidate candidate,
+            string label,
+            string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+
+            candidate.Details.Add(
+                $"{label}: {value.Trim()}");
         }
 
         /// <summary>

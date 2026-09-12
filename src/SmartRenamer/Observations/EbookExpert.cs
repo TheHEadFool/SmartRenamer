@@ -103,6 +103,15 @@ namespace SmartRenamer.Observations
                 CandidateExtensions =
                 [
                     ".epub"
+                ],
+                Options =
+                [
+                    new ExpertDiscoveryOption(
+                        "search-nested-folders",
+                        "Search nested folders"),
+                    new ExpertDiscoveryOption(
+                        "current-folder-only",
+                        "Current folder only")
                 ]
             };
 
@@ -128,6 +137,27 @@ namespace SmartRenamer.Observations
         //---------------------------------------------------------
 
         public bool SearchNestedFolders { get; set; } = true;
+
+        public override void ApplyDiscoveryChoice(string optionId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
+
+            switch (optionId)
+            {
+                case "search-nested-folders":
+                    SearchNestedFolders = true;
+                    return;
+
+                case "current-folder-only":
+                    SearchNestedFolders = false;
+                    return;
+
+                default:
+                    throw new ArgumentException(
+                        $"Unknown ebook discovery option '{optionId}'.",
+                        nameof(optionId));
+            }
+        }
 
         private IReadOnlyList<FileContext> _ebookFiles =
             Array.Empty<FileContext>();

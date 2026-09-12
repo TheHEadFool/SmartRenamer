@@ -202,6 +202,37 @@ namespace SmartRenamer.Observations
             }
         }
 
+        /// <summary>
+        /// Applies a generic discovery choice to the registered Expert
+        /// identified by its name.
+        ///
+        /// The ObservationEngine does not interpret the option. The selected
+        /// Expert receives the option ID and determines what it means.
+        /// </summary>
+        public void ApplyDiscoveryChoice(
+            string expertName,
+            string optionId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expertName);
+            ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
+
+            foreach (ObservationExpert expert in _experts)
+            {
+                if (string.Equals(
+                        expert.Name,
+                        expertName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    expert.ApplyDiscoveryChoice(optionId);
+                    return;
+                }
+            }
+
+            throw new ArgumentException(
+                $"No registered Expert named '{expertName}' was found.",
+                nameof(expertName));
+        }
+
         //---------------------------------------------------------
         // Most Recent Findings
         //---------------------------------------------------------
@@ -238,7 +269,6 @@ namespace SmartRenamer.Observations
             ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
 
             List<ExpertFinding> allFindings = new();
-
             List<CV_Recommendation> recommendations = new();
 
             //---------------------------------------------------------

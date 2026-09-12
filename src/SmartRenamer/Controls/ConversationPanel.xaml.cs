@@ -25,8 +25,8 @@ namespace SmartRenamer.Controls
         }
 
         private void Messages_CollectionChanged(
-     object? sender,
-     NotifyCollectionChangedEventArgs e)
+            object? sender,
+            NotifyCollectionChangedEventArgs e)
         {
             //---------------------------------------------------------
             // Conversation scrolling
@@ -122,17 +122,25 @@ namespace SmartRenamer.Controls
 
             Keyboard.Focus(InputBox);
         }
+
         private void ActionOption_Click(
-                object sender,
-                RoutedEventArgs e)
+            object sender,
+            RoutedEventArgs e)
         {
             if (sender is not Button button)
                 return;
 
-            if (button.DataContext is not SmartRenamer.Guide.Models.GuideMessage message)
-                return;
+            //---------------------------------------------------------
+            // The Button is inside the CV_ActionOption DataTemplate.
+            // Therefore its DataContext IS the CV_ActionOption.
+            //
+            // The previous code incorrectly expected a GuideMessage
+            // here and then tried to retrieve the option from its
+            // Payload. That caused conversation action buttons to
+            // silently do nothing.
+            //---------------------------------------------------------
 
-            if (message.Payload is not Scout.Observations.Conversation.CV_ActionOption option)
+            if (button.DataContext is not Scout.Observations.Conversation.CV_ActionOption option)
                 return;
 
             if (DataContext is not GuideViewModel guide)
@@ -142,6 +150,23 @@ namespace SmartRenamer.Controls
 
             Keyboard.Focus(InputBox);
         }
-    }
 
+        private void InlineAction_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            if (sender is not Button button)
+                return;
+
+            if (button.DataContext is not SmartRenamer.Guide.Models.GuideInlineAction action)
+                return;
+
+            if (DataContext is not GuideViewModel guide)
+                return;
+
+            guide.SelectDiscoveryOption(action);
+
+            Keyboard.Focus(InputBox);
+        }
+    }
 }

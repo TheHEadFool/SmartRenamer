@@ -6,6 +6,7 @@ using SmartRenamer.Guide.Thinking;
 using SmartRenamer.Infrastructure;
 using SmartRenamer.Models;
 using SmartRenamer.Models.Rename;
+using SmartRenamer.Observations;
 using SmartRenamer.Services;
 using SmartRenamer.ViewModels.Workspace;
 using System;
@@ -117,6 +118,23 @@ namespace SmartRenamer.ViewModels.Guide
 
         private WorkflowResult? currentWorkflow;
 
+        // ---------------------------------------------------------
+        // Discovery Choice State
+        // ---------------------------------------------------------
+        //
+        // The Guide holds only the generic discovery information supplied
+        // by the workflow. It does not interpret what the choices mean.
+        // ---------------------------------------------------------
+
+        private string? selectedFolder;
+
+        private readonly List<ExpertDiscoveryBinding> pendingDiscoveryBindings =
+            new();
+
+        private int pendingDiscoveryIndex;
+
+        private bool awaitingDiscoveryChoice;
+
         //---------------------------------------------------------
         // User Input
         //---------------------------------------------------------
@@ -141,6 +159,7 @@ namespace SmartRenamer.ViewModels.Guide
         public RelayCommand BrowseFolderCommand { get; }
 
         public RelayCommand SelectActionOptionCommand { get; }
+        public RelayCommand ExecuteRecommendationActionCommand { get; }
 
         // =====================================================================
         // Constructor
@@ -169,7 +188,12 @@ namespace SmartRenamer.ViewModels.Guide
         if (parameter is CV_ActionOption option)
             SelectActionOption(option);
     });
-
+            ExecuteRecommendationActionCommand =
+    new RelayCommand(parameter =>
+    {
+        if (parameter is CV_Recommendation recommendation)
+            ExecuteRecommendationAction(recommendation);
+    });
             //---------------------------------------------------------
             // Initial folder picker card.
             //---------------------------------------------------------
@@ -243,6 +267,17 @@ namespace SmartRenamer.ViewModels.Guide
                 answer);
 
             UserInput = "";
+
+            if (awaitingDiscoveryChoice)
+            {
+                if (TryApplyTypedDiscoveryChoice(answer))
+                    return;
+
+                Conversation.AddGuideMessage(
+                    "Please choose one of the discovery options shown above, or type its exact label.");
+
+                return;
+            }
 
             // =================================================================
             // NEW CONVERSATION FRAMEWORK
@@ -330,73 +365,6 @@ namespace SmartRenamer.ViewModels.Guide
                     HandleActionResult(actionResult);
                     return;
 
-                    //---------------------------------------------------------
-                    // Report the result returned by the domain Expert.
-                    //---------------------------------------------------------
-
-                    if (!string.IsNullOrWhiteSpace(actionResult.Message))
-                    {
-                        Conversation.AddGuideMessage(
-                            actionResult.Message);
-                    }
-
-                    //---------------------------------------------------------
-                    // Report supporting evidence.
-                    //---------------------------------------------------------
-
-                    foreach (string evidence in actionResult.Evidence)
-                    {
-                        if (!string.IsNullOrWhiteSpace(evidence))
-                        {
-                            Conversation.AddGuideMessage(
-                                evidence);
-                        }
-                    }
-
-                    //---------------------------------------------------------
-                    // Present structured options.
-                    //
-                    // For ISBN research these are the ISBN candidates returned
-                    // by the Ebook Expert.
-                    //---------------------------------------------------------
-
-                    if (actionResult.Options.Count > 0)
-                    {
-                        workspace.ConversationEngine.RememberActionOptions(
-                            actionResult.Options);
-
-                        workspace.ConversationEngine.RememberActionOptions(
-    actionResult.Options);
-
-                        ActionOptions.Clear();
-
-                        foreach (CV_ActionOption option
-                            in actionResult.Options)
-                        {
-                            ActionOptions.Add(option);
-                        }
-
-                        Conversation.AddGuideMessage(
-                            "Here are the results I found:");
-
-                        foreach (CV_ActionOption nextOption
-                            in actionResult.Options)
-                        {
-                            Conversation.Messages.Add(
-                                new GuideMessage
-                                {
-                                    Speaker = GuideSpeaker.Guide,
-                                    DisplayName = "Scout",
-                                    Text = string.Empty,
-                                    Payload = nextOption
-                                });
-                        }
-
-                        Conversation.AddGuideMessage(
-                            "You can choose one of these results or continue talking to me.");
-                    }
-
-                    return;
                 }
 
                 // -------------------------------------------------------------
@@ -594,6 +562,305 @@ namespace SmartRenamer.ViewModels.Guide
             }
         }
 
+        // =====================================================================
+        // Discovery Choice Handling
+        // =====================================================================
+
+        /// <summary>
+        /// Handles a discovery choice supplied by the conversation layer.
+        ///
+        /// The Guide does not interpret the choice. It routes the Expert name
+        /// and option identifier through GuideInvestigator so the owning Expert
+        /// can apply its own meaning.
+        /// </summary>
+        public void SelectDiscoveryOption(
+            GuideInlineAction action)
+        {
+            if (action == null)
+                return;
+
+            ApplyDiscoveryChoice(
+                action.ActionId);
+        }
+
+        /// <summary>
+        /// Applies a typed or clicked discovery choice and advances the
+        /// discovery sequence. Typed answers and direct selections converge
+        /// here so the underlying workflow receives the same choice.
+        /// </summary>
+        private void ApplyDiscoveryChoice(
+            string optionId)
+        {
+            if (!awaitingDiscoveryChoice)
+                return;
+
+            if (pendingDiscoveryIndex < 0 ||
+                pendingDiscoveryIndex >= pendingDiscoveryBindings.Count)
+            {
+                awaitingDiscoveryChoice = false;
+                return;
+            }
+
+            ExpertDiscoveryBinding binding =
+                pendingDiscoveryBindings[pendingDiscoveryIndex];
+
+            guideInvestigator.ApplyDiscoveryChoice(
+                binding.Expert.Name,
+                optionId);
+
+            pendingDiscoveryIndex++;
+
+            if (pendingDiscoveryIndex < pendingDiscoveryBindings.Count)
+            {
+                PresentDiscoveryQuestion();
+                return;
+            }
+
+            awaitingDiscoveryChoice = false;
+            pendingDiscoveryBindings.Clear();
+            pendingDiscoveryIndex = 0;
+
+            if (!string.IsNullOrWhiteSpace(selectedFolder))
+            {
+                string folder = selectedFolder;
+                selectedFolder = null;
+                InvestigateSelectedFolder(folder);
+            }
+        }
+
+        /// <summary>
+        /// Accepts a typed discovery answer. Matching is deliberately limited
+        /// to the options supplied by the current Expert.
+        /// </summary>
+        private bool TryApplyTypedDiscoveryChoice(
+            string answer)
+        {
+            if (!awaitingDiscoveryChoice)
+                return false;
+
+            if (pendingDiscoveryIndex < 0 ||
+                pendingDiscoveryIndex >= pendingDiscoveryBindings.Count)
+            {
+                return false;
+            }
+
+            ExpertDiscoveryBinding binding =
+                pendingDiscoveryBindings[pendingDiscoveryIndex];
+
+            ExpertDiscoveryOption? option =
+                binding.Request.Options.FirstOrDefault(
+                    candidate =>
+                        string.Equals(
+                            candidate.Id,
+                            answer,
+                            StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(
+                            candidate.Label,
+                            answer,
+                            StringComparison.OrdinalIgnoreCase));
+
+            if (option == null)
+                return false;
+
+            ApplyDiscoveryChoice(option.Id);
+            return true;
+        }
+
+        /// <summary>
+        /// Presents the next generic discovery question supplied by an Expert.
+        /// The Guide does not know what the options mean.
+        /// </summary>
+        private void PresentDiscoveryQuestion()
+        {
+            if (pendingDiscoveryIndex < 0 ||
+                pendingDiscoveryIndex >= pendingDiscoveryBindings.Count)
+            {
+                awaitingDiscoveryChoice = false;
+                return;
+            }
+
+            ExpertDiscoveryBinding binding =
+                pendingDiscoveryBindings[pendingDiscoveryIndex];
+
+            Conversation.AddGuideMessage(
+                "Before I investigate, I need one choice about how you'd like me to search.");
+
+            foreach (ExpertDiscoveryOption option
+                in binding.Request.Options)
+            {
+                Conversation.Messages.Add(
+                    new GuideMessage
+                    {
+                        Speaker = GuideSpeaker.Guide,
+                        DisplayName = "Scout",
+                        Text = option.Label,
+                        Payload = new GuideInlineAction(
+                            option.Label,
+                            option.Id)
+                    });
+            }
+        }
+
+        /// <summary>
+        /// Starts the generic discovery-choice sequence for the selected folder.
+        /// If no Expert requires a choice, investigation begins immediately.
+        /// </summary>
+        private void BeginDiscovery(
+            string folder)
+        {
+            selectedFolder = folder;
+
+            pendingDiscoveryBindings.Clear();
+            pendingDiscoveryBindings.AddRange(
+                guideInvestigator.DiscoveryBindings
+                    .Where(binding =>
+                        binding.Request.Options.Count > 0));
+
+            pendingDiscoveryIndex = 0;
+
+            if (pendingDiscoveryBindings.Count == 0)
+            {
+                selectedFolder = null;
+                InvestigateSelectedFolder(folder);
+                return;
+            }
+
+            awaitingDiscoveryChoice = true;
+            PresentDiscoveryQuestion();
+        }
+
+        /// <summary>
+        /// Begins the existing investigation workflow after all required
+        /// discovery choices have been supplied.
+        /// </summary>
+        private void InvestigateSelectedFolder(
+            string folder)
+        {
+            WorkflowResult? result =
+                guideInvestigator.Investigate(folder);
+
+            CompleteInvestigation(result);
+        }
+
+        /// <summary>
+        /// Completes the existing Guide behavior after investigation.
+        /// </summary>
+        /// <summary>
+        /// Completes the existing Guide behavior after investigation.
+        ///
+        /// The investigation produces conversation recommendations through
+        /// the workflow. Those recommendations must be loaded into the
+        /// Workspace's authoritative Conversation Engine before the Guide
+        /// attempts to continue the investigation conversation.
+        ///
+        /// This is the handoff between:
+        ///
+        ///     Investigation
+        ///          ↓
+        ///     Recommendations
+        ///          ↓
+        ///     Workspace Conversation Engine
+        ///          ↓
+        ///     Guide
+        ///
+        /// The Guide does not interpret the recommendation or its domain
+        /// meaning. It simply establishes the authoritative conversation
+        /// state and asks the engine to discuss the first recommendation.
+        /// </summary>
+        private void CompleteInvestigation(
+            WorkflowResult? result)
+        {
+            if (result == null)
+            {
+                Conversation.AddGuideMessage(
+                    "No folder was selected.");
+
+                stage =
+                    ConversationStage.Greeting;
+
+                return;
+            }
+
+            currentWorkflow =
+                result;
+
+            stage =
+                ConversationStage.InvestigationConversation;
+
+            ProjectCreated?.Invoke(
+                this,
+                result);
+
+            ProjectObservation? firstObservation =
+                result.Project.Observations
+                    .FirstOrDefault();
+
+            int observationCount =
+                result.Project.Observations.Count;
+
+            if (firstObservation != null)
+            {
+                Conversation.AddGuideMessage(
+                    $"I explored your folder and found {observationCount} things worth looking at. " +
+                    $"One thing that stood out was {firstObservation.Title.ToLower()}.");
+            }
+            else
+            {
+                Conversation.AddGuideMessage(
+                    $"I explored your folder and found {observationCount} things worth looking at.");
+            }
+
+            int proposedChanges =
+                result.Preview.Count(
+                    p => p.HasChanges);
+
+            Conversation.AddGuideMessage(
+                proposedChanges > 0
+                    ? $"I also prepared a safe preview showing {proposedChanges} proposed organizational changes. Nothing has been changed."
+                    : "I prepared a safe preview, and nothing has been changed.");
+
+            // -------------------------------------------------------------
+            // Establish the Workspace Conversation Engine as the
+            // authoritative owner of the investigation conversation.
+            //
+            // ProjectWorkflow has already translated the Expert findings
+            // into these recommendations. Loading them here ensures the
+            // engine used by Guide is working with the same result that
+            // was just investigated.
+            // -------------------------------------------------------------
+
+            workspace.ConversationEngine.LoadRecommendations(
+                result.ObservationRecommendations);
+
+            // -------------------------------------------------------------
+            // Start the conversation with the first recommendation.
+            //
+            // DiscussRecommendation creates the actual conversation
+            // message. Guide is already subscribed to the Workspace
+            // ConversationMessageGenerated event, so the message is
+            // presented through the normal conversation path.
+            // -------------------------------------------------------------
+
+            CV_Recommendation? firstRecommendation =
+                result.ObservationRecommendations
+                    .FirstOrDefault();
+
+            if (firstRecommendation != null)
+            {
+                CV_ConversationMessage? message =
+                    workspace.ConversationEngine
+                        .DiscussRecommendation(
+                            firstRecommendation);
+
+                if (message != null &&
+                    !string.IsNullOrWhiteSpace(message.Text))
+                {
+                    Conversation.AddGuideMessage(
+                        message.Text);
+                }
+            }
+        }
+
         /// <summary>
         /// Executes a conversation action option selected by clicking
         /// the option displayed in the conversation.
@@ -603,6 +870,7 @@ namespace SmartRenamer.ViewModels.Guide
         /// </summary>
         public void SelectActionOption(
             CV_ActionOption option)
+
         {
             if (option == null)
                 return;
@@ -633,17 +901,53 @@ namespace SmartRenamer.ViewModels.Guide
             HandleActionResult(actionResult);
         }
 
+        /// <summary>
+        /// Executes the action associated with the currently selected
+        /// recommendation.
+        ///
+        /// Clicking the recommendation action uses the same Conversation
+        /// Framework action-request path as typed approval. The Guide does
+        /// not interpret the domain meaning of the action.
+        /// </summary>
+        public void ExecuteRecommendationAction(
+            CV_Recommendation recommendation)
+        {
+            if (recommendation == null)
+                return;
+
+            CV_ActionRequest? actionRequest =
+                workspace.ConversationEngine.CreateActionRequest(
+                    recommendation);
+
+            if (actionRequest == null)
+            {
+                Conversation.AddGuideMessage(
+                    "I couldn't process that action.");
+
+                return;
+            }
+
+            Conversation.AddUserMessage(
+                recommendation.ActionText);
+
+            CV_ActionResult actionResult =
+                guideInvestigator.ExecuteAction(
+                    actionRequest);
+
+            HandleActionResult(actionResult);
+        }
+
         // =====================================================================
         // Action Result Handling
         // =====================================================================
 
-            /// <summary>
-            /// Handles the result of a domain action in one common place.
-            ///
-            /// Both typed user input and clicked action options arrive here.
-            /// This keeps conversation handling centralized so future workflow
-            /// cycles can continue from the same point.
-            /// </summary>
+        /// <summary>
+        /// Handles the result of a domain action in one common place.
+        ///
+        /// Both typed user input and clicked action options arrive here.
+        /// This keeps conversation handling centralized so future workflow
+        /// cycles can continue from the same point.
+        /// </summary>
         private void HandleActionResult(CV_ActionResult actionResult)
         {
             if (actionResult == null)
@@ -698,6 +1002,17 @@ namespace SmartRenamer.ViewModels.Guide
 
             ActionOptions.Clear();
 
+            if (actionResult.Options.Count == 1)
+            {
+                Conversation.Messages.Add(
+                    new GuideMessage
+                    {
+                        Speaker = GuideSpeaker.Guide,
+                        DisplayName = "Scout",
+                        Payload = actionResult.Options[0]
+                    });
+            }
+
             foreach (CV_ActionOption option
                 in actionResult.Options)
             {
@@ -714,10 +1029,10 @@ namespace SmartRenamer.ViewModels.Guide
             System.Diagnostics.Debug.WriteLine(
                 "ChooseFolder() called.");
 
-            WorkflowResult? result =
-                guideInvestigator.Investigate();
+            string? folder =
+                guideInvestigator.PickFolder();
 
-            if (result == null)
+            if (string.IsNullOrWhiteSpace(folder))
             {
                 Conversation.AddGuideMessage(
                     "No folder was selected.");
@@ -728,54 +1043,7 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
             }
 
-            currentWorkflow =
-                result;
-
-            //---------------------------------------------------------
-            // The investigation is complete.
-            //
-            // Scout is now discussing the findings rather than
-            // starting another folder-selection conversation.
-            //---------------------------------------------------------
-
-            stage =
-                ConversationStage.InvestigationConversation;
-
-            ProjectCreated?.Invoke(
-                this,
-                result);
-
-            //---------------------------------------------------------
-            // Initial investigation conversation
-            //---------------------------------------------------------
-
-            ProjectObservation? firstObservation =
-                result.Project.Observations
-                    .FirstOrDefault();
-
-            int observationCount =
-                result.Project.Observations.Count;
-
-            if (firstObservation != null)
-            {
-                Conversation.AddGuideMessage(
-                    $"I explored your folder and found {observationCount} things worth looking at. " +
-                    $"One thing that stood out was {firstObservation.Title.ToLower()}.");
-            }
-            else
-            {
-                Conversation.AddGuideMessage(
-                    $"I explored your folder and found {observationCount} things worth looking at.");
-            }
-
-            int proposedChanges =
-                result.Preview.Count(
-                    p => p.HasChanges);
-
-            Conversation.AddGuideMessage(
-                proposedChanges > 0
-                    ? $"I also prepared a safe preview showing {proposedChanges} proposed organizational changes. Nothing has been changed."
-                    : "I prepared a safe preview, and nothing has been changed.");
+            BeginDiscovery(folder);
         }
     }
 }

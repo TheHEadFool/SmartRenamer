@@ -126,6 +126,7 @@ namespace SmartRenamer.Services
                     CurrentName = info.Name,
                     DestinationFolder = "",
                     DestinationName = info.Name,
+                    Extension = info.Extension.ToLowerInvariant(),
                     Status = "Discovered",
                     ParentFolder = parentFolder,
                     RelativeFolder = relativeFolder

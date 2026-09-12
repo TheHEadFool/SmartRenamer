@@ -78,3 +78,11 @@ Organization never:
 Organization describes relationships between books.
 
 It never renames files.
+
+state as of September 12, 2026.
+
+Correctly distinguishes Organization Investigation from Organization execution.
+Documents the existing Organization pieces.
+Documents the intended Repair Handoff boundary.
+Records the collection/item/operation model.
+Explicitly identifies the old Services/OrganizationPlanner.cs as legacy.

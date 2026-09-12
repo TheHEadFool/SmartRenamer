@@ -76,3 +76,11 @@ Repair never:
 Repair recommends safe repairs.
 
 It never performs repairs automatically.
+
+state as of September 12, 2026.
+
+Updated
+Documents the real ISBN repair implementation.
+Documents the working-copy safety model.
+Documents E_RepairHandoff.
+Clarifies that verification uses re-observation.

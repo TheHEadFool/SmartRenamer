@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace SmartRenamer.Guide.Models
 {
@@ -107,7 +108,12 @@ namespace SmartRenamer.Guide.Models
         /// </summary>
         public override string ToString()
         {
+
             return $"{DisplayName}: {Text}";
         }
+
+        public List<GuideInlineAction> InlineActions { get; } = new();
+
+        public bool HasInlineActions => InlineActions.Count > 0;
     }
 }

@@ -1,6 +1,8 @@
 ﻿<UserControl x:Class="SmartRenamer.Controls.ConversationPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:guide="clr-namespace:SmartRenamer.Guide.Models"
+             xmlns:conversation="clr-namespace:Scout.Observations.Conversation">
 
     <UserControl.Resources>
 
@@ -67,6 +69,99 @@
                                      Value="False">
 
                                 <Setter TargetName="border"
+                                        Property="Opacity"
+                                        Value="0.5"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+
+            </Setter>
+
+        </Style>
+
+        <!--
+        =========================================================
+        Conversation Action Option
+
+        These are real actions, not ordinary conversation text.
+
+        They are deliberately styled so the user can immediately
+        recognize that the item is clickable.
+        =========================================================
+        -->
+
+        <Style x:Key="ConversationActionButton"
+               TargetType="Button">
+
+            <Setter Property="Padding"
+                    Value="12,9"/>
+
+            <Setter Property="HorizontalContentAlignment"
+                    Value="Left"/>
+
+            <Setter Property="Background"
+                    Value="{StaticResource ConversationSendBrush}"/>
+
+            <Setter Property="BorderBrush"
+                    Value="{StaticResource ConversationSendBorderBrush}"/>
+
+            <Setter Property="BorderThickness"
+                    Value="1"/>
+
+            <Setter Property="Cursor"
+                    Value="Hand"/>
+
+            <Setter Property="FontWeight"
+                    Value="SemiBold"/>
+
+            <Setter Property="Template">
+
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="Button">
+
+                        <Border x:Name="ActionBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10"
+                                Padding="{TemplateBinding Padding}">
+
+                            <ContentPresenter
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="Center"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="ActionBorder"
+                                        Property="Background"
+                                        Value="{StaticResource ConversationSendHoverBrush}"/>
+
+                            </Trigger>
+
+                            <Trigger Property="IsPressed"
+                                     Value="True">
+
+                                <Setter TargetName="ActionBorder"
+                                        Property="Background"
+                                        Value="{StaticResource ConversationSendPressedBrush}"/>
+
+                            </Trigger>
+
+                            <Trigger Property="IsEnabled"
+                                     Value="False">
+
+                                <Setter TargetName="ActionBorder"
                                         Property="Opacity"
                                         Value="0.5"/>
 
@@ -185,44 +280,84 @@
 
                                 </Border>
 
-                                <!-- Rich Card -->
+                                <!-- Conversation Action Option -->
 
-                                <Button
-                                    Padding="10"
-                                    HorizontalContentAlignment="Left"
-                                    Background="{StaticResource ConversationBubbleBrush}"
-                                    BorderThickness="0"
-                                    Cursor="Hand"
-                                    Click="ActionOption_Click">
+                                <ContentPresenter
+                                    Content="{Binding Payload}"
+                                    Margin="0,4,0,0">
 
-                                    <Button.Style>
+                                    <ContentPresenter.Resources>
 
-                                        <Style TargetType="Button">
+                                        <DataTemplate
+                                            DataType="{x:Type conversation:CV_ActionOption}">
 
-                                            <Setter Property="Visibility"
-                                                    Value="Visible"/>
+                                            <StackPanel Margin="0,0,0,6">
 
-                                            <Style.Triggers>
+                                                <!--
+                                                This is an actual Scout action.
+                                                The visual treatment deliberately
+                                                distinguishes it from ordinary
+                                                conversation text.
+                                                -->
 
-                                                <DataTrigger Binding="{Binding Payload}"
-                                                             Value="{x:Null}">
+                                                <Button
+                                                    Style="{StaticResource ConversationActionButton}"
+                                                    Click="ActionOption_Click">
 
-                                                    <Setter Property="Visibility"
-                                                            Value="Collapsed"/>
+                                                    <TextBlock
+                                                        Text="{Binding Label}"
+                                                        TextWrapping="Wrap"/>
 
-                                                </DataTrigger>
+                                                </Button>
 
-                                            </Style.Triggers>
+                                                <ItemsControl
+                                                    Margin="14,4,10,0"
+                                                    ItemsSource="{Binding Evidence}">
 
-                                        </Style>
+                                                    <ItemsControl.ItemTemplate>
 
-                                    </Button.Style>
+                                                        <DataTemplate>
 
-                                    <TextBlock
-                                        Text="{Binding Payload.Label}"
-                                        TextWrapping="Wrap"/>
+                                                            <TextBlock
+                                                                Margin="0,1,0,1"
+                                                                Text="{Binding}"
+                                                                TextWrapping="Wrap"/>
 
-                                </Button>
+                                                        </DataTemplate>
+
+                                                    </ItemsControl.ItemTemplate>
+
+                                                </ItemsControl>
+
+                                            </StackPanel>
+
+                                        </DataTemplate>
+
+                                        <!-- Generic Inline Discovery Action -->
+
+                                        <DataTemplate
+                                            DataType="{x:Type guide:GuideInlineAction}">
+
+                                            <Button
+                                                Padding="4,2"
+                                                HorizontalContentAlignment="Left"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Cursor="Hand"
+                                                Click="InlineAction_Click">
+
+                                                <TextBlock
+                                                    Text="{Binding Text}"
+                                                    TextWrapping="Wrap"
+                                                    TextDecorations="Underline"/>
+
+                                            </Button>
+
+                                        </DataTemplate>
+
+                                    </ContentPresenter.Resources>
+
+                                </ContentPresenter>
 
                                 <ContentPresenter
                                     Margin="0,10,0,0"
@@ -277,7 +412,6 @@
                             Content="Send"
                             Command="{Binding SendCommand}"
                             Style="{StaticResource RoundedSendButton}"/>
-                            
 
                     </Grid>
 

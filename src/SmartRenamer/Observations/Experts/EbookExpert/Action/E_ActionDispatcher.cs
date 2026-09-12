@@ -5,6 +5,7 @@ using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Observations.Experts.EbookExpert.Resources;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 {
@@ -204,6 +205,76 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         }
 
         /// <summary>
+        /// Creates a user-facing ISBN action option while keeping the
+        /// Conversation Framework domain-neutral.
+        /// </summary>
+        private static CV_ActionOption CreateIsbnActionOption(
+            CV_ActionRequest request,
+            string originalPath,
+            string fileName,
+            RepairDecisionCandidate candidate,
+            string actionLabel)
+        {
+            CV_ActionOption option = new()
+            {
+                Id = candidate.Value?.ToString() ?? string.Empty,
+                ActionId = request.ActionId,
+                ContextId = originalPath,
+                Label = BuildCandidateLabel(
+                    candidate,
+                    fileName,
+                    actionLabel),
+                Confidence = candidate.Confidence,
+                Source = candidate.Source
+            };
+
+            foreach (string detail in candidate.Details)
+            {
+                if (!string.IsNullOrWhiteSpace(detail))
+                    option.Evidence.Add(detail);
+            }
+
+            return option;
+        }
+
+        /// <summary>
+        /// Builds a concise factual description suitable for an action button.
+        /// </summary>
+        private static string BuildCandidateLabel(
+            RepairDecisionCandidate candidate,
+            string fileName,
+            string actionLabel)
+        {
+            List<string> lines = new()
+            {
+                $"{actionLabel}: {candidate.Value} — {fileName}"
+            };
+
+            return $"{actionLabel}: {candidate.Value} — {fileName}";
+        }
+
+        /// <summary>
+        /// Builds the factual explanation Scout gives when it recommends one
+        /// candidate over the alternatives.
+        /// </summary>
+        private static string BuildCandidateSummary(
+            RepairDecisionCandidate candidate,
+            string heading)
+        {
+            List<string> lines = new()
+            {
+                heading + ":"
+            };
+
+            lines.AddRange(candidate.Details);
+
+            if (!string.IsNullOrWhiteSpace(candidate.Evidence))
+                lines.Add("Evidence: " + candidate.Evidence);
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        /// <summary>
         /// Records an ISBN candidate explicitly selected by the user.
         ///
         /// The selected ISBN is validated against the candidates produced
@@ -342,8 +413,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 ActionId = request.ActionId,
                 Success = true,
                 Message =
-                    $"I've recorded your approval of ISBN {approvedIsbn} " +
-                    "for this ebook. The repair is ready for execution."
+                $"I've recorded your approval of ISBN {approvedIsbn} " +
+                "for this ebook. Would you like me to apply this repair?"
             };
 
             result.Evidence.Add(
@@ -355,7 +426,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     Id = "ApplyRepair",
                     ActionId = "ExecuteRepairPlan",
                     ContextId = request.ContextId,
-                    Label = "Apply this repair",
+                    Label = "Click to apply this repair",
                     Confidence = 1.0,
                     Source = "Ebook Expert"
                 });
@@ -528,44 +599,78 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                          RepairRecommendation.RepairDecisionState.UserDecisionRequired)
                 {
                     //---------------------------------------------------------
-                    // Scout is not authorized to choose among these candidates.
+                    // When Scout has identified one clearly preferred
+                    // candidate, present that candidate as Scout's recommendation.
+                    // The user still approves it because automatic repair has
+                    // not been authorized.
                     //
-                    // Present only the candidates that survived the decision
-                    // engine's confidence threshold.
+                    // Only expose every candidate when Scout genuinely cannot
+                    // distinguish between them.
                     //---------------------------------------------------------
 
-                    foreach (RepairDecisionCandidate candidate in decision.Candidates)
+                    List<RepairDecisionCandidate> preferredCandidates =
+                        decision.Candidates
+                            .Where(candidate => candidate.IsPreferred)
+                            .ToList();
+
+                    if (preferredCandidates.Count == 1)
                     {
+                        RepairDecisionCandidate selectedCandidate =
+                            preferredCandidates[0];
+
                         candidateCount++;
 
-                        CV_ActionOption option = new()
-                        {
-                            Id = candidate.Value?.ToString() ?? string.Empty,
-                            ActionId = request.ActionId,
-
-                            // Stable identity of the ebook this candidate
-                            // belongs to.
-                            ContextId = originalPath,
-
-                            Label =
-                                $"{candidate.Value} — {fileName}",
-
-                            Confidence =
-                                candidate.Confidence,
-
-                            Source =
-                                candidate.Source
-                        };
+                        CV_ActionOption option =
+                            CreateIsbnActionOption(
+                                request,
+                                originalPath,
+                                fileName,
+                                selectedCandidate,
+                                "Use this ISBN");
 
                         option.Evidence.Add(
-                            candidate.Evidence);
+                            selectedCandidate.Evidence);
 
                         options.Add(option);
-                    }
 
-                    evidence.Add(
-                        $"{fileName}: user selection is required because " +
-                        "Scout could not safely choose a single candidate.");
+                        evidence.Add(
+                            $"{fileName}: I found several possible ISBNs, but one is " +
+                            "better supported by the evidence.");
+
+                        evidence.Add(
+                            BuildCandidateSummary(
+                                selectedCandidate,
+                                "My recommended ISBN"));
+
+                        evidence.Add(
+                            $"{fileName}: I have not changed the EPUB. " +
+                            "Choose 'Use this ISBN' to approve this repair.");
+                    }
+                    else
+                    {
+                        foreach (RepairDecisionCandidate candidate in decision.Candidates)
+                        {
+                            candidateCount++;
+
+                            CV_ActionOption option =
+                                CreateIsbnActionOption(
+                                    request,
+                                    originalPath,
+                                    fileName,
+                                    candidate,
+                                    "Use this ISBN");
+
+                            option.Evidence.Add(
+                                candidate.Evidence);
+
+                            options.Add(option);
+                        }
+
+                        evidence.Add(
+                            $"{fileName}: I found several possible ISBNs, but I " +
+                            "could not safely distinguish between them. I have " +
+                            "listed the facts for each candidate so you can choose.");
+                    }
                 }
                 else if (decision.State ==
                          RepairRecommendation.RepairDecisionState.InsufficientEvidence)
@@ -584,11 +689,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 evidence.Add(
                     $"{fileName}: found {evaluatedCandidates.Count} ISBN candidate(s) after EPUB evidence evaluation.");
 
-                foreach (RepairDecisionCandidate candidate in evaluatedCandidates)
-                {
-                    evidence.Add(
-                        $"{fileName}: {candidate.Evidence}");
-                }
+                
             }
 
             //---------------------------------------------------------
@@ -626,7 +727,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             // file state. ProjectWorkflow will respond by re-observing it.
             //---------------------------------------------------------
 
-         
+
             return result;
         }
     }

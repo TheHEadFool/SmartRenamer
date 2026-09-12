@@ -1,4 +1,6 @@
-﻿namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
+﻿using System.Collections.Generic;
+
+namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
 {
     /// <summary>
     /// Represents a possible value for an Ebook repair opportunity.
@@ -27,6 +29,15 @@
         /// Evidence supporting the candidate value.
         /// </summary>
         public string Evidence { get; init; } = "";
+
+        /// <summary>
+        /// Factual details about this candidate that can be presented to the
+        /// user when a decision requires human review.
+        ///
+        /// These details are supplied by the domain-specific research process.
+        /// The decision engine does not interpret them.
+        /// </summary>
+        public List<string> Details { get; } = new();
 
         /// <summary>
         /// The confidence assigned by the domain-specific research process.

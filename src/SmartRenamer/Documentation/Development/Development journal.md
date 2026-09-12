@@ -1069,3 +1069,54 @@ So we maintain both:
     Why / architectural decision / problem / result / next step
 
 That gives future us two levels of recovery.
+
+# Development Journal — 2026-09-12 Repair Checkpoint
+
+## Status
+
+The Missing ISBN vertical slice is now demonstrated through physical EPUB repair
+and creation of a repaired working copy in Temp. The conversation action control
+was also improved so candidate/action options are visibly clickable rather than
+requiring the user to discover the interaction by guessing.
+
+## Current Data Flow
+
+Missing ISBN finding
+    ↓
+ResearchMissingIsbn
+    ↓
+ISBN candidate
+    ↓
+User selection / approval
+    ↓
+E_RepairPlan
+    ↓
+E_RepairService
+    ↓
+Protected working copy
+    ↓
+E_EpubRepairResource
+    ↓
+Repaired EPUB in Temp
+
+## Current Boundary
+
+The slice currently stops at the repaired working copy because the new Ebook
+Expert Organization execution path does not yet consume E_RepairHandoff and copy
+the repaired representation into the final organized library.
+
+This is not a repair failure. It is the next architectural gap.
+
+## Next Investigation
+
+The next work session should inspect the current project ZIP and trace Organization
+forwards and backwards: from E_RepairHandoff toward the final organized file, and
+from the desired organized destination back toward the existing Organization
+Investigation, Context, Options, and Report.
+
+The result should be a concrete implementation map before code changes begin.
+
+## Safety
+
+Original EPUBs remain protected. The initial organization implementation should
+copy → verify → release Temp rather than move or delete the original.

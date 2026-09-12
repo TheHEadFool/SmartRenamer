@@ -87,51 +87,89 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             List<ExpertFinding> findings = new();
 
             //---------------------------------------------------------
-            // Ask the Block to discover factual repair opportunities.
+            // The Repair Expedition works one EPUB at a time.
+            //
+            // Initial investigation must not stop on an EPUB that is
+            // already complete. If the first EPUB needs no repair, move
+            // forward until the expedition reaches the first EPUB that
+            // actually requires attention.
+            //
+            // This preserves the one-ebook-at-a-time repair lifecycle
+            // while allowing a collection-wide investigation to enter
+            // the ISBN vertical slice at the first real repair need.
             //---------------------------------------------------------
 
             RepairBlock block = new();
+            E_RepairConsultant consultant = new();
 
-            MetadataReport currentMetadataReport =
-                new();
-
-            if (_repairExpedition.CurrentFile != null)
+            while (_repairExpedition.CurrentFile != null)
             {
+                FileContext currentFile =
+                    _repairExpedition.CurrentFile;
+
                 SmartRenamer.Observations.Experts.EbookExpert.Data.Models.MetadataRecord? currentRecord =
                     metadataReport.Records.FirstOrDefault(
                         record =>
                             string.Equals(
                                 record.File?.OriginalFullPath,
-                                _repairExpedition.CurrentFile.OriginalFullPath,
+                                currentFile.OriginalFullPath,
                                 StringComparison.OrdinalIgnoreCase));
 
-                if (currentRecord != null)
+                //-----------------------------------------------------
+                // If the current EPUB cannot be matched to the shared
+                // metadata report, do not silently advance past it.
+                // The metadata investigation has not established that
+                // this EPUB is complete.
+                //-----------------------------------------------------
+
+                if (currentRecord == null)
                 {
-                    currentMetadataReport.Records.Add(
-                        currentRecord);
+                    _lastReport = new RepairReport();
+                    return findings;
                 }
+
+                MetadataReport currentMetadataReport =
+                    new();
+
+                currentMetadataReport.Records.Add(
+                    currentRecord);
+
+                RepairReport report =
+                    block.Analyze(currentMetadataReport);
+
+                //-----------------------------------------------------
+                // Preserve the report for the current EPUB.
+                //-----------------------------------------------------
+
+                _lastReport = report;
+
+                //-----------------------------------------------------
+                // A complete EPUB requires no repair conversation.
+                // Mark it complete and advance the expedition.
+                //-----------------------------------------------------
+
+                if (report.IsComplete)
+                {
+                    _repairExpedition.CompleteCurrent();
+                    continue;
+                }
+
+                //-----------------------------------------------------
+                // The expedition has reached an EPUB that requires
+                // attention. Let the Consultant describe that finding.
+                //-----------------------------------------------------
+
+                findings.AddRange(
+                    consultant.Review(report));
+
+                return findings;
             }
 
-            RepairReport report =
-                block.Analyze(currentMetadataReport);
-
             //---------------------------------------------------------
-            // Preserve the complete report.
-            //
-            // The report contains the specific RepairOpportunity objects
-            // associated with the ebooks that require attention.
+            // No EPUBs remain that require repair.
             //---------------------------------------------------------
 
-            _lastReport = report;
-
-            //---------------------------------------------------------
-            // Ask the Consultant to interpret the discovered facts.
-            //---------------------------------------------------------
-
-            E_RepairConsultant consultant = new();
-
-            findings.AddRange(
-     consultant.Review(report));
+            _lastReport = new RepairReport();
 
             return findings;
         }
@@ -157,14 +195,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         public FileContext? CurrentFile =>
     _repairExpedition.CurrentFile;
 
-public IReadOnlyList<FileContext> DeferredFiles =>
-    _repairExpedition.DeferredFiles;
+        public IReadOnlyList<FileContext> DeferredFiles =>
+            _repairExpedition.DeferredFiles;
 
-public bool HasDeferredFiles =>
-    _repairExpedition.HasDeferredFiles;
+        public bool HasDeferredFiles =>
+            _repairExpedition.HasDeferredFiles;
 
-public bool ExpeditionIsComplete =>
-    _repairExpedition.IsComplete;
+        public bool ExpeditionIsComplete =>
+            _repairExpedition.IsComplete;
 
         public bool CompleteCurrentIfComplete()
         {

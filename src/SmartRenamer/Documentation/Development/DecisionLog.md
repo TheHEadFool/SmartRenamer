@@ -76,3 +76,30 @@ Reason
 Keeps source and organized copy separate while avoiding recursive processing.
 
 Future UI should clearly communicate the output location.
+
+-----------------------------------
+
+Decision 0009
+
+Repaired EPUBs use a protected working copy and are handed to Organization
+through a semantic Repair Handoff.
+
+Reason
+
+Repair and Organization have different responsibilities. Organization should
+not need to know why an EPUB was repaired, and the original source must remain
+protected.
+
+-----------------------------------
+
+Decision 0010
+
+Initial ebook organization will be incremental and safe: copy the repaired
+working representation to the organized destination, verify it, then release
+the temporary working copy.
+
+Reason
+
+The durable result is the organization operation and its status, not a growing
+collection of repaired EPUBs left in Temp. This also supports interruption and
+resume for large collections.

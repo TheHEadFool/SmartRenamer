@@ -1,7 +1,9 @@
 ﻿using Scout.Observations.Conversation;
 using SmartRenamer.Models;
+using SmartRenamer.Observations;
 using SmartRenamer.Services;
 using System;
+using System.Collections.Generic;
 using System.Text;
 
 namespace SmartRenamer.Guide
@@ -22,6 +24,33 @@ namespace SmartRenamer.Guide
         private readonly ProjectWorkflow workflow = new();
 
         private readonly ProjectInvestigator projectInvestigator = new();
+
+        /// <summary>
+        /// Exposes the generic discovery choices supplied by the
+        /// Observation Experts through the workflow boundary.
+        ///
+        /// The Guide does not interpret these choices. It only exposes
+        /// the workflow's generic discovery contract to the conversation
+        /// layer.
+        /// </summary>
+        public IReadOnlyList<ExpertDiscoveryBinding> DiscoveryBindings =>
+            workflow.DiscoveryBindings;
+
+        /// <summary>
+        /// Applies a discovery choice through the same generic workflow
+        /// boundary used by the Observation Engine.
+        ///
+        /// The Guide does not know what the option means. The owning
+        /// Observation Expert interprets the option.
+        /// </summary>
+        public void ApplyDiscoveryChoice(
+            string expertName,
+            string optionId)
+        {
+            workflow.ApplyDiscoveryChoice(
+                expertName,
+                optionId);
+        }
 
         /// <summary>
         /// Lets the user select a folder without beginning investigation.

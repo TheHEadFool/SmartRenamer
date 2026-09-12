@@ -271,6 +271,35 @@ public sealed class CV_ConversationEngine
             _userIntent.Interpret(userInput);
 
         // ---------------------------------------------------------
+        // If Scout has presented exactly one pending action option,
+        // an affirmative conversational response selects that option.
+        //
+        // This keeps the three user interaction paths equivalent:
+        //
+        //     typed approval
+        //     clicked option
+        //     Action Button Bar
+        //
+        // When more than one option is pending, Scout must not guess
+        // which one the user meant.
+        // ---------------------------------------------------------
+
+        if (intent.Type == CV_UserIntentType.Approve &&
+            _pendingActionOptions.Count == 1)
+        {
+            CV_ActionOption option =
+                _pendingActionOptions[0];
+
+            return new CV_ActionRequest
+            {
+                ActionId = option.ActionId,
+                UserInput = userInput,
+                OptionId = option.Id,
+                ContextId = option.ContextId
+            };
+        }
+
+        // ---------------------------------------------------------
         // Standalone user-directed action handling.
         //
         // This does not require a current recommendation.

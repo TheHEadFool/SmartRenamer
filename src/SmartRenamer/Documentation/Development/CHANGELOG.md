@@ -8,6 +8,15 @@ The format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### Current checkpoint — 2026-09-12
+
+- Demonstrated the Missing ISBN repair path through creation of a repaired EPUB working copy in Temp.
+- Confirmed conversation action options are visibly clickable.
+- Confirmed the repair path preserves the original and operates on a working copy.
+- Established that the current Repair slice ends at the repaired working copy because the new Ebook Expert Organization execution path is not yet connected.
+- Next milestone is the Repair Handoff → Organization → organized copy vertical slice.
+
+
 ### Added
 
 - Scout conversation framework.

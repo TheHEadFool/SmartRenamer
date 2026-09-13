@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Conversation;
+using Scout.Observations.Conversation;
 using SmartRenamer.Capabilities.TextReplacement;
 using SmartRenamer.Models;
 using SmartRenamer.Models.Planning;
@@ -113,6 +113,8 @@ namespace SmartRenamer.Services
 
         private readonly CapabilityFactory capabilityFactory = new();
 
+        private readonly WorkingCopyService workingCopyService = new();
+
         //---------------------------------------------------------
         // Observation Framework
         //---------------------------------------------------------
@@ -210,6 +212,19 @@ namespace SmartRenamer.Services
                 context.Folder.FileContexts;
             activeSourceFolderPath =
                 context.Folder.FolderPath;
+
+            //---------------------------------------------------------
+            // Establish Scout-owned working copies BEFORE any active
+            // analysis or domain investigation begins.
+            //
+            // OriginalFullPath remains the protected source identity.
+            // CurrentFullPath becomes the physical file Scout is allowed
+            // to inspect, repair, re-observe, and eventually organize.
+            //---------------------------------------------------------
+
+            workingCopyService.EnsureWorkingCopies(
+                context.Folder.FileContexts,
+                context.Folder.FolderPath);
 
             //---------------------------------------------------------
             // Analyze the project.

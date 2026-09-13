@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using SmartRenamer.Models;
@@ -24,8 +24,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     /// -------------------------------------------------------------------------
     /// • Research a missing ISBN.
     /// • Evaluate ISBN research using additional EPUB content evidence.
-    /// • Prepare an approved ISBN in a temporary working copy.
-    /// • Verify an ISBN after repair.
+    /// • Apply an approved repair to the protected working copy.
+    /// • Leave the working copy ready for re-observation.
     ///
     /// Safety Boundary
     /// -------------------------------------------------------------------------
@@ -33,9 +33,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     ///
     /// Repair never modifies the original ebook.
     ///
-    /// Approved repairs are performed against a temporary Ebook Expert
-    /// working copy. The prepared copy can later be handed to Scout's
-    /// organization process.
+    /// Approved repairs are performed against the Scout-owned working copy
+    /// established before active Ebook investigation begins. The original
+    /// source EPUB remains protected and is never the repair target.
     ///
     /// This Service does NOT
     /// -------------------------------------------------------------------------
@@ -59,8 +59,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             _isbnRepairEvidenceEvaluator = new();
 
         private readonly E_EpubRepairResource _epubRepairResource = new();
-
-        private readonly E_RepairWorkspace _repairWorkspace = new();
 
         //---------------------------------------------------------
         // Prepared working copies
@@ -258,9 +256,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         /// <summary>
         /// Executes all currently approved repairs for one EPUB.
         ///
-        /// Creates ONE working copy from the original EPUB, applies every
-        /// executable repair in the plan, verifies the resulting EPUB,
-        /// and preserves the completed working copy for later handoff.
+        /// Applies every executable repair in the plan to the already-created
+        /// Scout working copy and preserves that working copy for later handoff.
         ///
         /// The original EPUB is never modified.
         /// </summary>
@@ -303,14 +300,25 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 return null;
 
             //---------------------------------------------------------
-            // Create ONE working copy.
+            // The EPUB should already have a Scout-owned working copy.
             //
-            // Every approved repair will be applied to this same copy.
+            // Repair must never begin by copying or opening the protected
+            // original. CurrentFullPath is the physical file Scout is
+            // allowed to modify.
             //---------------------------------------------------------
 
             string workingPath =
-                _repairWorkspace.CreateWorkingCopy(
-                    opportunity.Record.File);
+                opportunity.Record.File.CurrentFullPath;
+
+            if (string.IsNullOrWhiteSpace(workingPath) ||
+                string.Equals(
+                    workingPath,
+                    opportunity.Record.File.OriginalFullPath,
+                    StringComparison.OrdinalIgnoreCase) ||
+                !File.Exists(workingPath))
+            {
+                return null;
+            }
 
             //---------------------------------------------------------
             // Apply every approved repair in the plan.

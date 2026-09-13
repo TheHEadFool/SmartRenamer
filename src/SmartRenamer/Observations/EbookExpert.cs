@@ -483,11 +483,49 @@ namespace SmartRenamer.Observations
             // Ebook domain action dispatcher
             //---------------------------------------------------------
 
-            return _actionDispatcher.Execute(
+            bool automaticAuthorization =
+                _repairInvestigation.RepairAuthorization
+                    .AutomaticallyHandleQualifyingRepairs;
+
+            CV_ActionResult result = _actionDispatcher.Execute(
                 request,
                 _repairInvestigation.RepairOpportunities,
-                _repairInvestigation.RepairAuthorization
-                    .AutomaticallyHandleQualifyingRepairs);
+                automaticAuthorization,
+                _repairInvestigation.CurrentConfidenceThreshold);
+
+            //---------------------------------------------------------
+            // Adaptive repair retry
+            //---------------------------------------------------------
+            //
+            // The Ebook Expert owns confidence policy. If the action
+            // found candidates but none qualified at the current
+            // threshold, and the user has authorized automatic handling,
+            // progressively lower the repair expedition threshold and
+            // retry the domain action.
+            //
+            // The expedition enforces the 50% floor. If the threshold
+            // cannot be lowered further, the final result is returned.
+            //---------------------------------------------------------
+
+            while (result.RetrySuggested && automaticAuthorization)
+            {
+                double previousThreshold =
+                    _repairInvestigation.CurrentConfidenceThreshold;
+
+                double newThreshold =
+                    _repairInvestigation.LowerConfidenceThreshold();
+
+                if (newThreshold >= previousThreshold)
+                    break;
+
+                result = _actionDispatcher.Execute(
+                    request,
+                    _repairInvestigation.RepairOpportunities,
+                    automaticAuthorization,
+                    newThreshold);
+            }
+
+            return result;
         }
 
     } // End EbookExpert

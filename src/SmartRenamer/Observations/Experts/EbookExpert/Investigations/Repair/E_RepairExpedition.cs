@@ -25,8 +25,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     /// • Track the current EPUB.
     /// • Track EPUBs still waiting to be processed.
     /// • Track EPUBs that require user input.
+    /// • Track the state of individual repair opportunities.
     /// • Preserve the original source folder identity.
     /// • Preserve the current confidence threshold for this expedition.
+    /// • Control progressive confidence-threshold lowering.
     ///
     /// This class does NOT
     /// -------------------------------------------------------------------------
@@ -47,21 +49,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         //---------------------------------------------------------
         // Confidence policy
         //---------------------------------------------------------
-        //
-        // The normal threshold is deliberately separate from the
-        // minimum safety floor.
-        //
-        // The expedition will eventually be able to lower the
-        // CurrentConfidenceThreshold progressively when unresolved
-        // EPUBs remain.
-        //
-        // The 50% floor is not the normal operating threshold.
-        //
-        //---------------------------------------------------------
 
         public const double NormalConfidenceThreshold = 1.00;
 
         public const double MinimumConfidenceThreshold = 0.50;
+
+        private const double ConfidenceThresholdStep = 0.10;
 
         public double CurrentConfidenceThreshold { get; private set; } =
             NormalConfidenceThreshold;
@@ -78,17 +71,23 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             StringComparer.OrdinalIgnoreCase);
 
         //---------------------------------------------------------
-        // Source folder identity
+        // Repair opportunity state
         //---------------------------------------------------------
+
         //
-        // This identifies the user's original project folder.
+        // Keyed by the original EPUB path.
         //
-        // It is deliberately separate from FileContext.CurrentFullPath.
+        // The original path is the stable identity of the EPUB even when
+        // FileContext.CurrentFullPath later points to a repaired working copy.
         //
-        // A repaired EPUB may temporarily live in the Ebook Expert repair
-        // workspace, but that must never cause the eventual organization
-        // destination to be based on the temporary workspace.
-        //
+        //---------------------------------------------------------
+
+        private readonly Dictionary<string, List<RepairOpportunityState>>
+            _opportunityStates =
+                new(StringComparer.OrdinalIgnoreCase);
+
+        //---------------------------------------------------------
+        // Source folder identity
         //---------------------------------------------------------
 
         public string? SourceFolderPath { get; private set; }
@@ -106,7 +105,76 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         public IReadOnlyList<FileContext> DeferredFiles =>
             _deferred;
 
-        public IReadOnlyCollection<string> CompletedFiles => _completed;
+        public IReadOnlyCollection<string> CompletedFiles =>
+            _completed;
+
+        //---------------------------------------------------------
+        // Repair opportunity states
+        //---------------------------------------------------------
+
+        public IReadOnlyList<RepairOpportunityState> GetOpportunityStates(
+            string originalPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalPath))
+                return Array.Empty<RepairOpportunityState>();
+
+            if (!_opportunityStates.TryGetValue(
+                    originalPath,
+                    out List<RepairOpportunityState>? states))
+            {
+                return Array.Empty<RepairOpportunityState>();
+            }
+
+            return states;
+        }
+
+        public void SetOpportunityStates(
+            string originalPath,
+            IEnumerable<RepairOpportunityState> states)
+        {
+            if (string.IsNullOrWhiteSpace(originalPath))
+                throw new ArgumentException(
+                    "The original EPUB path cannot be empty.",
+                    nameof(originalPath));
+
+            if (states == null)
+                throw new ArgumentNullException(nameof(states));
+
+            _opportunityStates[originalPath] =
+                new List<RepairOpportunityState>(states);
+        }
+
+        //---------------------------------------------------------
+        // Confidence policy control
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Lowers the confidence threshold for this expedition by one
+        /// policy step.
+        ///
+        /// The threshold can never fall below the expedition minimum.
+        ///
+        /// Returns the resulting threshold.
+        /// </summary>
+        public double LowerConfidenceThreshold()
+        {
+            CurrentConfidenceThreshold =
+                Math.Max(
+                    MinimumConfidenceThreshold,
+                    CurrentConfidenceThreshold -
+                        ConfidenceThresholdStep);
+
+            return CurrentConfidenceThreshold;
+        }
+
+        /// <summary>
+        /// Restores the expedition to its normal confidence threshold.
+        /// </summary>
+        public void ResetConfidenceThreshold()
+        {
+            CurrentConfidenceThreshold =
+                NormalConfidenceThreshold;
+        }
 
         //---------------------------------------------------------
         // State
@@ -149,10 +217,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             _pending.Clear();
             _deferred.Clear();
             _completed.Clear();
+            _opportunityStates.Clear();
 
             CurrentFile = null;
 
-            // Every new expedition begins at the normal confidence threshold.
             CurrentConfidenceThreshold =
                 NormalConfidenceThreshold;
 
@@ -260,6 +328,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             _pending.Clear();
             _deferred.Clear();
             _completed.Clear();
+            _opportunityStates.Clear();
 
             CurrentFile = null;
             SourceFolderPath = null;

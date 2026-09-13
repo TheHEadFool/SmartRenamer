@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using SmartRenamer.Capabilities.TextReplacement;
 using SmartRenamer.Interfaces;
 using SmartRenamer.Models;
@@ -34,6 +34,7 @@ namespace SmartRenamer.Services
 
                     preview.Add(new RenamePreview
                     {
+                        OriginalFullPath = file.OriginalFullPath,
                         FullPath = file.CurrentFullPath,
                         CurrentName = file.CurrentName,
                         NewName = file.DestinationName,

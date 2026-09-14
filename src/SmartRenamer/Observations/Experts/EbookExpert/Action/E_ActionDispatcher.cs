@@ -33,8 +33,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
     /// • Interpret Ebook-specific ActionIds.
     /// • Route actions to the appropriate Ebook domain service.
     /// • Preserve structured action results.
-    /// • Return selectable options only when a user decision is genuinely required.
-    /// • Keep autonomous repair activity out of the user conversation.
+    /// • Return selectable options when an action produces candidates.
+    /// • Preserve user-approved selections for later Ebook operations.
     ///
     /// This class does NOT
     /// -------------------------------------------------------------------------
@@ -43,8 +43,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
     /// • Perform ISBN research directly.
     /// • Select an ISBN candidate automatically.
     ///
-    /// Autonomous repairs that meet the Ebook repair policy are completed
-    /// without exposing the internal candidate-selection process to the user.
+    /// The user must explicitly select the candidate.
     ///
     /// =========================================================================
     /// </summary>
@@ -75,8 +74,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         public CV_ActionResult Execute(
             CV_ActionRequest request,
             IReadOnlyList<RepairOpportunity> opportunities,
-            bool automaticAuthorization,
-            double confidenceThreshold)
+            bool automaticAuthorization)
         {
             ArgumentNullException.ThrowIfNull(request);
 
@@ -106,8 +104,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     ResearchMissingIsbn(
                         request,
                         opportunities,
-                        automaticAuthorization,
-                        confidenceThreshold),
+                        automaticAuthorization),
 
                 "ExecuteRepairPlan" =>
                     ExecuteRepairPlan(
@@ -476,8 +473,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         private CV_ActionResult ResearchMissingIsbn(
     CV_ActionRequest request,
     IReadOnlyList<RepairOpportunity> opportunities,
-    bool automaticAuthorization,
-    double confidenceThreshold)
+    bool automaticAuthorization)
         {
             List<string> evidence = [];
             List<CV_ActionOption> options = [];
@@ -485,7 +481,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             int researchedBooks = 0;
             int candidateCount = 0;
             bool repairExecuted = false;
-            bool retrySuggested = false;
 
             foreach (RepairOpportunity opportunity in opportunities)
             {
@@ -525,6 +520,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
                 if (candidates.Count == 0)
                 {
+                    evidence.Add(
+                        $"No ISBN candidates were found for {fileName}.");
+
                     continue;
                 }
 
@@ -545,7 +543,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 RepairDecisionResult decision =
                     _repairDecisionEngine.Evaluate(
                         evaluatedCandidates,
-                        confidenceThreshold,
+                        E_RepairDecisionEngine.MinimumConfidenceThreshold,
                         automaticAuthorization);
 
                 if (decision.State ==
@@ -586,7 +584,16 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
                     repairExecuted = true;
 
+                    evidence.Add(
+                        $"{fileName}: Scout authorized and selected ISBN " +
+                        $"{approvedIsbn} for automatic repair.");
 
+                    evidence.Add(
+                        $"{fileName}: {selectedCandidate.Evidence}");
+
+                    evidence.Add(
+                        $"{fileName}: repair applied successfully; " +
+                        "the EPUB will be re-observed.");
                 }
                 else if (decision.State ==
                          RepairRecommendation.RepairDecisionState.UserDecisionRequired)
@@ -669,23 +676,20 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                          RepairRecommendation.RepairDecisionState.InsufficientEvidence)
                 {
                     //---------------------------------------------------------
-                    // Candidates were found, but none met the current
-                    // confidence threshold.
+                    // The available evidence is not sufficient for a repair.
                     //
-                    // This is different from finding no candidates at all.
-                    // The Ebook repair policy may therefore decide to retry
-                    // this opportunity at a lower confidence threshold.
+                    // Do not present unsupported candidates as choices.
                     //---------------------------------------------------------
 
-                    if (evaluatedCandidates.Count > 0)
-                    {
-                        retrySuggested = true;
-                    }
-
-
+                    evidence.Add(
+                        $"{fileName}: there was not enough evidence to " +
+                        "select an ISBN safely.");
                 }
 
+                evidence.Add(
+                    $"{fileName}: found {evaluatedCandidates.Count} ISBN candidate(s) after EPUB evidence evaluation.");
 
+                
             }
 
             //---------------------------------------------------------
@@ -710,19 +714,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 ActionId = request.ActionId,
                 Success = true,
                 RequiresReobservation = repairExecuted,
-                RetrySuggested = retrySuggested && !repairExecuted,
-                Message = options.Count > 0
-                    ? "I found an ISBN choice that needs your decision."
-                    : string.Empty
+                Message =
+        $"ISBN research completed for {researchedBooks} ebook(s). " +
+        $"{candidateCount} candidate(s) were found."
             };
 
-            // Evidence is user-facing only when Scout genuinely needs the
-            // user's decision. Autonomous repair activity remains silent.
-            if (options.Count > 0)
-            {
-                result.Evidence.AddRange(evidence);
-            }
-
+            result.Evidence.AddRange(evidence);
             result.Options.AddRange(options);
 
             //---------------------------------------------------------

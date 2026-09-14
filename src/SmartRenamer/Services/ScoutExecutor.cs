@@ -1,4 +1,4 @@
-using SmartRenamer.Models;
+﻿using SmartRenamer.Models;
 using SmartRenamer.Models.Rename;
 using System;
 using System.Collections.Generic;
@@ -20,13 +20,8 @@ namespace SmartRenamer.Services
                 return result;
             }
 
-            string sourceIdentity =
-                string.IsNullOrWhiteSpace(preview[0].OriginalFullPath)
-                    ? preview[0].FullPath
-                    : preview[0].OriginalFullPath;
-
             string sourceFolder =
-                Path.GetDirectoryName(sourceIdentity)!;
+                Path.GetDirectoryName(preview[0].FullPath)!;
 
             string scoutFolder =
                 sourceFolder + " (Scout Organized)";

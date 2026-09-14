@@ -25,8 +25,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     /// • Coordinate the Repair Block.
     /// • Coordinate the Repair Consultant.
     /// • Collect repair opportunities.
-    /// • Preserve state for each specific repair opportunity.
     /// • Produce ExpertFindings.
+    /// • Preserve the discovered RepairOpportunities for later repair work.
     ///
     /// This Investigation does NOT
     /// -------------------------------------------------------------------------
@@ -42,9 +42,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     public sealed class E_RepairInvestigation
     {
         private RepairReport? _lastReport;
-
         private readonly E_RepairExpedition _repairExpedition = new();
-
         private readonly E_RepairAuthorization _repairAuthorization = new();
 
         public E_RepairAuthorization RepairAuthorization =>
@@ -55,9 +53,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             _repairAuthorization.AuthorizeAutomaticRepairs();
         }
 
+
         public void BeginExpedition(
-            string sourceFolderPath,
-            IReadOnlyList<FileContext> files)
+    string sourceFolderPath,
+    IReadOnlyList<FileContext> files)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
             ArgumentNullException.ThrowIfNull(files);
@@ -145,19 +144,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                 _lastReport = report;
 
                 //-----------------------------------------------------
-                // Synchronize the state ledger with the factual repair
-                // opportunities discovered for this EPUB.
-                //
-                // RepairOpportunity represents the ebook as a whole
-                // and contains the missing-field facts.
-                //
-                // RepairOpportunityState represents ONE specific
-                // missing field.
-                //-----------------------------------------------------
-
-                SynchronizeOpportunityStates(report);
-
-                //-----------------------------------------------------
                 // A complete EPUB requires no repair conversation.
                 // Mark it complete and advance the expedition.
                 //-----------------------------------------------------
@@ -189,127 +175,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         }
 
         /// <summary>
-        /// Synchronizes the expedition's opportunity-state ledger with the
-        /// factual repair opportunities discovered for the current EPUB.
-        ///
-        /// A single RepairOpportunity may contain several missing fields.
-        /// Each missing field receives its own independent state.
-        /// </summary>
-        private void SynchronizeOpportunityStates(
-            RepairReport report)
-        {
-            if (report == null)
-                throw new ArgumentNullException(nameof(report));
-
-            foreach (RepairOpportunity opportunity
-                in report.Opportunities)
-            {
-                string? originalPath =
-                    opportunity.Record?.File?.OriginalFullPath;
-
-                if (string.IsNullOrWhiteSpace(originalPath))
-                    continue;
-
-                IReadOnlyList<RepairOpportunityState> existingStates =
-                    _repairExpedition.GetOpportunityStates(
-                        originalPath);
-
-                List<RepairOpportunityState> states =
-                    new();
-
-                AddOpportunityState(
-                    opportunity.MissingTitle,
-                    "Title",
-                    existingStates,
-                    states,
-                    originalPath);
-
-                AddOpportunityState(
-                    opportunity.MissingAuthor,
-                    "Author",
-                    existingStates,
-                    states,
-                    originalPath);
-
-                AddOpportunityState(
-                    opportunity.MissingIsbn,
-                    "ISBN",
-                    existingStates,
-                    states,
-                    originalPath);
-
-                AddOpportunityState(
-                    opportunity.MissingPublisher,
-                    "Publisher",
-                    existingStates,
-                    states,
-                    originalPath);
-
-                AddOpportunityState(
-                    opportunity.MissingLanguage,
-                    "Language",
-                    existingStates,
-                    states,
-                    originalPath);
-
-                AddOpportunityState(
-                    opportunity.MissingDescription,
-                    "Description",
-                    existingStates,
-                    states,
-                    originalPath);
-
-                AddOpportunityState(
-                    opportunity.MissingCover,
-                    "Cover",
-                    existingStates,
-                    states,
-                    originalPath);
-
-                _repairExpedition.SetOpportunityStates(
-                    originalPath,
-                    states);
-            }
-        }
-
-        /// <summary>
-        /// Adds a state for one specific repair type when that repair
-        /// opportunity is factually present.
-        ///
-        /// Existing state is preserved so that research, decisions, and
-        /// deferrals survive subsequent observations of the same EPUB.
-        /// </summary>
-        private static void AddOpportunityState(
-            bool isMissing,
-            string repairType,
-            IReadOnlyList<RepairOpportunityState> existingStates,
-            List<RepairOpportunityState> states,
-            string originalPath)
-        {
-            if (!isMissing)
-                return;
-
-            RepairOpportunityState? existingState =
-                existingStates.FirstOrDefault(
-                    state =>
-                        string.Equals(
-                            state.RepairType,
-                            repairType,
-                            StringComparison.OrdinalIgnoreCase));
-
-            if (existingState != null)
-            {
-                states.Add(existingState);
-                return;
-            }
-
-            states.Add(
-                new RepairOpportunityState(
-                    originalPath,
-                    repairType));
-        }
-
-        /// <summary>
         /// The repair opportunities discovered during the most recent
         /// investigation.
         ///
@@ -328,7 +193,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             _lastReport?.IsComplete ?? false;
 
         public FileContext? CurrentFile =>
-            _repairExpedition.CurrentFile;
+    _repairExpedition.CurrentFile;
 
         public IReadOnlyList<FileContext> DeferredFiles =>
             _repairExpedition.DeferredFiles;
@@ -338,22 +203,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
         public bool ExpeditionIsComplete =>
             _repairExpedition.IsComplete;
-
-        public double CurrentConfidenceThreshold =>
-            _repairExpedition.CurrentConfidenceThreshold;
-
-        /// <summary>
-        /// Lowers the confidence threshold for the active repair expedition
-        /// by one policy step.
-        ///
-        /// The expedition owns the threshold policy and enforces its minimum.
-        /// This investigation exposes that policy to the Ebook Expert
-        /// coordinator without exposing the expedition itself.
-        /// </summary>
-        public double LowerConfidenceThreshold()
-        {
-            return _repairExpedition.LowerConfidenceThreshold();
-        }
 
         public bool CompleteCurrentIfComplete()
         {
@@ -403,5 +252,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             // the current investigation considers it complete.
             return opportunity == null || opportunity.IsComplete;
         }
+
     }
+
+
+
 }

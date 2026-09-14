@@ -1,7 +1,6 @@
 ﻿using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using SmartRenamer.ViewModels.Guide;
 
@@ -13,37 +12,6 @@ namespace SmartRenamer.Controls
         {
             InitializeComponent();
             Loaded += ConversationPanel_Loaded;
-
-            //---------------------------------------------------------
-            // INPUT TRACE
-            //
-            // Trace the routed mouse events and ButtonBase.Click at
-            // the ConversationPanel level. This lets us determine
-            // whether the button receives the mouse input, whether
-            // the ListBox handles it first, and whether a Click event
-            // is raised even though ActionOption_Click is not reached.
-            //
-            // handledEventsToo=true is intentional. We want to see
-            // events even if another WPF control marks them handled.
-            //---------------------------------------------------------
-
-            AddHandler(
-                UIElement.PreviewMouseLeftButtonDownEvent,
-                new MouseButtonEventHandler(
-                    ConversationPanel_PreviewMouseLeftButtonDown),
-                true);
-
-            AddHandler(
-                UIElement.PreviewMouseLeftButtonUpEvent,
-                new MouseButtonEventHandler(
-                    ConversationPanel_PreviewMouseLeftButtonUp),
-                true);
-
-            AddHandler(
-                ButtonBase.ClickEvent,
-                new RoutedEventHandler(
-                    ConversationPanel_ButtonClick),
-                true);
         }
 
         private void ConversationPanel_Loaded(object sender, RoutedEventArgs e)
@@ -155,53 +123,12 @@ namespace SmartRenamer.Controls
             Keyboard.Focus(InputBox);
         }
 
-        private void ConversationPanel_PreviewMouseLeftButtonDown(
-            object sender,
-            MouseButtonEventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine(
-                $"MOUSE LEFT DOWN: " +
-                $"Source={e.Source?.GetType().FullName ?? "<null>"} " +
-                $"OriginalSource={e.OriginalSource?.GetType().FullName ?? "<null>"} " +
-                $"Handled={e.Handled}");
-        }
-
-        private void ConversationPanel_PreviewMouseLeftButtonUp(
-            object sender,
-            MouseButtonEventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine(
-                $"MOUSE LEFT UP: " +
-                $"Source={e.Source?.GetType().FullName ?? "<null>"} " +
-                $"OriginalSource={e.OriginalSource?.GetType().FullName ?? "<null>"} " +
-                $"Handled={e.Handled}");
-        }
-
-        private void ConversationPanel_ButtonClick(
-            object sender,
-            RoutedEventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine(
-                $"BUTTON CLICK ROUTED: " +
-                $"Source={e.Source?.GetType().FullName ?? "<null>"} " +
-                $"OriginalSource={e.OriginalSource?.GetType().FullName ?? "<null>"} " +
-                $"Handled={e.Handled}");
-        }
-
         private void ActionOption_Click(
             object sender,
             RoutedEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("CLICK ENTERED");
-
             if (sender is not Button button)
-            {
-                System.Diagnostics.Debug.WriteLine("SENDER NOT BUTTON");
                 return;
-            }
-
-            System.Diagnostics.Debug.WriteLine(
-                $"CLICK DATACONTEXT: {button.DataContext?.GetType().FullName ?? "<null>"}");
 
             //---------------------------------------------------------
             // The Button is inside the CV_ActionOption DataTemplate.
@@ -214,22 +141,10 @@ namespace SmartRenamer.Controls
             //---------------------------------------------------------
 
             if (button.DataContext is not Scout.Observations.Conversation.CV_ActionOption option)
-            {
-                System.Diagnostics.Debug.WriteLine("OPTION NOT FOUND");
                 return;
-            }
-
-            System.Diagnostics.Debug.WriteLine("OPTION FOUND");
 
             if (DataContext is not GuideViewModel guide)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"GUIDE DATACONTEXT NOT FOUND: {DataContext?.GetType().FullName ?? "<null>"}");
                 return;
-            }
-
-            System.Diagnostics.Debug.WriteLine("GUIDE FOUND");
-            System.Diagnostics.Debug.WriteLine("ACTION DISPATCH");
 
             guide.SelectActionOption(option);
 

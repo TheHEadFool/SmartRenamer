@@ -1,15 +1,7 @@
-namespace SmartRenamer.Models.Rename
+﻿namespace SmartRenamer.Models.Rename
 {
     public class RenamePreview
     {
-        /// <summary>
-        /// Stable source identity for the file represented by this preview.
-        ///
-        /// This is deliberately separate from FullPath because FullPath may
-        /// point to Scout's protected working copy.
-        /// </summary>
-        public string OriginalFullPath { get; set; } = "";
-
         public string FullPath { get; set; } = "";
 
         public string CurrentName { get; set; } = "";

@@ -13,7 +13,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace SmartRenamer.ViewModels.Guide
 {
@@ -135,9 +134,6 @@ namespace SmartRenamer.ViewModels.Guide
         private int pendingDiscoveryIndex;
 
         private bool awaitingDiscoveryChoice;
-
-        // Prevents a second action click while a domain action is running.
-        private bool actionExecutionInProgress;
 
         //---------------------------------------------------------
         // User Input
@@ -872,14 +868,12 @@ namespace SmartRenamer.ViewModels.Guide
         /// Clicking is simply another way of expressing the user's choice.
         /// It uses the same Conversation Framework action path as typed input.
         /// </summary>
-        public async void SelectActionOption(
+        public void SelectActionOption(
             CV_ActionOption option)
+
         {
-            if (option == null ||
-                actionExecutionInProgress)
-            {
+            if (option == null)
                 return;
-            }
 
             CV_ActionRequest? actionRequest =
                 workspace.ConversationEngine.CreateActionRequest(
@@ -893,8 +887,6 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
             }
 
-            actionExecutionInProgress = true;
-
             workspace.ConversationEngine.ClearActionOptions();
 
             ActionOptions.Clear();
@@ -902,29 +894,12 @@ namespace SmartRenamer.ViewModels.Guide
             Conversation.AddUserMessage(
                 option.Label);
 
-            try
-            {
-                CV_ActionResult actionResult =
-                    await Task.Run(
-                        () => guideInvestigator.ExecuteAction(
-                            actionRequest));
+            CV_ActionResult actionResult =
+    guideInvestigator.ExecuteAction(
+        actionRequest);
 
-                HandleActionResult(actionResult);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"Guide action failed: {ex}");
-
-                Conversation.AddGuideMessage(
-                    "I wasn't able to complete that action.");
-            }
-            finally
-            {
-                actionExecutionInProgress = false;
-            }
+            HandleActionResult(actionResult);
         }
-
 
         /// <summary>
         /// Executes the action associated with the currently selected

@@ -18,7 +18,6 @@ namespace Scout.Observations.Conversation
     ///     • provide explanatory information
     ///     • return selectable options
     ///     • provide supporting evidence
-    ///     • indicate that another attempt may be appropriate
     ///
     /// Examples:
     ///
@@ -51,14 +50,6 @@ namespace Scout.Observations.Conversation
         /// </summary>
         public bool RequiresReobservation { get; init; }
 
-        /// <summary>
-        /// Indicates that the action did not complete its intended work,
-        /// but another attempt may be appropriate.
-        ///
-        /// The Conversation Framework does not determine how the retry
-        /// should occur. The responsible domain Expert owns that policy.
-        /// </summary>
-        public bool RetrySuggested { get; init; }
 
         /// <summary>
         /// Human-readable description of the result.

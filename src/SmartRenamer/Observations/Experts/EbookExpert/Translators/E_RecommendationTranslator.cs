@@ -153,20 +153,38 @@ public sealed class E_RecommendationTranslator
     /// Determines whether this finding represents the first supported
     /// Ebook Expert research action: recovering missing ISBN information.
     ///
-    /// The Consultant supplies the question as part of the ExpertFinding.
-    /// The Translator recognizes that question and exposes the corresponding
-    /// domain capability through the Conversation recommendation.
+    /// The Translator identifies the ISBN finding from the finding itself
+    /// rather than depending on one exact wording of the follow-up question.
+    ///
+    /// This allows the Conversation layer to change its wording without
+    /// accidentally removing the underlying ISBN action.
     /// </summary>
     private static bool IsMissingIsbnResearch(
         ExpertFinding finding)
     {
-        if (finding.Questions.Count == 0)
-            return false;
+        //---------------------------------------------------------
+        // The finding summary is the strongest indicator because it
+        // represents the actual discovery, rather than conversational
+        // wording supplied by the Consultant.
+        //---------------------------------------------------------
+
+        if (finding.Summary.Contains(
+            "missing ISBN",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        //---------------------------------------------------------
+        // Retain question-based recognition as a fallback so that the
+        // action remains available if a future finding summary changes
+        // while the question still identifies the ISBN capability.
+        //---------------------------------------------------------
 
         foreach (string question in finding.Questions)
         {
             if (question.Contains(
-                "research the missing ISBN information",
+                "missing ISBN",
                 StringComparison.OrdinalIgnoreCase))
             {
                 return true;

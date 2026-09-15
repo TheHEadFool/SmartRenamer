@@ -37,6 +37,16 @@ namespace SmartRenamer.Guide
             workflow.DiscoveryBindings;
 
         /// <summary>
+        /// Exposes recommendations produced by a re-observation that
+        /// followed a successful action.
+        ///
+        /// The Guide does not interpret these recommendations. It only
+        /// exposes the workflow's generic conversation contract.
+        /// </summary>
+        public IReadOnlyList<CV_Recommendation> ReobservationRecommendations =>
+            workflow.LastReobservationRecommendations;
+
+        /// <summary>
         /// Applies a discovery choice through the same generic workflow
         /// boundary used by the Observation Engine.
         ///

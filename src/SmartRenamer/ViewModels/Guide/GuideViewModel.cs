@@ -1018,6 +1018,47 @@ namespace SmartRenamer.ViewModels.Guide
             {
                 ActionOptions.Add(option);
             }
+
+            // -------------------------------------------------------------
+            // Continue the investigation after an action that requires
+            // re-observation.
+            //
+            // ProjectWorkflow performs the re-observation and retains the
+            // resulting recommendations. GuideInvestigator exposes those
+            // recommendations without interpreting their domain meaning.
+            // The Workspace Conversation Engine then becomes the normal
+            // presentation path for the next recommendation.
+            // -------------------------------------------------------------
+
+            if (actionResult.RequiresReobservation)
+            {
+                IReadOnlyList<CV_Recommendation> recommendations =
+                    guideInvestigator.ReobservationRecommendations;
+
+                workspace.ConversationEngine.ClearActionOptions();
+                ActionOptions.Clear();
+
+                if (recommendations.Count > 0)
+                {
+                    workspace.ConversationEngine.LoadRecommendations(
+                        recommendations);
+
+                    CV_Recommendation firstRecommendation =
+                        recommendations[0];
+
+                    CV_ConversationMessage? message =
+                        workspace.ConversationEngine
+                            .DiscussRecommendation(
+                                firstRecommendation);
+
+                    if (message != null &&
+                        !string.IsNullOrWhiteSpace(message.Text))
+                    {
+                        Conversation.AddGuideMessage(
+                            message.Text);
+                    }
+                }
+            }
         }
 
         // =====================================================================

@@ -582,6 +582,12 @@ DataContext="{Binding Guide}"/>
                             <Button Content="{Binding Label}"
                             Margin="0,0,8,0"
                             Padding="18,8"
+                            Background="{StaticResource ConversationSendBrush}"
+                            Foreground="White"
+                            BorderBrush="{StaticResource ConversationSendBorderBrush}"
+                            BorderThickness="1"
+                            FontWeight="SemiBold"
+                            Cursor="Hand"
                             Command="{Binding DataContext.Guide.SelectActionOptionCommand,
                                       RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}"/>

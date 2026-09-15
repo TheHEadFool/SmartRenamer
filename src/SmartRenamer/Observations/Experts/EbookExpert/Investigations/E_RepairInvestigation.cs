@@ -25,8 +25,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     /// • Coordinate the Repair Block.
     /// • Coordinate the Repair Consultant.
     /// • Collect repair opportunities.
+    /// • Preserve the collection-level repair opportunities.
+    /// • Preserve state for the current repair expedition.
     /// • Produce ExpertFindings.
-    /// • Preserve the discovered RepairOpportunities for later repair work.
+    /// • Produce semantic repair handoffs.
     ///
     /// This Investigation does NOT
     /// -------------------------------------------------------------------------
@@ -42,7 +44,33 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     public sealed class E_RepairInvestigation
     {
         private RepairReport? _lastReport;
+
+        //---------------------------------------------------------
+        // Collection-level repair report
+        //
+        // This contains the repair opportunities for the entire
+        // metadata collection. Collection-level actions such as
+        // "Research Missing ISBNs" use this report.
+        //---------------------------------------------------------
+
+        private RepairReport? _collectionReport;
+
+        //---------------------------------------------------------
+        // Semantic repair handoffs
+        //---------------------------------------------------------
+
+        private readonly List<E_RepairHandoff> _repairHandoffs = new();
+
+        //---------------------------------------------------------
+        // Repair expedition
+        //---------------------------------------------------------
+
         private readonly E_RepairExpedition _repairExpedition = new();
+
+        //---------------------------------------------------------
+        // Repair authorization
+        //---------------------------------------------------------
+
         private readonly E_RepairAuthorization _repairAuthorization = new();
 
         public E_RepairAuthorization RepairAuthorization =>
@@ -53,10 +81,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             _repairAuthorization.AuthorizeAutomaticRepairs();
         }
 
-
         public void BeginExpedition(
-    string sourceFolderPath,
-    IReadOnlyList<FileContext> files)
+            string sourceFolderPath,
+            IReadOnlyList<FileContext> files)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
             ArgumentNullException.ThrowIfNull(files);
@@ -71,6 +98,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
             _repairAuthorization.Clear();
 
+            _repairHandoffs.Clear();
+
+            _collectionReport = null;
+            _lastReport = null;
+
             _repairExpedition.Begin(
                 sourceFolderPath,
                 files);
@@ -78,6 +110,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
         /// <summary>
         /// Investigates repair opportunities using the shared metadata report.
+        ///
+        /// The complete collection is analyzed first so that collection-level
+        /// actions retain access to every applicable repair opportunity.
+        ///
+        /// The Repair Expedition then works one EPUB at a time and stores the
+        /// current EPUB's report separately in _lastReport.
         /// </summary>
         public List<ExpertFinding> Investigate(
             MetadataReport metadataReport)
@@ -87,19 +125,28 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             List<ExpertFinding> findings = new();
 
             //---------------------------------------------------------
+            // Preserve the collection-wide repair opportunities.
+            //
+            // This report is intentionally separate from _lastReport.
+            // Collection-level actions such as ISBN research need to
+            // see all applicable EPUBs, not only the current expedition
+            // EPUB.
+            //---------------------------------------------------------
+
+            RepairBlock block = new();
+
+            _collectionReport =
+                block.Analyze(metadataReport);
+
+            //---------------------------------------------------------
             // The Repair Expedition works one EPUB at a time.
             //
             // Initial investigation must not stop on an EPUB that is
             // already complete. If the first EPUB needs no repair, move
             // forward until the expedition reaches the first EPUB that
             // actually requires attention.
-            //
-            // This preserves the one-ebook-at-a-time repair lifecycle
-            // while allowing a collection-wide investigation to enter
-            // the ISBN vertical slice at the first real repair need.
             //---------------------------------------------------------
 
-            RepairBlock block = new();
             E_RepairConsultant consultant = new();
 
             while (_repairExpedition.CurrentFile != null)
@@ -139,6 +186,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
                 //-----------------------------------------------------
                 // Preserve the report for the current EPUB.
+                //
+                // This remains separate from _collectionReport.
                 //-----------------------------------------------------
 
                 _lastReport = report;
@@ -150,7 +199,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
                 if (report.IsComplete)
                 {
+                    CreateCompletedHandoff(currentFile);
+
                     _repairExpedition.CompleteCurrent();
+
                     continue;
                 }
 
@@ -175,15 +227,32 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         }
 
         /// <summary>
-        /// The repair opportunities discovered during the most recent
-        /// investigation.
+        /// The repair opportunities available to domain actions.
         ///
-        /// These are the actual domain records that can later be supplied
-        /// to E_RepairService.
+        /// Collection-level actions use the complete collection report.
+        /// The current EPUB remains available through CurrentFile and
+        /// IsCompleteFor().
         /// </summary>
-        public IReadOnlyList<RepairOpportunity> RepairOpportunities =>
+        internal IReadOnlyList<RepairOpportunity> RepairOpportunities =>
+            _collectionReport?.Opportunities
+            ?? new List<RepairOpportunity>();
+
+        /// <summary>
+        /// The repair opportunities discovered for the current EPUB.
+        ///
+        /// This is intentionally separate from RepairOpportunities because
+        /// the collection-level action layer may need all EPUBs while the
+        /// expedition itself continues to operate one EPUB at a time.
+        /// </summary>
+        internal IReadOnlyList<RepairOpportunity> CurrentRepairOpportunities =>
             _lastReport?.Opportunities
             ?? new List<RepairOpportunity>();
+
+        /// <summary>
+        /// Semantic results produced by the repair stage.
+        /// </summary>
+        internal IReadOnlyList<E_RepairHandoff> RepairHandoffs =>
+            _repairHandoffs;
 
         /// <summary>
         /// True when the most recent repair investigation found no remaining
@@ -193,7 +262,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             _lastReport?.IsComplete ?? false;
 
         public FileContext? CurrentFile =>
-    _repairExpedition.CurrentFile;
+            _repairExpedition.CurrentFile;
 
         public IReadOnlyList<FileContext> DeferredFiles =>
             _repairExpedition.DeferredFiles;
@@ -209,9 +278,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             if (_repairExpedition.CurrentFile == null)
                 return false;
 
+            FileContext currentFile =
+                _repairExpedition.CurrentFile;
+
             if (!IsCompleteFor(
-                    _repairExpedition.CurrentFile.OriginalFullPath))
+                    currentFile.OriginalFullPath))
                 return false;
+
+            CreateCompletedHandoff(currentFile);
 
             _repairExpedition.CompleteCurrent();
 
@@ -222,6 +296,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         {
             if (_repairExpedition.CurrentFile == null)
                 return false;
+
+            FileContext currentFile =
+                _repairExpedition.CurrentFile;
+
+            CreateHandoff(
+                currentFile,
+                E_RepairHandoffStatus.RepairDeferred,
+                "Repair was deferred by the user.");
 
             _repairExpedition.DeferCurrent();
 
@@ -253,8 +335,62 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             return opportunity == null || opportunity.IsComplete;
         }
 
+        /// <summary>
+        /// Creates the semantic handoff for an EPUB that completed repair
+        /// processing without any remaining repair opportunity.
+        /// </summary>
+        private void CreateCompletedHandoff(
+            FileContext file)
+        {
+            CreateHandoff(
+                file,
+                E_RepairHandoffStatus.RepairCompleted,
+                "Repair processing completed for this EPUB.");
+        }
+
+        /// <summary>
+        /// Creates or replaces the handoff for one original EPUB.
+        ///
+        /// OriginalFullPath is the stable identity. CurrentFullPath is the
+        /// working representation that later stages may organize.
+        /// </summary>
+        private void CreateHandoff(
+            FileContext file,
+            E_RepairHandoffStatus status,
+            string reason)
+        {
+            string originalPath =
+                file.OriginalFullPath;
+
+            string workingPath =
+                string.IsNullOrWhiteSpace(file.CurrentFullPath)
+                    ? originalPath
+                    : file.CurrentFullPath;
+
+            E_RepairHandoff handoff =
+                new(
+                    originalPath,
+                    workingPath,
+                    status,
+                    reason);
+
+            int existingIndex =
+                _repairHandoffs.FindIndex(
+                    existing =>
+                        string.Equals(
+                            existing.OriginalPath,
+                            originalPath,
+                            StringComparison.OrdinalIgnoreCase));
+
+            if (existingIndex >= 0)
+            {
+                _repairHandoffs[existingIndex] =
+                    handoff;
+
+                return;
+            }
+
+            _repairHandoffs.Add(handoff);
+        }
     }
-
-
-
 }

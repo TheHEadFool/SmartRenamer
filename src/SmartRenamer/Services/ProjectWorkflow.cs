@@ -138,6 +138,31 @@ namespace SmartRenamer.Services
         private string? activeSourceFolderPath;
 
         //---------------------------------------------------------
+        // Re-observation Results
+        //---------------------------------------------------------
+        //
+        // A domain action may require the active project to be observed
+        // again. Preserve the recommendations produced by that pass so
+        // the Guide can continue from the new workflow state instead of
+        // remaining on the recommendation that initiated the action.
+        //
+
+        private IReadOnlyList<CV_Recommendation>
+            lastReobservationRecommendations =
+                Array.Empty<CV_Recommendation>();
+
+        /// <summary>
+        /// Recommendations produced by the most recent action-triggered
+        /// re-observation.
+        ///
+        /// ProjectWorkflow does not interpret these recommendations.
+        /// It only preserves the workflow result for the Guide.
+        /// </summary>
+        public IReadOnlyList<CV_Recommendation>
+            LastReobservationRecommendations =>
+                lastReobservationRecommendations;
+
+        //---------------------------------------------------------
         // New Workflow
         //---------------------------------------------------------
 
@@ -206,10 +231,24 @@ namespace SmartRenamer.Services
 
             ArgumentNullException.ThrowIfNull(context);
 
+            FolderSummary folder =
+                context.Folder
+                ?? throw new InvalidOperationException(
+                    "Cannot execute the workflow because no folder is available.");
+
             activeFiles =
-                context.Folder.FileContexts;
+                folder.FileContexts;
             activeSourceFolderPath =
-                context.Folder.FolderPath;
+                folder.FolderPath;
+
+            //---------------------------------------------------------
+            // A full workflow execution establishes a new observation
+            // state. Any action-triggered re-observation results from the
+            // previous workflow are no longer current.
+            //---------------------------------------------------------
+
+            lastReobservationRecommendations =
+                Array.Empty<CV_Recommendation>();
 
             //---------------------------------------------------------
             // Analyze the project.
@@ -248,9 +287,9 @@ namespace SmartRenamer.Services
             //---------------------------------------------------------
 
             List<CV_Recommendation> observationRecommendations =
-    observationEngine.Observe(
-        context.Folder.FileContexts,
-        context.Folder.FolderPath);
+                observationEngine.Observe(
+                    context.Folder.FileContexts,
+                    context.Folder.FolderPath);
 
             //---------------------------------------------------------
             // Observation Framework → Existing UI
@@ -341,9 +380,17 @@ namespace SmartRenamer.Services
         /// that investigation.
         /// </summary>
         public CV_ActionResult ExecuteAction(
-    CV_ActionRequest request)
+            CV_ActionRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
+
+            //---------------------------------------------------------
+            // Clear the previous action's re-observation result before
+            // executing a new action.
+            //---------------------------------------------------------
+
+            lastReobservationRecommendations =
+                Array.Empty<CV_Recommendation>();
 
             CV_ActionResult result =
                 observationEngine.ExecuteAction(request);
@@ -356,6 +403,9 @@ namespace SmartRenamer.Services
             // run the existing ObservationEngine again against the
             // same FileContext objects.
             //
+            // Preserve the resulting recommendations so the Guide can
+            // continue from the newly observed workflow state.
+            //
             // The workflow remains domain-neutral. It does not inspect
             // the ActionId to determine what happened.
             //---------------------------------------------------------
@@ -363,7 +413,8 @@ namespace SmartRenamer.Services
             if (result.Success &&
                 result.RequiresReobservation)
             {
-                Reobserve();
+                lastReobservationRecommendations =
+                    Reobserve();
 
                 observationEngine.CompleteCurrentIfComplete();
             }

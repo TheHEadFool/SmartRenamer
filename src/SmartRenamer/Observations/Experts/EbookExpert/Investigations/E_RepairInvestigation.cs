@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Scout.Observations.Experts.EbookExpert.Data;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
@@ -154,7 +155,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                 FileContext currentFile =
                     _repairExpedition.CurrentFile;
 
-                SmartRenamer.Observations.Experts.EbookExpert.Data.Models.MetadataRecord? currentRecord =
+                MetadataRecord? currentRecord =
                     metadataReport.Records.FirstOrDefault(
                         record =>
                             string.Equals(

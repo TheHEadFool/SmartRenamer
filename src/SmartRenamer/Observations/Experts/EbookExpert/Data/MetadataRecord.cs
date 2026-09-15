@@ -1,6 +1,6 @@
 ﻿using SmartRenamer.Models;
 
-namespace SmartRenamer.Observations.Experts.EbookExpert.Data.Models
+namespace Scout.Observations.Experts.EbookExpert.Data
 {
     /// <summary>
     /// Represents one researched ebook and the file it came from.

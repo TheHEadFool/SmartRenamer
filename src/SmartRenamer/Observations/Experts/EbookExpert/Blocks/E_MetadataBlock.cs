@@ -1,6 +1,6 @@
 ﻿using SmartRenamer.Models;
 using SmartRenamer.Observations.BuildingBlocks;
-using SmartRenamer.Observations.Experts.EbookExpert.Data.Models;
+using Scout.Observations.Experts.EbookExpert.Data;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using System;
 using System.Collections.Generic;

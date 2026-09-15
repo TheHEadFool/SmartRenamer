@@ -1,4 +1,5 @@
 ﻿using SmartRenamer.Models;
+using System.IO;
 
 namespace SmartRenamer.Services
 {
@@ -36,6 +37,21 @@ namespace SmartRenamer.Services
             {
                 Folder = summary
             };
+
+            string sourceFolderName =
+                new DirectoryInfo(folder).Name;
+
+            string? parentFolder =
+                Directory.GetParent(folder)?.FullName;
+
+            if (!string.IsNullOrWhiteSpace(sourceFolderName) &&
+                !string.IsNullOrWhiteSpace(parentFolder))
+            {
+                context.Organization.DestinationRoot =
+                    Path.Combine(
+                        parentFolder,
+                        $"{sourceFolderName}_Organized");
+            }
 
             // Let the analyzer determine the project type,
             // observations, and recommended capabilities.

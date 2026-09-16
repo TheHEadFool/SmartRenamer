@@ -1,5 +1,5 @@
 ﻿using System.Collections.Generic;
-using SmartRenamer.Models;
+using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization
 {

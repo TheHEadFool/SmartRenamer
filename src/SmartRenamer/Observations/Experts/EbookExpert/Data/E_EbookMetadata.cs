@@ -1,4 +1,4 @@
-﻿namespace SmartRenamer.Models
+﻿namespace Scout.Observations.Experts.EbookExpert.Data
 {
     /// <summary>
     /// =========================================================================

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using Scout.Observations.Experts.EbookExpert.Data;
 using SmartRenamer.Models;
-using SmartRenamer.Observations.BuildingBlocks;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Duplicates
 {

@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace SmartRenamer.Models
+namespace Scout.Observations.Experts.EbookExpert.Investigations.Organization
 {
     /// <summary>
     /// Defines the user's collection-level organization choices.

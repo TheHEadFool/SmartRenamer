@@ -6,7 +6,7 @@ using System.Linq;
 using System.Xml.Linq;
 using SmartRenamer.Models;
 
-namespace SmartRenamer.Observations.BuildingBlocks
+namespace Scout.Observations.Experts.EbookExpert.Data
 {
     /// <summary>
     /// =========================================================================
@@ -393,7 +393,7 @@ namespace SmartRenamer.Observations.BuildingBlocks
             }
 
             int checkDigit =
-                (10 - (sum % 10)) % 10;
+                (10 - sum % 10) % 10;
 
             return checkDigit == value[12] - '0';
         }

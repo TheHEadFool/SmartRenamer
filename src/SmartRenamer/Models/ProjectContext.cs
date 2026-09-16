@@ -1,6 +1,6 @@
-﻿using System.Collections.Generic;
-using SmartRenamer.Models.Analysis;
+﻿using SmartRenamer.Models.Analysis;
 using SmartRenamer.Services;
+using System.Collections.Generic;
 
 namespace SmartRenamer.Models
 {
@@ -28,15 +28,6 @@ namespace SmartRenamer.Models
         public string ProjectType { get; set; } = "Unknown";
 
         public int Confidence { get; set; }
-
-        /// <summary>
-        /// Collection-level organization choices for this project.
-        ///
-        /// These settings remain with the project so that organization
-        /// planning can be performed incrementally as individual files
-        /// complete their investigations and repairs.
-        /// </summary>
-        public OrganizationOptions Organization { get; set; } = new();
 
         // Complete analysis profile
         public ProjectProfile Profile { get; set; } = new();

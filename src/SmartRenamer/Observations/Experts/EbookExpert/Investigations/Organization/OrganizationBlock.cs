@@ -1,4 +1,5 @@
 ﻿using Scout.Observations.Experts.EbookExpert.Data;
+using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.BuildingBlocks;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;

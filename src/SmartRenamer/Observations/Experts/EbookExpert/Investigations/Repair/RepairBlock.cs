@@ -1,5 +1,4 @@
 ﻿using Scout.Observations.Experts.EbookExpert.Data;
-using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair

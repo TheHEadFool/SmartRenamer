@@ -196,14 +196,9 @@ namespace SmartRenamer.Observations
 
         private readonly E_ActionDispatcher _actionDispatcher = new();
 
-        //---------------------------------------------------------
-        // Legacy Specialists
-        //---------------------------------------------------------
 
         private static readonly IReadOnlyList<ObservationSpecialist> _specialists =
-        [
-            new E_EbookMetadataSpecialist()
-        ];
+    Array.Empty<ObservationSpecialist>();
 
         public override IReadOnlyList<ObservationSpecialist> Specialists =>
             _specialists;

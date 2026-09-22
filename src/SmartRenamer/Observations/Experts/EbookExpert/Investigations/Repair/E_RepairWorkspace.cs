@@ -4,26 +4,26 @@ using SmartRenamer.Models;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 {
-    /// <summary>
-    /// =========================================================================
-    /// E_RepairWorkspace
-    /// =========================================================================
-    ///
-    /// Purpose
-    /// -------------------------------------------------------------------------
-    /// Provides a temporary working copy of an ebook for Ebook Expert repairs.
-    ///
-    /// Safety Boundary
-    /// -------------------------------------------------------------------------
-    /// The original ebook is never modified by this workspace.
-    ///
-    /// The workspace creates a separate physical copy that can be safely
-    /// repaired and verified before the file is handed back to the workflow.
-    ///
-    /// The workspace knows nothing about Scout's final organization folder.
-    ///
-    /// =========================================================================
-    /// </summary>
+    /// <summary> 
+    /// ========================================================================= 
+    /// E_RepairWorkspace 
+    /// ========================================================================= 
+    /// 
+    /// Purpose 
+    /// ------------------------------------------------------------------------- 
+    /// Provides a temporary working copy of an ebook for Ebook Expert repairs. 
+    /// 
+    /// Safety Boundary 
+    /// ------------------------------------------------------------------------- 
+    /// The original ebook is never modified by this workspace. 
+    /// 
+    /// The workspace creates a separate physical copy that can be safely 
+    /// repaired and verified before the file is handed back to the workflow. 
+    /// 
+    /// The workspace knows nothing about Scout's final organization folder. 
+    /// 
+    /// ========================================================================= 
+    /// </summary> 
     internal sealed class E_RepairWorkspace
     {
         private const string WorkspaceRootName =
@@ -36,9 +36,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
         private FileStream? _sessionLock;
 
-        /// <summary>
-        /// Creates a new temporary Ebook Expert repair workspace.
-        /// </summary>
+        /// <summary> 
+        /// Creates a new temporary Ebook Expert repair workspace. 
+        /// </summary> 
         public E_RepairWorkspace()
         {
             _workspacePath = Path.Combine(
@@ -63,11 +63,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                     FileShare.None);
         }
 
-        /// <summary>
-        /// Creates a working copy of the supplied ebook.
-        ///
-        /// The original file is never modified.
-        /// </summary>
+        /// <summary> 
+        /// Creates a working copy of the supplied ebook. 
+        /// 
+        /// The original file is never modified. 
+        /// </summary> 
         public string CreateWorkingCopy(
             FileContext file)
         {
@@ -92,6 +92,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                     _workspacePath,
                     fileName);
 
+            if (string.Equals(
+                    Path.GetFullPath(file.CurrentFullPath),
+                    Path.GetFullPath(workingPath),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return workingPath;
+            }
+
             File.Copy(
                 file.CurrentFullPath,
                 workingPath,
@@ -100,17 +108,17 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             return workingPath;
         }
 
-        /// <summary>
-        /// Removes abandoned Scout Ebook Expert repair sessions.
-        ///
-        /// This method only performs cleanup. It never resumes, retries, or
-        /// reconstructs a repair operation.
+        /// <summary> 
+        /// Removes abandoned Scout Ebook Expert repair sessions. 
         /// 
-        /// </summary>
-        ///
-        /// This method only performs cleanup. It never resumes, retries, or
-        /// reconstructs a repair operation.
-        /// </summary>
+        /// This method only performs cleanup. It never resumes, retries, or 
+        /// reconstructs a repair operation. 
+        ///  
+        /// </summary> 
+        /// 
+        /// This method only performs cleanup. It never resumes, retries, or 
+        /// reconstructs a repair operation. 
+        /// </summary> 
         public static void CleanupAbandonedWorkspaces()
         {
             string repairRoot =
@@ -129,12 +137,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 string directoryName =
                     Path.GetFileName(workspacePath);
 
-                //---------------------------------------------------------
-                // Repair sessions created by Scout use GUID directory names.
-                //
-                // Ignore anything else that might have been placed in
-                // this folder.
-                //---------------------------------------------------------
+                //--------------------------------------------------------- 
+                // Repair sessions created by Scout use GUID directory names. 
+                // 
+                // Ignore anything else that might have been placed in 
+                // this folder. 
+                //--------------------------------------------------------- 
 
                 if (!Guid.TryParse(
                         directoryName,
@@ -148,10 +156,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                         workspacePath,
                         ActiveLockFileName);
 
-                //---------------------------------------------------------
-                // If the session has no lock file, it belongs to an older
-                // session format and is safe to treat as abandoned.
-                //---------------------------------------------------------
+                //--------------------------------------------------------- 
+                // If the session has no lock file, it belongs to an older 
+                // session format and is safe to treat as abandoned. 
+                //--------------------------------------------------------- 
 
                 bool abandoned = true;
 
@@ -159,10 +167,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 {
                     try
                     {
-                        //-----------------------------------------------------
-                        // If we can obtain the lock, no Scout process is
-                        // currently using this repair session.
-                        //-----------------------------------------------------
+                        //----------------------------------------------------- 
+                        // If we can obtain the lock, no Scout process is 
+                        // currently using this repair session. 
+                        //----------------------------------------------------- 
 
                         using FileStream sessionLock =
                             new(
@@ -173,18 +181,18 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                     }
                     catch (IOException)
                     {
-                        //-----------------------------------------------------
-                        // Another Scout process still owns the lock.
-                        //-----------------------------------------------------
+                        //----------------------------------------------------- 
+                        // Another Scout process still owns the lock. 
+                        //----------------------------------------------------- 
 
                         abandoned = false;
                     }
                     catch (UnauthorizedAccessException)
                     {
-                        //-----------------------------------------------------
-                        // Treat an inaccessible lock as active rather than
-                        // risking deletion of another Scout session.
-                        //-----------------------------------------------------
+                        //----------------------------------------------------- 
+                        // Treat an inaccessible lock as active rather than 
+                        // risking deletion of another Scout session. 
+                        //----------------------------------------------------- 
 
                         abandoned = false;
                     }
@@ -201,18 +209,18 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 }
                 catch (IOException)
                 {
-                    // Cleanup is best-effort.
+                    // Cleanup is best-effort. 
                 }
                 catch (UnauthorizedAccessException)
                 {
-                    // Cleanup is best-effort.
+                    // Cleanup is best-effort. 
                 }
             }
         }
 
-        /// <summary>
-        /// Removes the temporary repair workspace.
-        /// </summary>
+        /// <summary> 
+        /// Removes the temporary repair workspace. 
+        /// </summary> 
         public void Cleanup()
         {
             if (!Directory.Exists(_workspacePath))
@@ -226,13 +234,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             }
             catch (IOException)
             {
-                // Temporary cleanup failure must not hide
-                // the result of the repair operation.
+                // Temporary cleanup failure must not hide 
+                // the result of the repair operation. 
             }
             catch (UnauthorizedAccessException)
             {
-                // Temporary cleanup failure must not hide
-                // the result of the repair operation.
+                // Temporary cleanup failure must not hide 
+                // the result of the repair operation. 
             }
         }
     }

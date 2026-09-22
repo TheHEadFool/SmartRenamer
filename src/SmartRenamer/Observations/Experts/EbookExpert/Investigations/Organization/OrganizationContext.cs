@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization
 {
@@ -76,6 +78,29 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
         public OrganizationOptions Options { get; }
 
         //---------------------------------------------------------
+        // Repair handoffs
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Semantic results supplied by the Ebook Expert repair stage.
+        ///
+        /// These identify the protected original and the current working
+        /// representation available to later organization stages.
+        /// </summary>
+        public IReadOnlyList<E_RepairHandoff> RepairHandoffs { get; }
+
+        //---------------------------------------------------------
+        // Organization books
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Per-book organization information available to planning.
+        ///
+        /// These are passive snapshots. They do not perform filesystem work.
+        /// </summary>
+        public IReadOnlyList<OrganizationBook> Books { get; }
+
+        //---------------------------------------------------------
         // Construction
         //---------------------------------------------------------
 
@@ -85,7 +110,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
         /// </summary>
         public OrganizationContext(
             OrganizationReport report,
-            OrganizationOptions options)
+            OrganizationOptions options,
+            IReadOnlyList<E_RepairHandoff>? repairHandoffs = null,
+            IReadOnlyList<OrganizationBook>? books = null)
         {
             Report =
                 report ??
@@ -94,6 +121,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
             Options =
                 options ??
                 throw new ArgumentNullException(nameof(options));
+
+            RepairHandoffs =
+                repairHandoffs ??
+                Array.Empty<E_RepairHandoff>();
+
+            Books =
+                books ??
+                Array.Empty<OrganizationBook>();
         }
     }
 }

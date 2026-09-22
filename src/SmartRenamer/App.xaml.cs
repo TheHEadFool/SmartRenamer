@@ -1,5 +1,4 @@
 ﻿using Scout.Core;
-using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using System.Windows;
 
 namespace SmartRenamer;
@@ -45,9 +44,6 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-
-        E_RepairWorkspace.CleanupAbandonedWorkspaces();
-
         ExpeditionManager.Initialize();
 
         base.OnStartup(e);

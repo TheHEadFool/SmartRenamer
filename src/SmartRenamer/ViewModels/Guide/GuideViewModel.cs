@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace SmartRenamer.ViewModels.Guide
 {
@@ -254,7 +255,7 @@ namespace SmartRenamer.ViewModels.Guide
         // Send
         // =====================================================================
 
-        private void Send()
+        private async void Send()
         {
 
             if (string.IsNullOrWhiteSpace(UserInput))
@@ -355,7 +356,7 @@ namespace SmartRenamer.ViewModels.Guide
                     //---------------------------------------------------------
 
                     CV_ActionResult actionResult =
-                        guideInvestigator.ExecuteAction(
+                        await ExecuteActionAsync(
                             actionRequest);
 
                     //---------------------------------------------------------
@@ -868,7 +869,7 @@ namespace SmartRenamer.ViewModels.Guide
         /// Clicking is simply another way of expressing the user's choice.
         /// It uses the same Conversation Framework action path as typed input.
         /// </summary>
-        public void SelectActionOption(
+        public async void SelectActionOption(
             CV_ActionOption option)
 
         {
@@ -895,8 +896,8 @@ namespace SmartRenamer.ViewModels.Guide
                 option.Label);
 
             CV_ActionResult actionResult =
-    guideInvestigator.ExecuteAction(
-        actionRequest);
+                await ExecuteActionAsync(
+                    actionRequest);
 
             HandleActionResult(actionResult);
         }
@@ -909,7 +910,7 @@ namespace SmartRenamer.ViewModels.Guide
         /// Framework action-request path as typed approval. The Guide does
         /// not interpret the domain meaning of the action.
         /// </summary>
-        public void ExecuteRecommendationAction(
+        public async void ExecuteRecommendationAction(
             CV_Recommendation recommendation)
         {
             if (recommendation == null)
@@ -931,10 +932,31 @@ namespace SmartRenamer.ViewModels.Guide
                 recommendation.ActionText);
 
             CV_ActionResult actionResult =
-                guideInvestigator.ExecuteAction(
+                await ExecuteActionAsync(
                     actionRequest);
 
             HandleActionResult(actionResult);
+        }
+
+        // =====================================================================
+        // Action Execution
+        // =====================================================================
+
+        /// <summary>
+        /// Executes a domain action away from the WPF UI thread.
+        ///
+        /// The domain workflow is intentionally left synchronous. The Guide
+        /// moves the potentially long-running operation off the UI thread and
+        /// resumes on the UI thread when the action has completed so the
+        /// conversation can safely update the presentation.
+        /// </summary>
+        private async Task<CV_ActionResult> ExecuteActionAsync(
+            CV_ActionRequest request)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            return await Task.Run(
+                () => guideInvestigator.ExecuteAction(request));
         }
 
         // =====================================================================
@@ -1002,20 +1024,17 @@ namespace SmartRenamer.ViewModels.Guide
 
             ActionOptions.Clear();
 
-            if (actionResult.Options.Count == 1)
+            foreach (CV_ActionOption option
+                in actionResult.Options)
             {
                 Conversation.Messages.Add(
                     new GuideMessage
                     {
                         Speaker = GuideSpeaker.Guide,
                         DisplayName = "Scout",
-                        Payload = actionResult.Options[0]
+                        Payload = option
                     });
-            }
 
-            foreach (CV_ActionOption option
-                in actionResult.Options)
-            {
                 ActionOptions.Add(option);
             }
 

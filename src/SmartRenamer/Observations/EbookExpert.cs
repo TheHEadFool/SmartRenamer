@@ -7,6 +7,7 @@ using SmartRenamer.Observations.Experts.EbookExpert.Action;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Observations.Experts.EbookExpert.Translators;
 using SmartRenamer.Observations.Specialists;
 
@@ -78,6 +79,18 @@ namespace SmartRenamer.Observations
     public sealed class EbookExpert
         : ObservationExpert
     {
+        /// <summary>
+        /// Initializes the Ebook Expert's domain services.
+        ///
+        /// Repair workspace cleanup belongs to Ebook Expert because the
+        /// temporary workspace is an Ebook Expert implementation detail.
+        /// Scout does not need to know how that cleanup works.
+        /// </summary>
+        public EbookExpert()
+        {
+            E_RepairWorkspace.CleanupAbandonedWorkspaces();
+        }
+
         //---------------------------------------------------------
         // Discovery Capability
         //---------------------------------------------------------
@@ -354,6 +367,21 @@ namespace SmartRenamer.Observations
                 _repairInvestigation.Investigate(
                     metadataReport));
 
+            //---------------------------------------------------------
+            // Repair → Organization handoff
+            //---------------------------------------------------------
+            //
+            // Organization investigates the collection before Repair,
+            // so it does not wait for Repair to finish. Once the Repair
+            // investigation has produced any current handoffs, pass
+            // those semantic results into the existing organization
+            // context. No filesystem work is performed here.
+            //
+            //---------------------------------------------------------
+
+            _organizationInvestigation.AcceptRepairHandoffs(
+                _repairInvestigation.RepairHandoffs);
+
             findings.AddRange(
                 _coverInvestigation.Investigate(
                     metadataReport));
@@ -388,6 +416,24 @@ namespace SmartRenamer.Observations
             }
 
             return recommendations;
+        }
+
+        /// <summary>
+        /// Executes one already-planned organization entry through the
+        /// Ebook Expert's organization investigation.
+        ///
+        /// The Ebook Expert remains the domain boundary. Generic Scout
+        /// infrastructure does not need to understand organization details.
+        ///
+        /// This method executes only the supplied planned entry. It does not
+        /// create a queue, manage concurrency, or release the working copy.
+        /// </summary>
+        internal OrganizationCopyResult ExecuteOrganizationEntry(
+            OrganizationPlanEntry entry)
+        {
+            ArgumentNullException.ThrowIfNull(entry);
+
+            return _organizationInvestigation.ExecuteOne(entry);
         }
 
         /// <summary>

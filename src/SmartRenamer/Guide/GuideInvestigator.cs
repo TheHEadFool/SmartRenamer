@@ -99,9 +99,26 @@ namespace SmartRenamer.Guide
             string expertName,
             string optionId)
         {
+            ApplyDecisionChoice(
+                expertName,
+                optionId,
+                null);
+        }
+
+        /// <summary>
+        /// Routes a generic decision choice and optional user-supplied value
+        /// through the Guide/workflow boundary. The Guide does not interpret
+        /// the value; the owning Expert does.
+        /// </summary>
+        public void ApplyDecisionChoice(
+            string expertName,
+            string optionId,
+            string? value)
+        {
             workflow.ApplyDecisionChoice(
                 expertName,
-                optionId);
+                optionId,
+                value);
         }
 
         /// <summary>

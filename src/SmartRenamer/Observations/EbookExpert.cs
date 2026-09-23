@@ -10,6 +10,7 @@ using SmartRenamer.Observations.Experts.EbookExpert.Translators;
 using SmartRenamer.Observations.Specialists;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 namespace SmartRenamer.Observations
@@ -194,6 +195,14 @@ namespace SmartRenamer.Observations
             Array.Empty<OrganizationPathOption>();
 
         /// <summary>
+        /// Indicates that the collection-level organization destination has
+        /// been explicitly accepted or supplied by the user. The automatically
+        /// derived _Organized sibling path remains only a proposal until this
+        /// becomes true.
+        /// </summary>
+        private bool _organizationDestinationConfirmed;
+
+        /// <summary>
         /// Exposes the currently viable organization paths through the
         /// generic Expert decision mechanism.
         ///
@@ -204,6 +213,43 @@ namespace SmartRenamer.Observations
         {
             get
             {
+                //---------------------------------------------------------
+                // Organization begins with destination confirmation.
+                //
+                // The default was derived from the selected source folder
+                // in BeginProject(). The user may accept that proposal or
+                // choose another folder. Only after that collection-level
+                // decision is complete are the organization-path choices
+                // exposed.
+                //---------------------------------------------------------
+
+                if (!_organizationDestinationConfirmed)
+                {
+                    string destination =
+                        _organizationInvestigation.Options.DestinationRoot;
+
+                    if (string.IsNullOrWhiteSpace(destination))
+                        return null;
+
+                    return new ExpertDecisionRequest
+                    {
+                        Question =
+                            $"I propose creating the organized library here: {destination}. Would you like to use this destination or choose another?",
+
+                        Options =
+                        [
+                            new ExpertDecisionOption(
+                                "organization-destination-default",
+                                "Use this destination"),
+
+                            new ExpertDecisionOption(
+                                "organization-destination-browse",
+                                "Choose a different destination",
+                                ExpertDecisionInputKind.Folder)
+                        ]
+                    };
+                }
+
                 if (_organizationPathOptions.Count == 0)
                     return null;
 
@@ -234,7 +280,79 @@ namespace SmartRenamer.Observations
         /// </summary>
         public override void ApplyDecisionChoice(string optionId)
         {
+            ApplyDecisionChoice(optionId, null);
+        }
+
+        /// <summary>
+        /// Applies either the collection-level destination decision or the
+        /// subsequent organization-path decision.
+        ///
+        /// A folder value is transported through the generic conversation
+        /// boundary only when the user chooses a destination other than the
+        /// proposed _Organized sibling folder. Ebook Expert owns the meaning
+        /// of that value and stores it as OrganizationOptions.DestinationRoot.
+        /// </summary>
+        public override void ApplyDecisionChoice(
+            string optionId,
+            string? value)
+        {
             ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
+
+            //---------------------------------------------------------
+            // Stage 1: destination confirmation / override
+            //---------------------------------------------------------
+
+            if (!_organizationDestinationConfirmed)
+            {
+                switch (optionId)
+                {
+                    case "organization-destination-default":
+                        if (string.IsNullOrWhiteSpace(
+                                _organizationInvestigation.Options.DestinationRoot))
+                        {
+                            throw new InvalidOperationException(
+                                "The Ebook organization destination has not been proposed.");
+                        }
+
+                        _organizationDestinationConfirmed = true;
+                        return;
+
+                    case "organization-destination-browse":
+                        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+
+                        OrganizationOptions currentDestinationOptions =
+                            _organizationInvestigation.Options;
+
+                        _organizationInvestigation.ConfigureOptions(
+                            new OrganizationOptions
+                            {
+                                FolderLevels =
+                                    new List<OrganizationDimension>(
+                                        currentDestinationOptions.FolderLevels),
+
+                                FileOrderBy =
+                                    currentDestinationOptions.FileOrderBy,
+
+                                FileOrderDirection =
+                                    currentDestinationOptions.FileOrderDirection,
+
+                                DestinationRoot =
+                                    Path.GetFullPath(value)
+                            });
+
+                        _organizationDestinationConfirmed = true;
+                        return;
+
+                    default:
+                        throw new ArgumentException(
+                            $"Unknown ebook organization destination option '{optionId}'.",
+                            nameof(optionId));
+                }
+            }
+
+            //---------------------------------------------------------
+            // Stage 2: organization path selection
+            //---------------------------------------------------------
 
             OrganizationPathOption? selectedPath =
                 _organizationPathOptions.FirstOrDefault(
@@ -267,6 +385,8 @@ namespace SmartRenamer.Observations
                     FileOrderDirection =
                         selectedPath.FileOrderDirection,
 
+                    // The destination was confirmed in the previous
+                    // collection-level decision and must survive unchanged.
                     DestinationRoot =
                         currentOptions.DestinationRoot
                 };
@@ -278,6 +398,15 @@ namespace SmartRenamer.Observations
 
         private IReadOnlyList<FileContext> _ebookFiles =
             Array.Empty<FileContext>();
+
+        /// <summary>
+        /// The selected source folder for the current Ebook expedition.
+        ///
+        /// This is retained because the source folder establishes the
+        /// default Organization destination. It is never replaced by a
+        /// temporary Repair workspace path.
+        /// </summary>
+        private string _sourceFolderPath = string.Empty;
 
         //---------------------------------------------------------
         // Investigations
@@ -349,6 +478,89 @@ namespace SmartRenamer.Observations
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
             ArgumentNullException.ThrowIfNull(files);
+
+            //---------------------------------------------------------
+            // Retain the selected source folder.
+            //
+            // Organization's default destination is derived from this
+            // collection-level source location. We deliberately do not
+            // derive it from an individual FileContext.CurrentFullPath
+            // because a repaired ebook may later point into the temporary
+            // Repair workspace.
+            //---------------------------------------------------------
+
+            string normalizedSourceFolder =
+                Path.GetFullPath(sourceFolderPath);
+
+            bool newEbookExpedition =
+                !string.Equals(
+                    _sourceFolderPath,
+                    normalizedSourceFolder,
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (newEbookExpedition)
+            {
+                _organizationDestinationConfirmed = false;
+                _organizationPathOptions =
+                    Array.Empty<OrganizationPathOption>();
+            }
+
+            _sourceFolderPath =
+                normalizedSourceFolder;
+
+            //---------------------------------------------------------
+            // Establish the Organization default destination.
+            //
+            // Example:
+            //
+            //     E:\Books\Ebook
+            //
+            // becomes:
+            //
+            //     E:\Books\Ebook_Organized
+            //
+            // This is the proposed collection destination. The user must
+            // still be given the opportunity to accept it or override it
+            // through the generic conversation path before organization
+            // is considered confirmed.
+            //---------------------------------------------------------
+
+            OrganizationOptions currentOrganizationOptions =
+                _organizationInvestigation.Options;
+
+            if (newEbookExpedition ||
+                string.IsNullOrWhiteSpace(
+                    currentOrganizationOptions.DestinationRoot))
+            {
+                string sourceFolderName =
+                    new DirectoryInfo(_sourceFolderPath).Name;
+
+                string parentFolder =
+                    Directory.GetParent(_sourceFolderPath)?.FullName
+                    ?? _sourceFolderPath;
+
+                string defaultDestination =
+                    Path.Combine(
+                        parentFolder,
+                        sourceFolderName + "_Organized");
+
+                _organizationInvestigation.ConfigureOptions(
+                    new OrganizationOptions
+                    {
+                        FolderLevels =
+                            new List<OrganizationDimension>(
+                                currentOrganizationOptions.FolderLevels),
+
+                        FileOrderBy =
+                            currentOrganizationOptions.FileOrderBy,
+
+                        FileOrderDirection =
+                            currentOrganizationOptions.FileOrderDirection,
+
+                        DestinationRoot =
+                            defaultDestination
+                    });
+            }
 
             //---------------------------------------------------------
             // Ebook discovery

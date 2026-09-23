@@ -243,12 +243,31 @@ namespace SmartRenamer.Services
             string expertName,
             string optionId)
         {
+            ApplyDecisionChoice(
+                expertName,
+                optionId,
+                null);
+        }
+
+        /// <summary>
+        /// Transports a generic decision choice and an optional user-supplied
+        /// value through the workflow to the owning Observation Expert.
+        ///
+        /// ProjectWorkflow does not interpret either value. It remains only
+        /// the generic transport boundary between Guide and ObservationEngine.
+        /// </summary>
+        public void ApplyDecisionChoice(
+            string expertName,
+            string optionId,
+            string? value)
+        {
             ArgumentException.ThrowIfNullOrWhiteSpace(expertName);
             ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
 
             observationEngine.ApplyDecisionChoice(
                 expertName,
-                optionId);
+                optionId,
+                value);
         }
         //---------------------------------------------------------
         // Existing Project Workflow

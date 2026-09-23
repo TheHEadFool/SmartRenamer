@@ -305,6 +305,24 @@ namespace SmartRenamer.Observations
             string expertName,
             string optionId)
         {
+            ApplyDecisionChoice(
+                expertName,
+                optionId,
+                null);
+        }
+
+        /// <summary>
+        /// Applies a generic decision choice and, when required, transports
+        /// an additional user-supplied value to the owning Expert.
+        ///
+        /// The ObservationEngine remains deliberately domain-neutral. It only
+        /// routes the opaque value through the existing Expert boundary.
+        /// </summary>
+        public void ApplyDecisionChoice(
+            string expertName,
+            string optionId,
+            string? value)
+        {
             ArgumentException.ThrowIfNullOrWhiteSpace(expertName);
             ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
 
@@ -315,7 +333,9 @@ namespace SmartRenamer.Observations
                         expertName,
                         StringComparison.OrdinalIgnoreCase))
                 {
-                    expert.ApplyDecisionChoice(optionId);
+                    expert.ApplyDecisionChoice(
+                        optionId,
+                        value);
                     return;
                 }
             }

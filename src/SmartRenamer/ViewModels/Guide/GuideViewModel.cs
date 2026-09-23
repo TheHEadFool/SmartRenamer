@@ -11,6 +11,7 @@ using SmartRenamer.Services;
 using SmartRenamer.ViewModels.Workspace;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -135,6 +136,22 @@ namespace SmartRenamer.ViewModels.Guide
         private int pendingDiscoveryIndex;
 
         private bool awaitingDiscoveryChoice;
+
+        // ---------------------------------------------------------
+        // Generic Expert Decision State
+        // ---------------------------------------------------------
+        //
+        // Decisions are separate from discovery. The Guide only transports
+        // the request and the user's response; the owning Expert interprets
+        // the option and any optional value.
+        // ---------------------------------------------------------
+
+        private readonly List<ExpertDecisionBinding> pendingDecisionBindings =
+            new();
+
+        private int pendingDecisionIndex;
+
+        private bool awaitingDecisionChoice;
 
         //---------------------------------------------------------
         // User Input
@@ -276,6 +293,17 @@ namespace SmartRenamer.ViewModels.Guide
 
                 Conversation.AddGuideMessage(
                     "Please choose one of the discovery options shown above, or type its exact label.");
+
+                return;
+            }
+
+            if (awaitingDecisionChoice)
+            {
+                if (TryApplyTypedDecisionChoice(answer))
+                    return;
+
+                Conversation.AddGuideMessage(
+                    "Please choose one of the options shown above, or type its exact label.");
 
                 return;
             }
@@ -580,6 +608,16 @@ namespace SmartRenamer.ViewModels.Guide
             if (action == null)
                 return;
 
+            // The existing inline-action UI is generic. During a decision
+            // sequence the same clickable transport carries an Expert decision
+            // rather than a discovery choice.
+            if (awaitingDecisionChoice)
+            {
+                ApplyDecisionChoice(
+                    action.ActionId);
+                return;
+            }
+
             ApplyDiscoveryChoice(
                 action.ActionId);
         }
@@ -664,6 +702,252 @@ namespace SmartRenamer.ViewModels.Guide
                 return false;
 
             ApplyDiscoveryChoice(option.Id);
+            return true;
+        }
+
+        /// <summary>
+        /// Applies a generic Expert decision selected from the conversation.
+        ///
+        /// If the selected option requests a generic folder input, the Guide
+        /// uses the existing folder picker and transports the selected path
+        /// back through GuideInvestigator. The Guide never interprets the path
+        /// as an Ebook destination; that meaning remains inside the Expert.
+        /// </summary>
+        private void ApplyDecisionChoice(
+            string optionId)
+        {
+            if (!awaitingDecisionChoice)
+                return;
+
+            if (pendingDecisionIndex < 0 ||
+                pendingDecisionIndex >= pendingDecisionBindings.Count)
+            {
+                awaitingDecisionChoice = false;
+                return;
+            }
+
+            ExpertDecisionBinding binding =
+                pendingDecisionBindings[pendingDecisionIndex];
+
+            ExpertDecisionOption? option =
+                binding.Request.Options.FirstOrDefault(
+                    candidate =>
+                        string.Equals(
+                            candidate.Id,
+                            optionId,
+                            StringComparison.OrdinalIgnoreCase));
+
+            if (option == null)
+                return;
+
+            string? value = null;
+
+            if (option.InputKind == ExpertDecisionInputKind.Folder)
+            {
+                value = guideInvestigator.PickFolder();
+
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    Conversation.AddGuideMessage(
+                        "No destination was selected. The proposed destination is still waiting for your confirmation.");
+                    return;
+                }
+            }
+
+            guideInvestigator.ApplyDecisionChoice(
+                binding.Expert.Name,
+                option.Id,
+                value);
+
+            Conversation.AddUserMessage(
+                option.InputKind == ExpertDecisionInputKind.Folder
+                    ? value!
+                    : option.Label);
+
+            AdvanceDecisionSequence();
+        }
+
+        /// <summary>
+        /// Accepts a typed decision answer. Matching is deliberately limited
+        /// to the options supplied by the current Expert. For folder-input
+        /// options, a typed path is also accepted when it names an existing
+        /// directory.
+        /// </summary>
+        private bool TryApplyTypedDecisionChoice(
+            string answer)
+        {
+            if (!awaitingDecisionChoice ||
+                pendingDecisionIndex < 0 ||
+                pendingDecisionIndex >= pendingDecisionBindings.Count)
+            {
+                return false;
+            }
+
+            ExpertDecisionBinding binding =
+                pendingDecisionBindings[pendingDecisionIndex];
+
+            ExpertDecisionOption? option =
+                binding.Request.Options.FirstOrDefault(
+                    candidate =>
+                        string.Equals(
+                            candidate.Id,
+                            answer,
+                            StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(
+                            candidate.Label,
+                            answer,
+                            StringComparison.OrdinalIgnoreCase));
+
+            if (option != null)
+            {
+                if (option.InputKind == ExpertDecisionInputKind.Folder)
+                {
+                    string? folder =
+                        guideInvestigator.PickFolder();
+
+                    if (string.IsNullOrWhiteSpace(folder))
+                        return true;
+
+                    guideInvestigator.ApplyDecisionChoice(
+                        binding.Expert.Name,
+                        option.Id,
+                        folder);
+
+                    Conversation.AddUserMessage(folder);
+                }
+                else
+                {
+                    guideInvestigator.ApplyDecisionChoice(
+                        binding.Expert.Name,
+                        option.Id);
+
+                    Conversation.AddUserMessage(option.Label);
+                }
+
+                AdvanceDecisionSequence();
+                return true;
+            }
+
+            // A folder path can be supplied directly when the current Expert
+            // decision asks for a folder. This remains generic transport; the
+            // owning Expert decides whether that value is valid for its domain.
+            ExpertDecisionOption? folderOption =
+                binding.Request.Options.FirstOrDefault(
+                    candidate =>
+                        candidate.InputKind == ExpertDecisionInputKind.Folder);
+
+            if (folderOption != null &&
+                Directory.Exists(answer))
+            {
+                guideInvestigator.ApplyDecisionChoice(
+                    binding.Expert.Name,
+                    folderOption.Id,
+                    Path.GetFullPath(answer));
+
+                Conversation.AddUserMessage(
+                    Path.GetFullPath(answer));
+
+                AdvanceDecisionSequence();
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Presents the current generic Expert decision without interpreting
+        /// the question or its options.
+        /// </summary>
+        private void PresentDecisionQuestion()
+        {
+            if (pendingDecisionIndex < 0 ||
+                pendingDecisionIndex >= pendingDecisionBindings.Count)
+            {
+                awaitingDecisionChoice = false;
+                return;
+            }
+
+            ExpertDecisionBinding binding =
+                pendingDecisionBindings[pendingDecisionIndex];
+
+            Conversation.AddGuideMessage(
+                binding.Request.Question);
+
+            foreach (ExpertDecisionOption option
+                in binding.Request.Options)
+            {
+                Conversation.Messages.Add(
+                    new GuideMessage
+                    {
+                        Speaker = GuideSpeaker.Guide,
+                        DisplayName = "Scout",
+                        Text = option.Label,
+                        Payload = new GuideInlineAction(
+                            option.Label,
+                            option.Id)
+                    });
+            }
+        }
+
+        /// <summary>
+        /// Advances to the next Expert decision or, when all decisions are
+        /// complete, returns control to the normal recommendation conversation.
+        /// </summary>
+        private void AdvanceDecisionSequence()
+        {
+            pendingDecisionIndex++;
+
+            if (pendingDecisionIndex < pendingDecisionBindings.Count)
+            {
+                PresentDecisionQuestion();
+                return;
+            }
+
+            // The owning Expert may expose a new decision after applying the
+            // previous one. Refresh the bindings before leaving the decision
+            // sequence so a destination confirmation can naturally lead into
+            // the organization-path decision.
+            pendingDecisionBindings.Clear();
+            pendingDecisionBindings.AddRange(
+                guideInvestigator.DecisionBindings
+                    .Where(binding =>
+                        binding.Request.Options.Count > 0));
+
+            if (pendingDecisionBindings.Count > 0)
+            {
+                pendingDecisionIndex = 0;
+                PresentDecisionQuestion();
+                return;
+            }
+
+            awaitingDecisionChoice = false;
+            pendingDecisionIndex = 0;
+            ContinueInvestigationConversation();
+        }
+
+        /// <summary>
+        /// Starts the current generic Expert decision sequence.
+        /// Returns true when a decision was presented and the normal
+        /// recommendation conversation must wait.
+        /// </summary>
+        private bool BeginDecisionSequence()
+        {
+            pendingDecisionBindings.Clear();
+            pendingDecisionBindings.AddRange(
+                guideInvestigator.DecisionBindings
+                    .Where(binding =>
+                        binding.Request.Options.Count > 0));
+
+            pendingDecisionIndex = 0;
+
+            if (pendingDecisionBindings.Count == 0)
+            {
+                awaitingDecisionChoice = false;
+                return false;
+            }
+
+            awaitingDecisionChoice = true;
+            PresentDecisionQuestion();
             return true;
         }
 
@@ -821,29 +1105,33 @@ namespace SmartRenamer.ViewModels.Guide
                     : "I prepared a safe preview, and nothing has been changed.");
 
             // -------------------------------------------------------------
-            // Establish the Workspace Conversation Engine as the
-            // authoritative owner of the investigation conversation.
-            //
-            // ProjectWorkflow has already translated the Expert findings
-            // into these recommendations. Loading them here ensures the
-            // engine used by Guide is working with the same result that
-            // was just investigated.
+            // Collection-level Expert decisions must be completed before the
+            // normal recommendation conversation begins. Organization uses
+            // this stage to confirm the destination and then choose its path.
             // -------------------------------------------------------------
+
+            if (BeginDecisionSequence())
+                return;
+
+            ContinueInvestigationConversation();
+        }
+
+        /// <summary>
+        /// Loads the investigation recommendations into the Workspace's
+        /// authoritative Conversation Engine and begins the normal
+        /// recommendation conversation. This is reached only after any
+        /// collection-level Expert decisions have been completed.
+        /// </summary>
+        private void ContinueInvestigationConversation()
+        {
+            if (currentWorkflow == null)
+                return;
 
             workspace.ConversationEngine.LoadRecommendations(
-                result.ObservationRecommendations);
-
-            // -------------------------------------------------------------
-            // Start the conversation with the first recommendation.
-            //
-            // DiscussRecommendation creates the actual conversation
-            // message. Guide is already subscribed to the Workspace
-            // ConversationMessageGenerated event, so the message is
-            // presented through the normal conversation path.
-            // -------------------------------------------------------------
+                currentWorkflow.ObservationRecommendations);
 
             CV_Recommendation? firstRecommendation =
-                result.ObservationRecommendations
+                currentWorkflow.ObservationRecommendations
                     .FirstOrDefault();
 
             if (firstRecommendation != null)

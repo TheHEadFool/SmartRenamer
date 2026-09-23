@@ -152,6 +152,21 @@ namespace SmartRenamer.Observations
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
         }
+
+        /// <summary>
+        /// Applies a generic decision choice that may carry an additional
+        /// user-supplied value.
+        ///
+        /// The value is intentionally opaque to Scout infrastructure. An
+        /// Expert that does not require a value can continue using the
+        /// original option-only overload.
+        /// </summary>
+        public virtual void ApplyDecisionChoice(
+            string optionId,
+            string? value)
+        {
+            ApplyDecisionChoice(optionId);
+        }
         //---------------------------------------------------------
         // Identity
         //---------------------------------------------------------

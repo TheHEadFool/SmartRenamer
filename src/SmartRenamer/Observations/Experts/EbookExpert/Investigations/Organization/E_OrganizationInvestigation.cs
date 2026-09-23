@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Experts.EbookExpert.Data;
+using Scout.Observations.Experts.EbookExpert.Data;
 using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
@@ -287,6 +287,23 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                     "No organization job is available.");
             }
 
+            // -----------------------------------------------------------------
+            // Organization plans the entire collection, including books that
+            // are not ready yet. Readiness is an execution concern, not a
+            // planning concern. Repair owns the readiness signal and hands it
+            // downstream through E_RepairHandoff.
+            //
+            // Pending is deliberately distinct from Failed: a pending book is
+            // valid work that simply cannot execute yet. This allows a future
+            // collection-level Organize All commitment to revisit it after the
+            // repair/user-decision state changes.
+            // -----------------------------------------------------------------
+            if (!IsRepairCompleted(entry.OriginalPath))
+            {
+                return OrganizationCopyResult.Pending(
+                    "This ebook is not ready for organization yet.");
+            }
+
             OrganizationJobExecutor executor = new();
 
             OrganizationCopyResult result =
@@ -302,6 +319,33 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Determines whether Repair has handed Organization a completed
+        /// working representation for the planned ebook.
+        ///
+        /// Organization does not inspect Repair internals or infer readiness
+        /// from the presence of a file. Repair is the owner of that decision.
+        /// </summary>
+        private bool IsRepairCompleted(string originalPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalPath))
+                return false;
+
+            foreach (E_RepairHandoff handoff in RepairHandoffs)
+            {
+                if (string.Equals(
+                        handoff.OriginalPath,
+                        originalPath,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return handoff.Status ==
+                           E_RepairHandoffStatus.RepairCompleted;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

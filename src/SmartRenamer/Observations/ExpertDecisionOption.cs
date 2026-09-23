@@ -12,13 +12,15 @@ namespace SmartRenamer.Observations
     {
         public ExpertDecisionOption(
             string id,
-            string label)
+            string label,
+            ExpertDecisionInputKind inputKind = ExpertDecisionInputKind.None)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(id);
             ArgumentException.ThrowIfNullOrWhiteSpace(label);
 
             Id = id;
             Label = label;
+            InputKind = inputKind;
         }
 
         /// <summary>
@@ -30,5 +32,12 @@ namespace SmartRenamer.Observations
         /// Human-readable text presented to the user.
         /// </summary>
         public string Label { get; }
+
+        /// <summary>
+        /// Describes the generic input, if any, required to complete this
+        /// decision option. The owning Expert determines what the resulting
+        /// value means.
+        /// </summary>
+        public ExpertDecisionInputKind InputKind { get; }
     }
 }

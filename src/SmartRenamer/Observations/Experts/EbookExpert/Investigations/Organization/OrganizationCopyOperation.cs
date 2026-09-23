@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
+using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using System;
 using System.IO;
 using System.IO.Compression;
@@ -153,26 +153,43 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
     {
         private OrganizationCopyResult(
             bool succeeded,
+            bool isPending,
             string? destinationPath,
-            string? error)
+            string? error,
+            string? pendingReason)
         {
             Succeeded = succeeded;
+            IsPending = isPending;
             DestinationPath = destinationPath;
             Error = error;
+            PendingReason = pendingReason;
         }
 
         public bool Succeeded { get; }
+
+        /// <summary>
+        /// Indicates that the planned work is valid but cannot execute yet.
+        /// Pending is not a failure and should not be treated as one by
+        /// collection-level orchestration.
+        /// </summary>
+        public bool IsPending { get; }
 
         public string? DestinationPath { get; }
 
         public string? Error { get; }
 
+        public string? PendingReason { get; }
+
         public static OrganizationCopyResult Success(
             string destinationPath) =>
-            new(true, destinationPath, null);
+            new(true, false, destinationPath, null, null);
+
+        public static OrganizationCopyResult Pending(
+            string reason) =>
+            new(false, true, null, null, reason);
 
         public static OrganizationCopyResult Failed(
             string error) =>
-            new(false, null, error);
+            new(false, false, null, error, null);
     }
 }

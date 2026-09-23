@@ -1,7 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using Scout.Observations.Conversation;
+﻿using Scout.Observations.Conversation;
+using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Action;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
@@ -10,6 +8,9 @@ using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Observations.Experts.EbookExpert.Translators;
 using SmartRenamer.Observations.Specialists;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace SmartRenamer.Observations
 {
@@ -80,7 +81,7 @@ namespace SmartRenamer.Observations
         : ObservationExpert
     {
         /// <summary>
-        /// Initializes the Ebook Expert's domain services.
+        /// Initializes Ebook Expert's domain services.
         ///
         /// Repair workspace cleanup belongs to Ebook Expert because the
         /// temporary workspace is an Ebook Expert implementation detail.
@@ -142,7 +143,6 @@ namespace SmartRenamer.Observations
         // Ebook expedition.
         //
         // 2A establishes the domain setting.
-        //
         // 2B will connect the user's conversation choice to this setting.
         //
         // The current default is true so existing behavior is preserved.
@@ -170,6 +170,110 @@ namespace SmartRenamer.Observations
                         $"Unknown ebook discovery option '{optionId}'.",
                         nameof(optionId));
             }
+        }
+
+        //---------------------------------------------------------
+        // Organization Decision Capability
+        //---------------------------------------------------------
+        //
+        // Organization is a collection-level configuration decision.
+        //
+        // It is deliberately separate from the Action framework used
+        // for operational actions such as ISBN research.
+        //
+        // The OrganizationPathBuilder derives viable paths from the
+        // current OrganizationReport. The generic Scout decision
+        // infrastructure transports those choices to the user.
+        //
+        //---------------------------------------------------------
+
+        private readonly OrganizationPathBuilder _organizationPathBuilder =
+            new();
+
+        private IReadOnlyList<OrganizationPathOption> _organizationPathOptions =
+            Array.Empty<OrganizationPathOption>();
+
+        /// <summary>
+        /// Exposes the currently viable organization paths through the
+        /// generic Expert decision mechanism.
+        ///
+        /// This remains null until organization investigation has produced
+        /// a report and viable paths have been derived from that report.
+        /// </summary>
+        public override ExpertDecisionRequest? DecisionRequest
+        {
+            get
+            {
+                if (_organizationPathOptions.Count == 0)
+                    return null;
+
+                return new ExpertDecisionRequest
+                {
+                    Question =
+                        "How would you like Scout to organize this ebook collection?",
+                    Options =
+                        _organizationPathOptions
+                            .Select(path =>
+                                new ExpertDecisionOption(
+                                    path.Id,
+                                    path.Label))
+                            .ToArray()
+                };
+            }
+        }
+
+        /// <summary>
+        /// Applies a collection-level organization path selected by the user.
+        ///
+        /// The selected path becomes OrganizationOptions configuration.
+        /// No filesystem work occurs here.
+        ///
+        /// DestinationRoot is deliberately preserved from the existing
+        /// organization configuration. Selecting a path does not silently
+        /// replace the user's destination.
+        /// </summary>
+        public override void ApplyDecisionChoice(string optionId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
+
+            OrganizationPathOption? selectedPath =
+                _organizationPathOptions.FirstOrDefault(
+                    path =>
+                        string.Equals(
+                            path.Id,
+                            optionId,
+                            StringComparison.OrdinalIgnoreCase));
+
+            if (selectedPath == null)
+            {
+                throw new ArgumentException(
+                    $"Unknown ebook organization option '{optionId}'.",
+                    nameof(optionId));
+            }
+
+            OrganizationOptions currentOptions =
+                _organizationInvestigation.Options;
+
+            OrganizationOptions options =
+                new()
+                {
+                    FolderLevels =
+                        new List<OrganizationDimension>(
+                            selectedPath.FolderLevels),
+
+                    FileOrderBy =
+                        selectedPath.FileOrderBy,
+
+                    FileOrderDirection =
+                        selectedPath.FileOrderDirection,
+
+                    DestinationRoot =
+                        currentOptions.DestinationRoot
+                };
+
+            _organizationInvestigation.ConfigureOptions(options);
+
+            ExecuteOrganizationAll();
         }
 
         private IReadOnlyList<FileContext> _ebookFiles =
@@ -205,13 +309,13 @@ namespace SmartRenamer.Observations
         // The dispatcher does not perform the investigation itself.
         // It uses the existing investigations and domain services owned
         // by this Expert.
+        //
         //---------------------------------------------------------
 
         private readonly E_ActionDispatcher _actionDispatcher = new();
 
-
         private static readonly IReadOnlyList<ObservationSpecialist> _specialists =
-    Array.Empty<ObservationSpecialist>();
+            Array.Empty<ObservationSpecialist>();
 
         public override IReadOnlyList<ObservationSpecialist> Specialists =>
             _specialists;
@@ -271,9 +375,9 @@ namespace SmartRenamer.Observations
                     continue;
 
                 if (!string.Equals(
-        file.Extension,
-        ".epub",
-        StringComparison.OrdinalIgnoreCase))
+                        file.Extension,
+                        ".epub",
+                        StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -355,6 +459,28 @@ namespace SmartRenamer.Observations
                 _organizationInvestigation.Investigate(
                     metadataReport));
 
+            //---------------------------------------------------------
+            // Derive the organization choices from the fresh report.
+            //
+            // This is deliberately after investigation and before any
+            // user decision is exposed.
+            //---------------------------------------------------------
+
+            OrganizationReport? organizationReport =
+                _organizationInvestigation.Report;
+
+            if (organizationReport != null)
+            {
+                _organizationPathOptions =
+                    _organizationPathBuilder.Build(
+                        organizationReport);
+            }
+            else
+            {
+                _organizationPathOptions =
+                    Array.Empty<OrganizationPathOption>();
+            }
+
             findings.AddRange(
                 _duplicateInvestigation.Investigate(
                     _ebookFiles));
@@ -434,6 +560,28 @@ namespace SmartRenamer.Observations
             ArgumentNullException.ThrowIfNull(entry);
 
             return _organizationInvestigation.ExecuteOne(entry);
+        }
+
+        /// <summary>
+        /// Executes all currently planned organization entries that have not
+        /// already completed successfully during this Ebook expedition.
+        ///
+        /// The collection-level organization primitive remains inside the
+        /// Ebook Expert. Generic Scout infrastructure does not need to know
+        /// how an ebook collection is organized.
+        ///
+        /// This does not create concurrency, manage a background queue, or
+        /// release working representations.
+        ///
+        /// The long-lived Ebook Expert can be invoked again after additional
+        /// repair or user-decision work has completed. The organization
+        /// investigation retains successful execution history and therefore
+        /// does not repeat entries that were already organized successfully
+        /// during the expedition.
+        /// </summary>
+        internal IReadOnlyList<OrganizationCopyResult> ExecuteOrganizationAll()
+        {
+            return _organizationInvestigation.ExecuteAll();
         }
 
         /// <summary>

@@ -212,7 +212,44 @@ namespace SmartRenamer.Services
                 expertName,
                 optionId);
         }
+        //---------------------------------------------------------
+        // Expert Decisions
+        //---------------------------------------------------------
 
+        /// <summary>
+        /// Returns the generic decision requests currently supplied by
+        /// the registered Observation Experts.
+        ///
+        /// ProjectWorkflow transports the requests without interpreting
+        /// their domain meaning.
+        /// </summary>
+        public IReadOnlyList<ExpertDecisionRequest> DecisionRequests =>
+            observationEngine.DecisionRequests;
+
+        /// <summary>
+        /// Returns bindings between generic decision requests and the
+        /// Experts that own them.
+        /// </summary>
+        public IReadOnlyList<ExpertDecisionBinding> DecisionBindings =>
+            observationEngine.DecisionBindings;
+
+        /// <summary>
+        /// Applies a user-selected decision to the Expert that owns it.
+        ///
+        /// ProjectWorkflow transports the choice. The domain Expert owns
+        /// its meaning.
+        /// </summary>
+        public void ApplyDecisionChoice(
+            string expertName,
+            string optionId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expertName);
+            ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
+
+            observationEngine.ApplyDecisionChoice(
+                expertName,
+                optionId);
+        }
         //---------------------------------------------------------
         // Existing Project Workflow
         //---------------------------------------------------------

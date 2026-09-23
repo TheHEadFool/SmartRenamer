@@ -232,7 +232,98 @@ namespace SmartRenamer.Observations
                 $"No registered Expert named '{expertName}' was found.",
                 nameof(expertName));
         }
+        //---------------------------------------------------------
+        // Expert Decisions
+        //---------------------------------------------------------
 
+        /// <summary>
+        /// Returns the decision requests currently supplied by registered
+        /// Observation Experts.
+        ///
+        /// The ObservationEngine does not interpret the requests.
+        /// The owning Expert determines their meaning.
+        /// </summary>
+        public IReadOnlyList<ExpertDecisionRequest> DecisionRequests
+        {
+            get
+            {
+                List<ExpertDecisionRequest> requests = new();
+
+                foreach (ObservationExpert expert in _experts)
+                {
+                    ExpertDecisionRequest? request =
+                        expert.DecisionRequest;
+
+                    if (request != null)
+                        requests.Add(request);
+                }
+
+                return requests;
+            }
+        }
+
+        /// <summary>
+        /// Returns bindings between decision requests and the Experts
+        /// that own them.
+        ///
+        /// The binding allows the generic conversation infrastructure to
+        /// route a user's choice back to the correct Expert.
+        /// </summary>
+        public IReadOnlyList<ExpertDecisionBinding> DecisionBindings
+        {
+            get
+            {
+                List<ExpertDecisionBinding> bindings = new();
+
+                foreach (ObservationExpert expert in _experts)
+                {
+                    ExpertDecisionRequest? request =
+                        expert.DecisionRequest;
+
+                    if (request != null)
+                    {
+                        bindings.Add(
+                            new ExpertDecisionBinding(
+                                expert,
+                                request));
+                    }
+                }
+
+                return bindings;
+            }
+        }
+
+        /// <summary>
+        /// Applies a generic decision choice to the registered Expert
+        /// identified by its name.
+        ///
+        /// The ObservationEngine does not interpret the option.
+        /// The selected Expert receives the opaque option ID and determines
+        /// what it means.
+        /// </summary>
+        public void ApplyDecisionChoice(
+            string expertName,
+            string optionId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expertName);
+            ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
+
+            foreach (ObservationExpert expert in _experts)
+            {
+                if (string.Equals(
+                        expert.Name,
+                        expertName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    expert.ApplyDecisionChoice(optionId);
+                    return;
+                }
+            }
+
+            throw new ArgumentException(
+                $"No registered Expert named '{expertName}' was found.",
+                nameof(expertName));
+        }
         //---------------------------------------------------------
         // Most Recent Findings
         //---------------------------------------------------------

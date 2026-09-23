@@ -1,12 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Scout.Observations.Experts.EbookExpert.Data;
+using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Models;
-using Scout.Observations.Experts.EbookExpert.Data;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization;
-using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
+using System;
+using System.Collections.Generic;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
@@ -102,6 +102,27 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         /// </summary>
         internal IReadOnlyList<E_RepairHandoff> RepairHandoffs { get; private set; } =
             Array.Empty<E_RepairHandoff>();
+
+        /// <summary>
+        /// Successful organization results retained for the lifetime of the
+        /// current Ebook expedition. The key is the immutable OriginalPath.
+        ///
+        /// This is execution history, not organization planning state.
+        /// </summary>
+        private readonly Dictionary<string, string> _organizedDestinations =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Indicates whether this expedition has already successfully
+        /// organized the ebook identified by OriginalPath.
+        /// </summary>
+        internal bool IsOrganized(string originalPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalPath))
+                return false;
+
+            return _organizedDestinations.ContainsKey(originalPath);
+        }
 
         /// <summary>
         /// Supplies the collection-level organization choices that will be
@@ -241,8 +262,22 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                 Options,
                 Context.Books);
         }
+
+        /// <summary>
+        /// Executes one already-planned organization entry through the
+        /// current collection-level organization job.
+        ///
+        /// Successful execution is retained as expedition execution history.
+        ///
+        /// This method does not:
+        /// • create a queue
+        /// • create multiple operations
+        /// • release the working representation
+        /// • alter the original EPUB
+        /// • manage concurrency
+        /// </summary>
         internal OrganizationCopyResult ExecuteOne(
-    OrganizationPlanEntry entry)
+            OrganizationPlanEntry entry)
         {
             ArgumentNullException.ThrowIfNull(entry);
 
@@ -254,10 +289,64 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
             OrganizationJobExecutor executor = new();
 
-            return executor.Execute(
-                Job,
-                entry);
+            OrganizationCopyResult result =
+                executor.Execute(
+                    Job,
+                    entry);
+
+            if (result.Succeeded &&
+                !string.IsNullOrWhiteSpace(result.DestinationPath))
+            {
+                _organizedDestinations[entry.OriginalPath] =
+                    result.DestinationPath;
+            }
+
+            return result;
         }
+
+        /// <summary>
+        /// Executes every currently planned organization entry that has not
+        /// already completed successfully during this expedition.
+        ///
+        /// This is the collection execution primitive for Organization.
+        ///
+        /// It deliberately remains sequential for now. The purpose of this
+        /// method is to establish collection-level execution above ExecuteOne()
+        /// without introducing concurrency or UI orchestration prematurely.
+        ///
+        /// Entries that have already succeeded are skipped using the
+        /// expedition execution ledger rather than plan state.
+        /// </summary>
+        internal IReadOnlyList<OrganizationCopyResult> ExecuteAll()
+        {
+            List<OrganizationCopyResult> results = new();
+
+            if (Job == null)
+            {
+                results.Add(
+                    OrganizationCopyResult.Failed(
+                        "No organization job is available."));
+
+                return results;
+            }
+
+            foreach (OrganizationPlanEntry entry in Plan.Entries)
+            {
+                if (entry == null)
+                    continue;
+
+                if (IsOrganized(entry.OriginalPath))
+                    continue;
+
+                OrganizationCopyResult result =
+                    ExecuteOne(entry);
+
+                results.Add(result);
+            }
+
+            return results;
+        }
+
         public List<ExpertFinding> Investigate(
             MetadataReport metadataReport)
 

@@ -62,6 +62,48 @@ namespace SmartRenamer.Guide
                 optionId);
         }
 
+        //---------------------------------------------------------
+        // Generic Expert Decisions
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Exposes the generic decision requests currently supplied by
+        /// the Observation Experts through the workflow boundary.
+        ///
+        /// Decisions occur after investigation and are distinct from
+        /// discovery choices. The Guide does not interpret their meaning.
+        /// It only exposes the generic decision contract to the
+        /// conversation layer.
+        /// </summary>
+        public IReadOnlyList<ExpertDecisionRequest> DecisionRequests =>
+            workflow.DecisionRequests;
+
+        /// <summary>
+        /// Exposes bindings between generic decision requests and the
+        /// Experts that own them.
+        ///
+        /// The Guide does not interpret the requests or their options.
+        /// The owning Expert remains responsible for their meaning.
+        /// </summary>
+        public IReadOnlyList<ExpertDecisionBinding> DecisionBindings =>
+            workflow.DecisionBindings;
+
+        /// <summary>
+        /// Applies a user-selected decision through the generic workflow
+        /// boundary.
+        ///
+        /// The Guide does not know what the option means. The owning
+        /// Observation Expert interprets the opaque option identifier.
+        /// </summary>
+        public void ApplyDecisionChoice(
+            string expertName,
+            string optionId)
+        {
+            workflow.ApplyDecisionChoice(
+                expertName,
+                optionId);
+        }
+
         /// <summary>
         /// Lets the user select a folder without beginning investigation.
         ///

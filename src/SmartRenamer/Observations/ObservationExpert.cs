@@ -126,7 +126,32 @@ namespace SmartRenamer.Observations
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
         }
+        //---------------------------------------------------------
+        // Generic Expert Decisions
+        //---------------------------------------------------------
 
+        /// <summary>
+        /// Describes a user decision currently requested by this Expert.
+        ///
+        /// Decisions occur after investigation and are distinct from
+        /// discovery choices. The generic Observation Framework transports
+        /// the request but does not interpret its meaning.
+        ///
+        /// The owning Expert determines what the question and options mean.
+        /// </summary>
+        public virtual ExpertDecisionRequest? DecisionRequest =>
+            null;
+
+        /// <summary>
+        /// Applies a user-selected decision option to this Expert.
+        ///
+        /// The option identifier is opaque to the generic Observation
+        /// Framework. The owning Expert determines what the identifier means.
+        /// </summary>
+        public virtual void ApplyDecisionChoice(string optionId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(optionId);
+        }
         //---------------------------------------------------------
         // Identity
         //---------------------------------------------------------

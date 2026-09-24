@@ -44,7 +44,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
     /// </summary>
     public sealed class E_RepairInvestigation
     {
-        private RepairReport? _lastReport;
+        // Repair reports are retained per EPUB instead of in one shared "last" slot.
+        // OriginalFullPath is the stable branch identity, so reports for multiple
+        // active books can coexist without overwriting one another.
+        private readonly Dictionary<string, RepairReport> _reportsByOriginalPath =
+            new(StringComparer.OrdinalIgnoreCase);
 
         //---------------------------------------------------------
         // Collection-level repair report
@@ -102,7 +106,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             _repairHandoffs.Clear();
 
             _collectionReport = null;
-            _lastReport = null;
+            _reportsByOriginalPath.Clear();
 
             _repairExpedition.Begin(
                 sourceFolderPath,
@@ -116,7 +120,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         /// actions retain access to every applicable repair opportunity.
         ///
         /// The Repair Expedition then works one EPUB at a time and stores the
-        /// current EPUB's report separately in _lastReport.
+        /// each EPUB's report separately, keyed by OriginalFullPath.
         /// </summary>
         public List<ExpertFinding> Investigate(
             MetadataReport metadataReport)
@@ -128,7 +132,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             //---------------------------------------------------------
             // Preserve the collection-wide repair opportunities.
             //
-            // This report is intentionally separate from _lastReport.
+            // This report is intentionally separate from the per-EPUB reports.
             // Collection-level actions such as ISBN research need to
             // see all applicable EPUBs, not only the current expedition
             // EPUB.
@@ -172,7 +176,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
                 if (currentRecord == null)
                 {
-                    _lastReport = new RepairReport();
+                    _reportsByOriginalPath[currentFile.OriginalFullPath] =
+                        new RepairReport();
                     return findings;
                 }
 
@@ -186,12 +191,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                     block.Analyze(currentMetadataReport);
 
                 //-----------------------------------------------------
-                // Preserve the report for the current EPUB.
+                // Preserve the report for this EPUB.
                 //
-                // This remains separate from _collectionReport.
+                // The original path is the stable branch identity.
+                // This remains separate from _collectionReport and allows
+                // multiple EPUB reports to coexist.
                 //-----------------------------------------------------
 
-                _lastReport = report;
+                _reportsByOriginalPath[currentFile.OriginalFullPath] = report;
 
                 //-----------------------------------------------------
                 // A complete EPUB requires no repair conversation.
@@ -222,8 +229,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             // No EPUBs remain that require repair.
             //---------------------------------------------------------
 
-            _lastReport = new RepairReport();
-
             return findings;
         }
 
@@ -246,8 +251,25 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         /// expedition itself continues to operate one EPUB at a time.
         /// </summary>
         internal IReadOnlyList<RepairOpportunity> CurrentRepairOpportunities =>
-            _lastReport?.Opportunities
-            ?? new List<RepairOpportunity>();
+            CurrentFile == null
+                ? Array.Empty<RepairOpportunity>()
+                : GetRepairOpportunitiesFor(CurrentFile.OriginalFullPath);
+
+        /// <summary>
+        /// Returns the repair opportunities belonging to one EPUB branch.
+        /// </summary>
+        internal IReadOnlyList<RepairOpportunity> GetRepairOpportunitiesFor(
+            string originalFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalFullPath))
+                return Array.Empty<RepairOpportunity>();
+
+            return _reportsByOriginalPath.TryGetValue(
+                    originalFullPath,
+                    out RepairReport? report)
+                ? report.Opportunities
+                : Array.Empty<RepairOpportunity>();
+        }
 
         /// <summary>
         /// Semantic results produced by the repair stage.
@@ -260,7 +282,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         /// repair opportunities.
         /// </summary>
         public bool IsComplete =>
-            _lastReport?.IsComplete ?? false;
+            CurrentFile != null &&
+            IsCompleteFor(CurrentFile.OriginalFullPath);
 
         public FileContext? CurrentFile =>
             _repairExpedition.CurrentFile;
@@ -325,11 +348,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                     nameof(originalFullPath));
 
             RepairOpportunity? opportunity =
-                _lastReport?.Opportunities.FirstOrDefault(
-                    item => string.Equals(
-                        item.Record?.File?.OriginalFullPath,
-                        originalFullPath,
-                        StringComparison.OrdinalIgnoreCase));
+                GetRepairOpportunitiesFor(originalFullPath)
+                    .FirstOrDefault(
+                        item => string.Equals(
+                            item.Record?.File?.OriginalFullPath,
+                            originalFullPath,
+                            StringComparison.OrdinalIgnoreCase));
 
             // If the EPUB no longer appears in the repair opportunities,
             // the current investigation considers it complete.

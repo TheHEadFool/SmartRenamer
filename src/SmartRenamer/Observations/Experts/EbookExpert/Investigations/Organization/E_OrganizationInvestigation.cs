@@ -7,6 +7,9 @@ using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
@@ -121,7 +124,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             if (string.IsNullOrWhiteSpace(originalPath))
                 return false;
 
-            return _organizedDestinations.ContainsKey(originalPath);
+            lock (_organizedDestinations)
+            {
+                return _organizedDestinations.ContainsKey(originalPath);
+            }
         }
 
         /// <summary>
@@ -274,7 +280,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         /// • create multiple operations
         /// • release the working representation
         /// • alter the original EPUB
-        /// • manage concurrency
+        /// • decide collection-level concurrency policy
         /// </summary>
         internal OrganizationCopyResult ExecuteOne(
             OrganizationPlanEntry entry)
@@ -298,7 +304,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             // collection-level Organize All commitment to revisit it after the
             // repair/user-decision state changes.
             // -----------------------------------------------------------------
-            if (!IsRepairCompleted(entry.OriginalPath))
+            if (!IsOrganizationReady(entry.OriginalPath))
             {
                 return OrganizationCopyResult.Pending(
                     "This ebook is not ready for organization yet.");
@@ -314,35 +320,49 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             if (result.Succeeded &&
                 !string.IsNullOrWhiteSpace(result.DestinationPath))
             {
-                _organizedDestinations[entry.OriginalPath] =
-                    result.DestinationPath;
+                lock (_organizedDestinations)
+                {
+                    _organizedDestinations[entry.OriginalPath] =
+                        result.DestinationPath;
+                }
             }
 
             return result;
         }
 
         /// <summary>
-        /// Determines whether Repair has handed Organization a completed
-        /// working representation for the planned ebook.
+        /// Determines whether the planned ebook has reached a Repair outcome
+        /// that permits Organization to proceed.
         ///
-        /// Organization does not inspect Repair internals or infer readiness
-        /// from the presence of a file. Repair is the owner of that decision.
+        /// RepairCompleted means a repaired working representation was produced
+        /// or the ebook was otherwise completed by the Repair stage.
+        /// RepairDeferred means the user explicitly chose not to continue the
+        /// repair path, so Organization may use the current working
+        /// representation.
+        ///
+        /// Absence of a handoff remains Pending. That is important: a book
+        /// still awaiting a repair/user decision must not be copied merely
+        /// because its source file happens to exist.
         /// </summary>
-        private bool IsRepairCompleted(string originalPath)
+        private bool IsOrganizationReady(string originalPath)
         {
             if (string.IsNullOrWhiteSpace(originalPath))
                 return false;
 
             foreach (E_RepairHandoff handoff in RepairHandoffs)
             {
-                if (string.Equals(
+                if (!string.Equals(
                         handoff.OriginalPath,
                         originalPath,
                         StringComparison.OrdinalIgnoreCase))
                 {
-                    return handoff.Status ==
-                           E_RepairHandoffStatus.RepairCompleted;
+                    continue;
                 }
+
+                return handoff.Status ==
+                           E_RepairHandoffStatus.RepairCompleted ||
+                       handoff.Status ==
+                           E_RepairHandoffStatus.RepairDeferred;
             }
 
             return false;
@@ -352,43 +372,65 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         /// Executes every currently planned organization entry that has not
         /// already completed successfully during this expedition.
         ///
-        /// This is the collection execution primitive for Organization.
+        /// Organization execution is independent per planned ebook. The
+        /// investigation therefore uses bounded concurrency here rather than
+        /// forcing the collection through one ebook at a time.
         ///
-        /// It deliberately remains sequential for now. The purpose of this
-        /// method is to establish collection-level execution above ExecuteOne()
-        /// without introducing concurrency or UI orchestration prematurely.
+        /// IMPORTANT: this is deliberately bounded. We do not create one
+        /// filesystem task per book without limit. The organization operation
+        /// already has a per-book working representation and destination, so
+        /// a small worker limit lets independent books progress together
+        /// without turning a large collection into an uncontrolled I/O burst.
         ///
-        /// Entries that have already succeeded are skipped using the
-        /// expedition execution ledger rather than plan state.
+        /// Successful execution remains recorded in the investigation ledger,
+        /// not in OrganizationPlanEntry.
         /// </summary>
         internal IReadOnlyList<OrganizationCopyResult> ExecuteAll()
         {
-            List<OrganizationCopyResult> results = new();
-
             if (Job == null)
             {
-                results.Add(
+                return new[]
+                {
                     OrganizationCopyResult.Failed(
-                        "No organization job is available."));
-
-                return results;
+                        "No organization job is available.")
+                };
             }
 
-            foreach (OrganizationPlanEntry entry in Plan.Entries)
-            {
-                if (entry == null)
-                    continue;
+            const int maxConcurrentOrganizations = 6;
 
-                if (IsOrganized(entry.OriginalPath))
-                    continue;
+            List<OrganizationPlanEntry> entries =
+                Plan.Entries
+                    .Where(entry =>
+                        entry != null &&
+                        !IsOrganized(entry.OriginalPath))
+                    .ToList();
 
-                OrganizationCopyResult result =
-                    ExecuteOne(entry);
+            if (entries.Count == 0)
+                return Array.Empty<OrganizationCopyResult>();
 
-                results.Add(result);
-            }
+            using SemaphoreSlim gate =
+                new(maxConcurrentOrganizations);
 
-            return results;
+            Task<OrganizationCopyResult>[] tasks =
+                entries.Select(async entry =>
+                {
+                    await gate.WaitAsync().ConfigureAwait(false);
+
+                    try
+                    {
+                        return ExecuteOne(entry);
+                    }
+                    finally
+                    {
+                        gate.Release();
+                    }
+                }).ToArray();
+
+            Task.WaitAll(tasks);
+
+            return tasks
+                .Select(task => task.Result)
+                .ToList();
         }
 
         public List<ExpertFinding> Investigate(

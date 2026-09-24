@@ -74,6 +74,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
         private readonly List<FileContext> _deferred = new();
 
+        // Each active EPUB is tracked independently by its stable original path.
+        // CurrentFile remains as a compatibility cursor for the existing UI and
+        // workflow while callers migrate to branch-aware operations.
+        private readonly Dictionary<string, FileContext> _active =
+            new(StringComparer.OrdinalIgnoreCase);
+
         private readonly HashSet<string> _completed = new(
             StringComparer.OrdinalIgnoreCase);
 
@@ -99,6 +105,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
         public FileContext? CurrentFile { get; private set; }
 
+        /// <summary>
+        /// All EPUBs currently active in the expedition, keyed by OriginalFullPath.
+        /// This is the branch-aware state; CurrentFile is retained as a compatibility
+        /// cursor for existing single-book callers.
+        /// </summary>
+        public IReadOnlyCollection<FileContext> ActiveFiles => _active.Values;
+
         //---------------------------------------------------------
         // Deferred EPUBs
         //---------------------------------------------------------
@@ -113,7 +126,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         //---------------------------------------------------------
 
         public bool IsActive =>
-            CurrentFile != null || _pending.Count > 0;
+            _active.Count > 0 || _pending.Count > 0;
 
         public bool IsComplete =>
             !IsActive;
@@ -148,6 +161,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
             _pending.Clear();
             _deferred.Clear();
+            _active.Clear();
             _completed.Clear();
 
             CurrentFile = null;
@@ -180,6 +194,43 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         }
 
         //---------------------------------------------------------
+        // Branch activation / compatibility cursor
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Activates the next pending EPUB without making it the only active EPUB.
+        /// Returns the activated branch, or null when no EPUB remains pending.
+        /// </summary>
+        public FileContext? ActivateNext()
+        {
+            if (_pending.Count == 0)
+                return null;
+
+            FileContext file = _pending.Dequeue();
+
+            if (string.IsNullOrWhiteSpace(file.OriginalFullPath))
+                throw new InvalidOperationException(
+                    "Cannot activate an EPUB because its original path is missing.");
+
+            _active[file.OriginalFullPath] = file;
+            CurrentFile = file;
+            return file;
+        }
+
+        /// <summary>
+        /// Returns the active branch for the specified original path.
+        /// </summary>
+        public FileContext? GetActive(string originalFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalFullPath))
+                return null;
+
+            return _active.TryGetValue(originalFullPath, out FileContext? file)
+                ? file
+                : null;
+        }
+
+        //---------------------------------------------------------
         // Advance
         //---------------------------------------------------------
 
@@ -191,16 +242,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         /// </summary>
         public FileContext? MoveNext()
         {
-            if (_pending.Count == 0)
-            {
-                CurrentFile = null;
-                return null;
-            }
-
-            CurrentFile =
-                _pending.Dequeue();
-
-            return CurrentFile;
+            return ActivateNext();
         }
 
         //---------------------------------------------------------
@@ -223,6 +265,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                     "Cannot complete the current EPUB because its original path is missing.");
 
             _completed.Add(originalPath);
+            _active.Remove(originalPath);
 
             CurrentFile = null;
 
@@ -242,6 +285,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 return;
 
             _deferred.Add(CurrentFile);
+            _active.Remove(CurrentFile.OriginalFullPath);
 
             CurrentFile = null;
 
@@ -259,6 +303,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         {
             _pending.Clear();
             _deferred.Clear();
+            _active.Clear();
             _completed.Clear();
 
             CurrentFile = null;

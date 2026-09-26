@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Scout.Observations.Conversation;
 using SmartRenamer.Models;
@@ -344,6 +344,58 @@ namespace SmartRenamer.Observations
                 $"No registered Expert named '{expertName}' was found.",
                 nameof(expertName));
         }
+
+        /// <summary>
+        /// Returns whether the named Expert can rewind its most recent
+        /// decision. The generic engine does not interpret the decision; it
+        /// only asks the owning Expert whether its domain state is reversible.
+        /// </summary>
+        public bool CanRewindDecision(string expertName)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expertName);
+
+            foreach (ObservationExpert expert in _experts)
+            {
+                if (string.Equals(
+                        expert.Name,
+                        expertName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return expert.CanRewindDecision;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Rewinds one decision in the named Expert. Domain state restoration
+        /// remains entirely inside the owning Expert.
+        /// </summary>
+        public void RewindDecision(string expertName)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expertName);
+
+            foreach (ObservationExpert expert in _experts)
+            {
+                if (string.Equals(
+                        expert.Name,
+                        expertName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!expert.CanRewindDecision)
+                        throw new InvalidOperationException(
+                            $"Expert '{expertName}' cannot rewind its current decision.");
+
+                    expert.RewindDecision();
+                    return;
+                }
+            }
+
+            throw new ArgumentException(
+                $"No registered Expert named '{expertName}' was found.",
+                nameof(expertName));
+        }
         //---------------------------------------------------------
         // Most Recent Findings
         //---------------------------------------------------------
@@ -376,6 +428,19 @@ namespace SmartRenamer.Observations
             IReadOnlyList<FileContext> files,
             string sourceFolderPath)
         {
+            return Observe(files, sourceFolderPath, null);
+        }
+
+        /// <summary>
+        /// Runs observation while optionally carrying the stable identity of
+        /// the EPUB branch that triggered the observation. The identity is
+        /// transported to Experts; only a branch-aware Expert interprets it.
+        /// </summary>
+        public List<CV_Recommendation> Observe(
+            IReadOnlyList<FileContext> files,
+            string sourceFolderPath,
+            string? originalFullPath)
+        {
             ArgumentNullException.ThrowIfNull(files);
             ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
 
@@ -393,7 +458,7 @@ namespace SmartRenamer.Observations
                     files);
 
                 List<ExpertFinding> expertFindings =
-                    expert.Investigate(files);
+                    expert.Investigate(files, originalFullPath);
 
                 //-----------------------------------------------------
                 // Preserve the factual findings.
@@ -439,6 +504,29 @@ namespace SmartRenamer.Observations
             foreach (ObservationExpert expert in _experts)
             {
                 if (expert.CompleteCurrentIfComplete())
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Completes the branch identified by the supplied stable identity
+        /// after a re-observation pass.
+        ///
+        /// The ObservationEngine remains domain-neutral. The identity is
+        /// simply transported to each Expert; an Expert decides whether it
+        /// owns that branch and whether the branch is complete.
+        ///
+        /// The parameterless overload remains available for legacy callers
+        /// that still operate through the compatibility CurrentFile cursor.
+        /// </summary>
+        public bool CompleteCurrentIfComplete(
+            string? originalFullPath)
+        {
+            foreach (ObservationExpert expert in _experts)
+            {
+                if (expert.CompleteCurrentIfComplete(originalFullPath))
                     return true;
             }
 

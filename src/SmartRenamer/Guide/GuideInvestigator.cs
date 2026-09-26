@@ -122,6 +122,24 @@ namespace SmartRenamer.Guide
         }
 
         /// <summary>
+        /// Returns whether the owning Expert can restore the state before its
+        /// most recent decision.
+        /// </summary>
+        public bool CanRewindDecision(string expertName)
+        {
+            return workflow.CanRewindDecision(expertName);
+        }
+
+        /// <summary>
+        /// Rewinds one Expert-owned decision through the normal workflow
+        /// boundary. The Guide remains domain-neutral.
+        /// </summary>
+        public void RewindDecision(string expertName)
+        {
+            workflow.RewindDecision(expertName);
+        }
+
+        /// <summary>
         /// Lets the user select a folder without beginning investigation.
         ///
         /// The Guide can use this to ask required questions before

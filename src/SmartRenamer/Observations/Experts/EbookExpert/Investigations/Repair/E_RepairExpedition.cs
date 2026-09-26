@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using SmartRenamer.Models;
 
@@ -248,6 +248,35 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         //---------------------------------------------------------
         // Complete / Defer
         //---------------------------------------------------------
+
+        /// <summary>
+        /// Completes the active EPUB identified by its stable original path.
+        ///
+        /// This is the branch-aware counterpart to CompleteCurrent(). It does
+        /// not depend on the compatibility CurrentFile cursor, which may point
+        /// at a different active branch after concurrency is introduced.
+        /// </summary>
+        public bool Complete(string originalFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalFullPath))
+                return false;
+
+            if (!_active.TryGetValue(
+                    originalFullPath,
+                    out FileContext? file))
+                return false;
+
+            _completed.Add(originalFullPath);
+            _active.Remove(originalFullPath);
+
+            if (ReferenceEquals(CurrentFile, file))
+            {
+                CurrentFile = null;
+                MoveNext();
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// Marks the current EPUB as completed and advances to the next EPUB.

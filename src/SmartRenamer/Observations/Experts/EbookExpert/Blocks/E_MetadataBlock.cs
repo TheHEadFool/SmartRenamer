@@ -1,6 +1,7 @@
 ﻿using SmartRenamer.Models;
 using Scout.Observations.Experts.EbookExpert.Data;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
+using SmartRenamer.Observations.Experts.EbookExpert.Resources;
 using System;
 using System.Collections.Generic;
 
@@ -93,6 +94,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                 CollectEvidence(
                     metadata,
                     file);
+
+                CollectSourceEvidence(
+                    metadata,
+                    file,
+                    report);
             }
 
             CalculateMissingMetadata(report);
@@ -248,6 +254,126 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                     file.OriginalName);
             }
         }
+
+        //---------------------------------------------------------
+        // Source Evidence
+        //---------------------------------------------------------
+
+        private static void CollectSourceEvidence(
+            E_EbookMetadata metadata,
+            FileContext file,
+            MetadataReport report)
+        {
+            AddObservedEvidence(
+                report,
+                "EPUB Metadata",
+                "Title",
+                metadata.Title,
+                "OPF");
+
+            AddObservedEvidence(
+                report,
+                "EPUB Metadata",
+                "Author",
+                metadata.Author,
+                "OPF");
+
+            AddObservedEvidence(
+                report,
+                "EPUB Metadata",
+                "Series",
+                metadata.Series,
+                "OPF");
+
+            AddObservedEvidence(
+                report,
+                "EPUB Metadata",
+                "ISBN",
+                metadata.Isbn,
+                "OPF");
+
+            string fileName =
+                System.IO.Path.GetFileNameWithoutExtension(
+                    file.CurrentName);
+
+            AddObservedEvidence(
+                report,
+                "Filename",
+                "Filename",
+                fileName,
+                file.CurrentName,
+                "Candidate identity evidence; not interpreted here.");
+
+            try
+            {
+                E_EpubContentResource resource = new();
+
+                IReadOnlyList<E_EpubContentResource.ContentDocument> documents =
+                    resource.ExtractOpeningDocuments(
+                        file.CurrentFullPath,
+                        10);
+
+                foreach (E_EpubContentResource.ContentDocument document in documents)
+                {
+                    AddOpeningContentEvidence(
+                        report,
+                        document);
+                }
+            }
+            catch
+            {
+                // Metadata reading remains tolerant of malformed EPUBs.
+                // Content evidence is supplemental and must not make the
+                // metadata investigation fail.
+            }
+        }
+
+        private static void AddOpeningContentEvidence(
+            MetadataReport report,
+            E_EpubContentResource.ContentDocument document)
+        {
+            string value = document.Text.Trim();
+
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+
+            if (value.Length > 500)
+                value = value[..500];
+
+            report.Evidence.Add(new MetadataEvidence
+            {
+                Source = "Opening Content",
+                Field = "Content",
+                Value = value,
+                Location = document.Path,
+                Notes = "Observed opening-content evidence; not interpreted here."
+            });
+        }
+
+        private static void AddObservedEvidence(
+            MetadataReport report,
+            string source,
+            string field,
+            string value,
+            string location,
+            string notes = "Observed metadata; not independently corroborated.")
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+
+            MetadataEvidence evidence = new()
+            {
+                Source = source,
+                Field = field,
+                Value = value.Trim(),
+                Location = location,
+                Notes = notes
+            };
+
+            evidence.Files.Add(location);
+            report.Evidence.Add(evidence);
+        }
+
         //---------------------------------------------------------
         // Consistency
         //---------------------------------------------------------

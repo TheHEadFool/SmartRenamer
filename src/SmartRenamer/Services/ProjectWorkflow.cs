@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Conversation;
+using Scout.Observations.Conversation;
 using SmartRenamer.Capabilities.TextReplacement;
 using SmartRenamer.Models;
 using SmartRenamer.Models.Planning;
@@ -269,6 +269,22 @@ namespace SmartRenamer.Services
                 optionId,
                 value);
         }
+
+        /// <summary>
+        /// Returns whether an Expert can rewind its most recent decision.
+        /// </summary>
+        public bool CanRewindDecision(string expertName)
+        {
+            return observationEngine.CanRewindDecision(expertName);
+        }
+
+        /// <summary>
+        /// Rewinds one domain decision through the normal workflow boundary.
+        /// </summary>
+        public void RewindDecision(string expertName)
+        {
+            observationEngine.RewindDecision(expertName);
+        }
         //---------------------------------------------------------
         // Existing Project Workflow
         //---------------------------------------------------------
@@ -470,9 +486,16 @@ namespace SmartRenamer.Services
                 result.RequiresReobservation)
             {
                 lastReobservationRecommendations =
-                    Reobserve();
+                    Reobserve(request.ContextId);
 
-                observationEngine.CompleteCurrentIfComplete();
+                //---------------------------------------------------------
+                // The action request already carries the stable identity of
+                // the EPUB branch that was acted upon. Preserve that identity
+                // through re-observation so completion cannot accidentally
+                // advance a different branch via the legacy CurrentFile cursor.
+                //---------------------------------------------------------
+                observationEngine.CompleteCurrentIfComplete(
+                    request.ContextId);
             }
 
             return result;
@@ -495,7 +518,8 @@ namespace SmartRenamer.Services
         /// The existing ObservationEngine is reused so persistent Expert
         /// state is preserved.
         /// </summary>
-        public List<CV_Recommendation> Reobserve()
+        public List<CV_Recommendation> Reobserve(
+            string? originalFullPath = null)
         {
             if (activeFiles == null ||
                 string.IsNullOrWhiteSpace(activeSourceFolderPath))
@@ -504,7 +528,8 @@ namespace SmartRenamer.Services
 
             return observationEngine.Observe(
                 activeFiles,
-                activeSourceFolderPath);
+                activeSourceFolderPath,
+                originalFullPath);
         }
 
     }

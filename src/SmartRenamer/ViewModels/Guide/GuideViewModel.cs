@@ -153,6 +153,32 @@ namespace SmartRenamer.ViewModels.Guide
 
         private bool awaitingDecisionChoice;
 
+        // ---------------------------------------------------------
+        // Reversible decision history
+        // ---------------------------------------------------------
+        //
+        // The Guide records only the generic identity of an applied decision.
+        // The owning Expert remains responsible for restoring its domain state.
+        // ---------------------------------------------------------
+
+        private sealed class AppliedDecision
+        {
+            public string ExpertName { get; init; } = string.Empty;
+        }
+
+        private readonly Stack<AppliedDecision> decisionHistory =
+            new();
+
+        private bool canGoBack;
+
+        public bool CanGoBack
+        {
+            get => canGoBack;
+            private set => SetProperty(
+                ref canGoBack,
+                value);
+        }
+
         //---------------------------------------------------------
         // User Input
         //---------------------------------------------------------
@@ -173,6 +199,8 @@ namespace SmartRenamer.ViewModels.Guide
         //---------------------------------------------------------
 
         public RelayCommand SendCommand { get; }
+
+        public RelayCommand BackCommand { get; }
 
         public RelayCommand BrowseFolderCommand { get; }
 
@@ -196,6 +224,9 @@ namespace SmartRenamer.ViewModels.Guide
 
             SendCommand =
                 new RelayCommand(Send);
+
+            BackCommand =
+                new RelayCommand(GoBack);
 
             BrowseFolderCommand =
                 new RelayCommand(ChooseFolder);
@@ -706,6 +737,69 @@ namespace SmartRenamer.ViewModels.Guide
         }
 
         /// <summary>
+        /// Returns the Guide to the immediately preceding reversible decision
+        /// point. The Guide restores only generic navigation state; the owning
+        /// Expert restores its own domain state through the workflow boundary.
+        /// </summary>
+        private void GoBack()
+        {
+            if (!awaitingDecisionChoice ||
+                decisionHistory.Count == 0)
+            {
+                return;
+            }
+
+            AppliedDecision previous =
+                decisionHistory.Pop();
+
+            guideInvestigator.RewindDecision(
+                previous.ExpertName);
+
+            pendingDecisionBindings.Clear();
+            pendingDecisionBindings.AddRange(
+                guideInvestigator.DecisionBindings
+                    .Where(binding =>
+                        binding.Request.Options.Count > 0));
+
+            pendingDecisionIndex = 0;
+
+            CanGoBack =
+                decisionHistory.Count > 0 &&
+                pendingDecisionBindings.Count > 0;
+
+            Conversation.AddGuideMessage(
+                "Let's go back to the previous decision so you can reconsider it.");
+
+            if (pendingDecisionBindings.Count == 0)
+            {
+                awaitingDecisionChoice = false;
+                ContinueInvestigationConversation();
+                return;
+            }
+
+            awaitingDecisionChoice = true;
+            PresentDecisionQuestion();
+        }
+
+        private void RecordAppliedDecision(
+            ExpertDecisionBinding binding)
+        {
+            if (guideInvestigator.CanRewindDecision(
+                    binding.Expert.Name))
+            {
+                decisionHistory.Push(
+                    new AppliedDecision
+                    {
+                        ExpertName = binding.Expert.Name
+                    });
+            }
+
+            CanGoBack =
+                awaitingDecisionChoice &&
+                decisionHistory.Count > 0;
+        }
+
+        /// <summary>
         /// Applies a generic Expert decision selected from the conversation.
         ///
         /// If the selected option requests a generic folder input, the Guide
@@ -758,6 +852,8 @@ namespace SmartRenamer.ViewModels.Guide
                 binding.Expert.Name,
                 option.Id,
                 value);
+
+            RecordAppliedDecision(binding);
 
             Conversation.AddUserMessage(
                 option.InputKind == ExpertDecisionInputKind.Folder
@@ -824,6 +920,8 @@ namespace SmartRenamer.ViewModels.Guide
                     Conversation.AddUserMessage(option.Label);
                 }
 
+                RecordAppliedDecision(binding);
+
                 AdvanceDecisionSequence();
                 return true;
             }
@@ -846,6 +944,8 @@ namespace SmartRenamer.ViewModels.Guide
 
                 Conversation.AddUserMessage(
                     Path.GetFullPath(answer));
+
+                RecordAppliedDecision(binding);
 
                 AdvanceDecisionSequence();
                 return true;
@@ -922,6 +1022,7 @@ namespace SmartRenamer.ViewModels.Guide
 
             awaitingDecisionChoice = false;
             pendingDecisionIndex = 0;
+            CanGoBack = false;
             ContinueInvestigationConversation();
         }
 
@@ -932,6 +1033,8 @@ namespace SmartRenamer.ViewModels.Guide
         /// </summary>
         private bool BeginDecisionSequence()
         {
+            decisionHistory.Clear();
+            CanGoBack = false;
             pendingDecisionBindings.Clear();
             pendingDecisionBindings.AddRange(
                 guideInvestigator.DecisionBindings

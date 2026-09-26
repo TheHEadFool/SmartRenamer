@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Scout.Observations.Experts.EbookExpert.Data;
@@ -296,6 +296,89 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
         public bool ExpeditionIsComplete =>
             _repairExpedition.IsComplete;
+
+        /// <summary>
+        /// Completes the specific repair branch identified by its stable
+        /// original path after that EPUB has been re-observed.
+        /// </summary>
+        /// <summary>
+        /// Re-investigates one specific EPUB after a repair action has changed
+        /// its working representation.
+        ///
+        /// This is deliberately branch-targeted. A collection re-observation
+        /// may contain several EPUBs, but the repair branch that triggered the
+        /// re-observation is identified by OriginalFullPath. Keeping this
+        /// decision here prevents the compatibility CurrentFile cursor from
+        /// deciding which branch gets completed.
+        /// </summary>
+        public List<ExpertFinding> InvestigateBranch(
+            MetadataReport metadataReport,
+            string originalFullPath)
+        {
+            ArgumentNullException.ThrowIfNull(metadataReport);
+            ArgumentException.ThrowIfNullOrWhiteSpace(originalFullPath);
+
+            RepairBlock block = new();
+            _collectionReport = block.Analyze(metadataReport);
+
+            MetadataRecord? record =
+                metadataReport.Records.FirstOrDefault(
+                    item => string.Equals(
+                        item.File?.OriginalFullPath,
+                        originalFullPath,
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (record == null)
+            {
+                _reportsByOriginalPath[originalFullPath] =
+                    new RepairReport();
+
+                return new List<ExpertFinding>();
+            }
+
+            MetadataReport branchMetadata = new();
+            branchMetadata.Records.Add(record);
+
+            RepairReport report =
+                block.Analyze(branchMetadata);
+
+            _reportsByOriginalPath[originalFullPath] = report;
+
+            E_RepairConsultant consultant = new();
+            List<ExpertFinding> findings =
+                consultant.Review(report);
+
+            FileContext? branch =
+                _repairExpedition.GetActive(originalFullPath);
+
+            if (branch != null && report.IsComplete)
+            {
+                CreateCompletedHandoff(branch);
+                _repairExpedition.Complete(originalFullPath);
+            }
+
+            return findings;
+        }
+
+        public bool CompleteCurrentIfComplete(
+            string? originalFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalFullPath))
+                return CompleteCurrentIfComplete();
+
+            FileContext? branch =
+                _repairExpedition.GetActive(originalFullPath);
+
+            if (branch == null)
+                return false;
+
+            if (!IsCompleteFor(originalFullPath))
+                return false;
+
+            CreateCompletedHandoff(branch);
+
+            return _repairExpedition.Complete(originalFullPath);
+        }
 
         public bool CompleteCurrentIfComplete()
         {

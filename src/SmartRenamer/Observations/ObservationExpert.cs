@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Scout.Observations.Conversation;
 using SmartRenamer.Models;
@@ -167,6 +167,28 @@ namespace SmartRenamer.Observations
         {
             ApplyDecisionChoice(optionId);
         }
+
+        /// <summary>
+        /// Indicates whether this Expert can return its decision state to the
+        /// immediately preceding decision point.
+        ///
+        /// The generic framework does not know how a domain decision changes
+        /// Expert state, so the owning Expert must explicitly opt into
+        /// reversible decision navigation.
+        /// </summary>
+        public virtual bool CanRewindDecision =>
+            false;
+
+        /// <summary>
+        /// Rewinds the Expert-owned decision state by one decision.
+        ///
+        /// The generic framework invokes this only when the Expert reports
+        /// that a rewind is supported. The Expert remains responsible for
+        /// restoring its own domain state.
+        /// </summary>
+        public virtual void RewindDecision()
+        {
+        }
         //---------------------------------------------------------
         // Identity
         //---------------------------------------------------------
@@ -189,6 +211,20 @@ namespace SmartRenamer.Observations
         /// </summary>
         public abstract List<ExpertFinding> Investigate(
             IReadOnlyList<FileContext> files);
+
+        /// <summary>
+        /// Performs an observation pass with an optional stable branch identity.
+        ///
+        /// The generic framework transports the identity but does not interpret
+        /// it. Experts that own branch-aware workflows may override this method;
+        /// other Experts continue to use their normal collection investigation.
+        /// </summary>
+        public virtual List<ExpertFinding> Investigate(
+            IReadOnlyList<FileContext> files,
+            string? originalFullPath)
+        {
+            return Investigate(files);
+        }
 
         /// <summary>
         /// Gives the Expert an opportunity to initialize domain-specific
@@ -221,6 +257,19 @@ namespace SmartRenamer.Observations
         public virtual bool CompleteCurrentIfComplete()
         {
             return false;
+        }
+
+        /// <summary>
+        /// Completes a specific workflow branch after re-observation.
+        ///
+        /// The generic Observation Framework does not interpret the identity.
+        /// Experts that own branch-aware workflows may override this method.
+        /// The default implementation preserves the legacy CurrentFile path.
+        /// </summary>
+        public virtual bool CompleteCurrentIfComplete(
+            string? originalFullPath)
+        {
+            return CompleteCurrentIfComplete();
         }
 
         //---------------------------------------------------------

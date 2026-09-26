@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Conversation;
+using Scout.Observations.Conversation;
 using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Action;
@@ -81,6 +81,11 @@ namespace SmartRenamer.Observations
     public sealed class EbookExpert
         : ObservationExpert
     {
+        // Set only for the observation pass immediately following a domain
+        // action. The generic Observation Framework transports the identity;
+        // EbookExpert uses it to target the correct repair branch.
+        private string? _reobservationTargetOriginalFullPath;
+
         /// <summary>
         /// Initializes Ebook Expert's domain services.
         ///
@@ -203,6 +208,99 @@ namespace SmartRenamer.Observations
         private bool _organizationDestinationConfirmed;
 
         /// <summary>
+        /// True once the user has committed this ebook collection to the
+        /// selected organization policy. The organization plan and job may
+        /// be rebuilt after re-observation, but this commitment survives
+        /// those rebuilds because EbookExpert is long-lived for the expedition.
+        /// </summary>
+        private bool _organizationCommitted;
+
+        /// <summary>
+        /// Domain-owned checkpoints for reversible collection-level
+        /// organization decisions. The generic Guide knows only that the
+        /// Expert can rewind; the Expert owns the actual state restoration.
+        /// </summary>
+        private readonly Stack<OrganizationDecisionSnapshot> _organizationDecisionHistory =
+            new();
+
+        private sealed class OrganizationDecisionSnapshot
+        {
+            public bool DestinationConfirmed { get; init; }
+
+            public bool Committed { get; init; }
+
+            public OrganizationOptions Options { get; init; } = new();
+        }
+
+        public override bool CanRewindDecision =>
+            _organizationDecisionHistory.Count > 0;
+
+        public override void RewindDecision()
+        {
+            if (_organizationDecisionHistory.Count == 0)
+                return;
+
+            OrganizationDecisionSnapshot snapshot =
+                _organizationDecisionHistory.Pop();
+
+            _organizationDestinationConfirmed =
+                snapshot.DestinationConfirmed;
+
+            _organizationCommitted =
+                snapshot.Committed;
+
+            _organizationInvestigation.ConfigureOptions(
+                new OrganizationOptions
+                {
+                    FolderLevels =
+                        new List<OrganizationDimension>(
+                            snapshot.Options.FolderLevels),
+
+                    FileOrderBy =
+                        snapshot.Options.FileOrderBy,
+
+                    FileOrderDirection =
+                        snapshot.Options.FileOrderDirection,
+
+                    DestinationRoot =
+                        snapshot.Options.DestinationRoot
+                });
+        }
+
+        private void SaveOrganizationDecisionCheckpoint()
+        {
+            OrganizationOptions options =
+                _organizationInvestigation.Options;
+
+            _organizationDecisionHistory.Push(
+                new OrganizationDecisionSnapshot
+                {
+                    DestinationConfirmed =
+                        _organizationDestinationConfirmed,
+
+                    Committed =
+                        _organizationCommitted,
+
+                    Options =
+                        new OrganizationOptions
+                        {
+                            FolderLevels =
+                                new List<OrganizationDimension>(
+                                    options.FolderLevels),
+
+                            FileOrderBy =
+                                options.FileOrderBy,
+
+                            FileOrderDirection =
+                                options.FileOrderDirection,
+
+                            DestinationRoot =
+                                options.DestinationRoot
+                        }
+                });
+        }
+
+        /// <summary>
         /// Exposes the currently viable organization paths through the
         /// generic Expert decision mechanism.
         ///
@@ -314,11 +412,14 @@ namespace SmartRenamer.Observations
                                 "The Ebook organization destination has not been proposed.");
                         }
 
+                        SaveOrganizationDecisionCheckpoint();
                         _organizationDestinationConfirmed = true;
                         return;
 
                     case "organization-destination-browse":
                         ArgumentException.ThrowIfNullOrWhiteSpace(value);
+
+                        SaveOrganizationDecisionCheckpoint();
 
                         OrganizationOptions currentDestinationOptions =
                             _organizationInvestigation.Options;
@@ -390,6 +491,10 @@ namespace SmartRenamer.Observations
                     DestinationRoot =
                         currentOptions.DestinationRoot
                 };
+
+            SaveOrganizationDecisionCheckpoint();
+
+            _organizationCommitted = true;
 
             _organizationInvestigation.ConfigureOptions(options);
 
@@ -500,6 +605,7 @@ namespace SmartRenamer.Observations
 
             if (newEbookExpedition)
             {
+                _organizationDecisionHistory.Clear();
                 _organizationDestinationConfirmed = false;
                 _organizationPathOptions =
                     Array.Empty<OrganizationPathOption>();
@@ -701,9 +807,21 @@ namespace SmartRenamer.Observations
                 _qualityInvestigation.Investigate(
                     metadataReport));
 
-            findings.AddRange(
-                _repairInvestigation.Investigate(
-                    metadataReport));
+            if (string.IsNullOrWhiteSpace(_reobservationTargetOriginalFullPath))
+            {
+                findings.AddRange(
+                    _repairInvestigation.Investigate(
+                        metadataReport));
+            }
+            else
+            {
+                findings.AddRange(
+                    _repairInvestigation.InvestigateBranch(
+                        metadataReport,
+                        _reobservationTargetOriginalFullPath));
+            }
+
+            _reobservationTargetOriginalFullPath = null;
 
             //---------------------------------------------------------
             // Repair → Organization handoff
@@ -732,9 +850,42 @@ namespace SmartRenamer.Observations
                 _enrichmentInvestigation.Investigate(
                     metadataReport));
 
+            //---------------------------------------------------------
+            // Persistent collection-level organization commitment
+            //---------------------------------------------------------
+            //
+            // Once the user has selected an organization policy, every
+            // subsequent observation gets an opportunity to organize
+            // books that have become ready through repair or enrichment.
+            //
+            // The organization investigation rebuilds its current
+            // Report/Context/Plan/Job from the fresh metadata, while its
+            // successful-execution ledger survives those rebuilds.
+            //---------------------------------------------------------
+
+            if (_organizationCommitted)
+            {
+                ExecuteOrganizationAll();
+            }
+
             return findings;
 
         } // End Investigate()
+
+        /// <summary>
+        /// Performs the normal Ebook observation pass while carrying the
+        /// stable identity of the EPUB branch that triggered re-observation.
+        /// The ordinary collection investigations remain unchanged; only the
+        /// Repair Investigation switches to the targeted branch path.
+        /// </summary>
+        public override List<ExpertFinding> Investigate(
+            IReadOnlyList<FileContext> files,
+            string? originalFullPath)
+        {
+            _reobservationTargetOriginalFullPath = originalFullPath;
+
+            return Investigate(files);
+        }
 
         /// <summary>
         /// Translates the Expert's findings into conversation-ready
@@ -794,6 +945,20 @@ namespace SmartRenamer.Observations
         internal IReadOnlyList<OrganizationCopyResult> ExecuteOrganizationAll()
         {
             return _organizationInvestigation.ExecuteAll();
+        }
+
+        /// <summary>
+        /// Completes the Ebook branch identified by its stable original path
+        /// after re-observation.
+        ///
+        /// This is the domain-specific handoff from the generic Observation
+        /// Framework into the branch-aware Repair Investigation.
+        /// </summary>
+        public override bool CompleteCurrentIfComplete(
+            string? originalFullPath)
+        {
+            return _repairInvestigation.CompleteCurrentIfComplete(
+                originalFullPath);
         }
 
         /// <summary>

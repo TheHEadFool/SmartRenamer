@@ -232,7 +232,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                         OriginalPath = originalPath,
                         WorkingPath = workingPath,
                         Title = record.Metadata.Title,
-                        Author = record.Metadata.Author,
+                        Author = GetPrimaryAuthor(record.Metadata.Author),
                         Series = record.Metadata.Series,
                         Publisher = record.Metadata.Publisher,
                         Isbn = record.Metadata.Isbn,
@@ -241,6 +241,35 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             }
 
             return books;
+        }
+
+        /// <summary>
+        /// Selects the primary author used by Organization from the author
+        /// information supplied by the Ebook metadata reader.
+        ///
+        /// The metadata reader preserves multiple creators in their source
+        /// order using a semicolon-separated value. For the current
+        /// organization slice, Scout treats the first listed creator as the
+        /// primary author.
+        ///
+        /// This is deliberately kept at the organization-domain boundary.
+        /// The complete creator information remains available in the metadata
+        /// model for future enrichment/research work.
+        /// </summary>
+        private static string GetPrimaryAuthor(string authorValue)
+        {
+            if (string.IsNullOrWhiteSpace(authorValue))
+                return string.Empty;
+
+            string[] authors =
+                authorValue.Split(
+                    ';',
+                    StringSplitOptions.RemoveEmptyEntries |
+                    StringSplitOptions.TrimEntries);
+
+            return authors.Length > 0
+                ? authors[0]
+                : authorValue.Trim();
         }
 
         private OrganizationPlan BuildPlan()
@@ -273,6 +302,15 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         /// Executes one already-planned organization entry through the
         /// current collection-level organization job.
         ///
+        /// A book does not require a RepairHandoff merely to be organized.
+        /// Books that required repair may have a handoff, in which case
+        /// BuildBooks() supplies the repaired WorkingPath. Books that did not
+        /// require repair use their existing FileContext.CurrentFullPath.
+        ///
+        /// This distinction is important: RepairHandoff represents a semantic
+        /// handoff from the Repair stage; it is not a universal prerequisite
+        /// for Organization.
+        ///
         /// Successful execution is retained as expedition execution history.
         ///
         /// This method does not:
@@ -293,22 +331,24 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                     "No organization job is available.");
             }
 
-            // -----------------------------------------------------------------
-            // Organization plans the entire collection, including books that
-            // are not ready yet. Readiness is an execution concern, not a
-            // planning concern. Repair owns the readiness signal and hands it
-            // downstream through E_RepairHandoff.
+            //-------------------------------------------------------------
+            // IMPORTANT
             //
-            // Pending is deliberately distinct from Failed: a pending book is
-            // valid work that simply cannot execute yet. This allows a future
-            // collection-level Organize All commitment to revisit it after the
-            // repair/user-decision state changes.
-            // -----------------------------------------------------------------
-            if (!IsOrganizationReady(entry.OriginalPath))
-            {
-                return OrganizationCopyResult.Pending(
-                    "This ebook is not ready for organization yet.");
-            }
+            // Organization does NOT require a RepairHandoff.
+            //
+            // A book that never needed repair is already a valid
+            // organization candidate. Its current representation comes
+            // directly from FileContext.CurrentFullPath through BuildBooks().
+            //
+            // A repaired book may have a RepairHandoff, and BuildBooks()
+            // will use the handoff's WorkingPath.
+            //
+            // Readiness that depends on an unresolved Repair decision must
+            // eventually be represented by the broader EbookExpert lifecycle
+            // rather than by assuming every book must possess a handoff.
+            //
+            // Do not put the old blanket RepairHandoff gate back here.
+            //-------------------------------------------------------------
 
             OrganizationJobExecutor executor = new();
 
@@ -328,44 +368,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             }
 
             return result;
-        }
-
-        /// <summary>
-        /// Determines whether the planned ebook has reached a Repair outcome
-        /// that permits Organization to proceed.
-        ///
-        /// RepairCompleted means a repaired working representation was produced
-        /// or the ebook was otherwise completed by the Repair stage.
-        /// RepairDeferred means the user explicitly chose not to continue the
-        /// repair path, so Organization may use the current working
-        /// representation.
-        ///
-        /// Absence of a handoff remains Pending. That is important: a book
-        /// still awaiting a repair/user decision must not be copied merely
-        /// because its source file happens to exist.
-        /// </summary>
-        private bool IsOrganizationReady(string originalPath)
-        {
-            if (string.IsNullOrWhiteSpace(originalPath))
-                return false;
-
-            foreach (E_RepairHandoff handoff in RepairHandoffs)
-            {
-                if (!string.Equals(
-                        handoff.OriginalPath,
-                        originalPath,
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                return handoff.Status ==
-                           E_RepairHandoffStatus.RepairCompleted ||
-                       handoff.Status ==
-                           E_RepairHandoffStatus.RepairDeferred;
-            }
-
-            return false;
         }
 
         /// <summary>

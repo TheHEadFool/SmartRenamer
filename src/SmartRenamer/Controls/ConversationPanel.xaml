@@ -206,23 +206,38 @@
                         CornerRadius="24,24,0,0"
                         Padding="18">
 
-                    <StackPanel>
+                    <Grid>
 
-                        <TextBlock
-                            HorizontalAlignment="Center"
-                            FontSize="22"
-                            FontWeight="Bold"
-                            Foreground="{StaticResource ConversationHeaderTextBrush}"
-                            Text="Scout"/>
+                        <StackPanel
+                            HorizontalAlignment="Center">
 
-                        <TextBlock
-                            Margin="0,6,0,0"
-                            HorizontalAlignment="Center"
-                            FontSize="13"
-                            Foreground="{StaticResource ConversationSubtitleBrush}"
-                            Text="Helping you Navigate your FILE Safari"/>
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                FontSize="22"
+                                FontWeight="Bold"
+                                Foreground="{StaticResource ConversationHeaderTextBrush}"
+                                Text="Scout"/>
 
-                    </StackPanel>
+                            <TextBlock
+                                Margin="0,6,0,0"
+                                HorizontalAlignment="Center"
+                                FontSize="13"
+                                Foreground="{StaticResource ConversationSubtitleBrush}"
+                                Text="Helping you Navigate your FILE Safari"/>
+
+                        </StackPanel>
+
+                        <Button
+                            Width="82"
+                            Height="32"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Content="← Back"
+                            Command="{Binding BackCommand}"
+                            IsEnabled="{Binding CanGoBack}"
+                            Style="{StaticResource RoundedSendButton}"/>
+
+                    </Grid>
 
                 </Border>
 

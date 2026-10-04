@@ -1,4 +1,4 @@
-﻿namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
+namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 {
     /// <summary>
     /// =========================================================================
@@ -24,7 +24,7 @@
         /// True when the user has authorized Scout to automatically handle
         /// qualifying repairs during the current repair expedition.
         /// </summary>
-        public bool AutomaticallyHandleQualifyingRepairs { get; private set; }
+        public bool AutomaticallyHandleQualifyingRepairs { get; private set; } = true;
 
         /// <summary>
         /// Grants authorization for Scout to automatically handle repairs
@@ -36,14 +36,22 @@
         }
 
         /// <summary>
-        /// Clears automatic-repair authorization.
-        ///
-        /// This is used when a repair expedition ends and a new processing
-        /// cycle begins.
+        /// Revokes the user's authorization for Scout to automatically handle
+        /// qualifying repairs during the current repair expedition.
+        /// </summary>
+        public void RevokeAutomaticRepairs()
+        {
+            AutomaticallyHandleQualifyingRepairs = false;
+        }
+
+        /// <summary>
+        /// Resets the expedition-scoped authorization to Scout's normal
+        /// operating mode: qualifying repairs are handled automatically.
+        /// The user can still revoke this at any time during the expedition.
         /// </summary>
         public void Clear()
         {
-            AutomaticallyHandleQualifyingRepairs = false;
+            AutomaticallyHandleQualifyingRepairs = true;
         }
     }
 }

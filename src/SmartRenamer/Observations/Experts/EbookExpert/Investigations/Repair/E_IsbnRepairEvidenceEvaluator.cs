@@ -1,4 +1,5 @@
-﻿using Scout.Observations.Experts.EbookExpert.Data;
+using Scout.Observations.Experts.EbookExpert.Data;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Observations.Experts.EbookExpert.Resources;
 using System;
@@ -34,11 +35,14 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
         /// </param>
         public List<RepairDecisionCandidate> Evaluate(
     E_EbookMetadata metadata,
+    IReadOnlyList<MetadataEvidence> evidence,
     string epubPath,
     IReadOnlyList<IsbnResearchCandidate> candidates,
+    string? userEvidence = null,
     int maxDocuments = 10)
         {
             ArgumentNullException.ThrowIfNull(metadata);
+            ArgumentNullException.ThrowIfNull(evidence);
             ArgumentNullException.ThrowIfNull(candidates);
             ArgumentException.ThrowIfNullOrWhiteSpace(epubPath);
 
@@ -55,8 +59,10 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
                     candidate =>
                         EvaluateCandidate(
                             metadata,
+                            evidence,
                             candidate,
-                            content))
+                            content,
+                            userEvidence))
                 .ToList();
         }
 
@@ -65,8 +71,10 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
         /// </summary>
         private static RepairDecisionCandidate EvaluateCandidate(
             E_EbookMetadata metadata,
+            IReadOnlyList<MetadataEvidence> evidence,
             IsbnResearchCandidate candidate,
-            string content)
+            string content,
+            string? userEvidence)
         {
             bool isbnAppearsInContent =
                 ContainsNormalizedIsbn(
@@ -88,6 +96,35 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
                     content,
                     candidate.Publisher);
 
+            bool titleSupportedByRecordedEvidence =
+                EvidenceSupportsValue(
+                    evidence,
+                    candidate.Title);
+
+            bool authorSupportedByRecordedEvidence =
+                EvidenceSupportsValue(
+                    evidence,
+                    candidate.Author);
+
+            bool publisherSupportedByRecordedEvidence =
+                EvidenceSupportsValue(
+                    evidence,
+                    candidate.Publisher);
+
+            bool userEvidenceSupportsCandidate =
+                ContainsNormalizedIsbn(
+                    userEvidence ?? string.Empty,
+                    candidate.Isbn) ||
+                ContainsNormalizedText(
+                    userEvidence ?? string.Empty,
+                    candidate.Title) ||
+                ContainsNormalizedText(
+                    userEvidence ?? string.Empty,
+                    candidate.Author) ||
+                ContainsNormalizedText(
+                    userEvidence ?? string.Empty,
+                    candidate.Publisher);
+
             int supportingMatches =
                 0;
 
@@ -103,22 +140,45 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
             if (publisherAppearsInContent)
                 supportingMatches++;
 
-            string evidence =
+            if (titleSupportedByRecordedEvidence)
+                supportingMatches++;
+
+            if (authorSupportedByRecordedEvidence)
+                supportingMatches++;
+
+            if (publisherSupportedByRecordedEvidence)
+                supportingMatches++;
+
+            if (userEvidenceSupportsCandidate)
+                supportingMatches++;
+
+            string evidenceDescription =
                 BuildEvidence(
                     candidate,
                     isbnAppearsInContent,
                     titleAppearsInContent,
                     authorAppearsInContent,
-                    publisherAppearsInContent);
+                    publisherAppearsInContent,
+                    titleSupportedByRecordedEvidence,
+                    authorSupportedByRecordedEvidence,
+                    publisherSupportedByRecordedEvidence);
+
+            if (userEvidenceSupportsCandidate)
+            {
+                evidenceDescription +=
+                    " User-supplied information corroborates this candidate.";
+            }
 
             RepairDecisionCandidate evaluatedCandidate = new()
             {
                 Value = candidate.Isbn,
                 Source = candidate.Source,
-                Evidence = evidence,
+                Evidence = evidenceDescription,
                 Confidence = candidate.Confidence,
                 IsPreferred =
-                    isbnAppearsInContent
+                    isbnAppearsInContent ||
+                    (titleSupportedByRecordedEvidence &&
+                     authorSupportedByRecordedEvidence)
             };
 
             AddCandidateDetail(
@@ -145,6 +205,14 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
                 evaluatedCandidate,
                 "Publication year",
                 candidate.PublicationYear);
+
+            if (supportingMatches > 0)
+            {
+                AddCandidateDetail(
+                    evaluatedCandidate,
+                    "Recorded metadata evidence matches",
+                    supportingMatches.ToString());
+            }
 
             if (candidate.EditionVerified)
             {
@@ -233,6 +301,30 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
         }
 
         /// <summary>
+        /// Determines whether a candidate value is supported by any evidence
+        /// already recorded for this ebook. The evidence is corroboration, not
+        /// an automatic replacement for observed metadata.
+        /// </summary>
+        private static bool EvidenceSupportsValue(
+            IReadOnlyList<MetadataEvidence> evidence,
+            string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            string normalizedValue = NormalizeText(value);
+
+            if (string.IsNullOrWhiteSpace(normalizedValue))
+                return false;
+
+            return evidence.Any(item =>
+                !string.IsNullOrWhiteSpace(item.Value) &&
+                NormalizeText(item.Value).Contains(
+                    normalizedValue,
+                    StringComparison.Ordinal));
+        }
+
+        /// <summary>
         /// Produces human-readable evidence describing what the EPUB itself
         /// supported about the candidate.
         /// </summary>
@@ -241,7 +333,10 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
             bool isbnAppearsInContent,
             bool titleAppearsInContent,
             bool authorAppearsInContent,
-            bool publisherAppearsInContent)
+            bool publisherAppearsInContent,
+            bool titleSupportedByRecordedEvidence,
+            bool authorSupportedByRecordedEvidence,
+            bool publisherSupportedByRecordedEvidence)
         {
             List<string> evidence = new();
 
@@ -260,6 +355,18 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
             if (publisherAppearsInContent)
                 evidence.Add(
                     "The candidate publisher appears in the EPUB opening content.");
+
+            if (titleSupportedByRecordedEvidence)
+                evidence.Add(
+                    "The candidate title matches evidence already recorded for this ebook.");
+
+            if (authorSupportedByRecordedEvidence)
+                evidence.Add(
+                    "The candidate author matches evidence already recorded for this ebook.");
+
+            if (publisherSupportedByRecordedEvidence)
+                evidence.Add(
+                    "The candidate publisher matches evidence already recorded for this ebook.");
 
             if (candidate.EditionVerified)
                 evidence.Add(

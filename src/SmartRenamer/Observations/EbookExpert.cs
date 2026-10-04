@@ -1,4 +1,4 @@
-using Scout.Observations.Conversation;
+﻿using Scout.Observations.Conversation;
 using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Action;
@@ -85,6 +85,11 @@ namespace SmartRenamer.Observations
         // action. The generic Observation Framework transports the identity;
         // EbookExpert uses it to target the correct repair branch.
         private string? _reobservationTargetOriginalFullPath;
+
+        // Retained for the lifetime of the current expedition so domain
+        // actions such as organization can report through the same UI
+        // progress channel that carried the investigation.
+        private IProgress<ExecutionProgress>? _activeProgress;
 
         /// <summary>
         /// Initializes Ebook Expert's domain services.
@@ -321,6 +326,13 @@ namespace SmartRenamer.Observations
                 // exposed.
                 //---------------------------------------------------------
 
+                // Repair decisions must be exhausted before Organization
+                // becomes the next user-facing decision. Organization may
+                // already have a valid proposal, but it must not leap ahead
+                // of unresolved ebook repair choices.
+                if (_repairInvestigation.UnresolvedRepairPaths.Count > 0)
+                    return null;
+
                 if (!_organizationDestinationConfirmed)
                 {
                     string destination =
@@ -347,6 +359,13 @@ namespace SmartRenamer.Observations
                         ]
                     };
                 }
+
+                // Once the user has committed the organization policy,
+                // there is no longer an outstanding organization decision.
+                // The Guide must be allowed to leave the decision sequence;
+                // otherwise the same path question is regenerated forever.
+                if (_organizationCommitted)
+                    return null;
 
                 if (_organizationPathOptions.Count == 0)
                     return null;
@@ -498,7 +517,7 @@ namespace SmartRenamer.Observations
 
             _organizationInvestigation.ConfigureOptions(options);
 
-            ExecuteOrganizationAll();
+            ExecuteOrganizationAll(_activeProgress);
         }
 
         private IReadOnlyList<FileContext> _ebookFiles =
@@ -548,6 +567,13 @@ namespace SmartRenamer.Observations
 
         private readonly E_ActionDispatcher _actionDispatcher = new();
 
+        // EbookExpert-owned state for a repair opportunity awaiting user-supplied
+        // evidence. The generic Conversation Framework remains domain-neutral.
+        // The field currently requested through the free-form repair
+        // conversation. The stable original path remains the branch key.
+        private readonly Dictionary<string, string> _awaitingRepairInformationField =
+            new(StringComparer.OrdinalIgnoreCase);
+
         private static readonly IReadOnlyList<ObservationSpecialist> _specialists =
             Array.Empty<ObservationSpecialist>();
 
@@ -566,6 +592,13 @@ namespace SmartRenamer.Observations
 
         public override string Name =>
             "eBook Library";
+
+        /// <summary>
+        /// Ebook observation exposes eight meaningful pipeline stages so
+        /// Scout can report domain progress without pretending that one
+        /// collection-wide operation is one unit of work.
+        /// </summary>
+        public override int ProgressStageCount => 8;
 
         public override string Summary =>
             "I noticed what appears to be a collection of ebooks.";
@@ -609,6 +642,7 @@ namespace SmartRenamer.Observations
                 _organizationDestinationConfirmed = false;
                 _organizationPathOptions =
                     Array.Empty<OrganizationPathOption>();
+                _awaitingRepairInformationField.Clear();
             }
 
             _sourceFolderPath =
@@ -740,17 +774,39 @@ namespace SmartRenamer.Observations
         /// </summary>
         public override List<ExpertFinding> Investigate(
             IReadOnlyList<FileContext> files)
+        {
+            return Investigate(
+                files,
+                null,
+                null);
+        }
+
+        public override List<ExpertFinding> Investigate(
+            IReadOnlyList<FileContext> files,
+            string? originalFullPath,
+            IProgress<ExecutionProgress>? progress)
 
         // Begin Investigate()
         {
+            _reobservationTargetOriginalFullPath = originalFullPath;
+            _activeProgress = progress;
+
             List<ExpertFinding> findings = new();
+
+            ReportProgress(
+                progress,
+                0,
+                "Metadata",
+                "Reading ebook metadata...");
 
             //---------------------------------------------------------
             // Acquire metadata once.
             //---------------------------------------------------------
 
             MetadataReport metadataReport =
-                _metadataInvestigation.Investigate(_ebookFiles);
+                _metadataInvestigation.Investigate(
+                    _ebookFiles,
+                    _sourceFolderPath);
 
             //---------------------------------------------------------
             // Metadata ExpertFindings
@@ -765,6 +821,12 @@ namespace SmartRenamer.Observations
             findings.AddRange(
                 _metadataInvestigation.Findings);
 
+            ReportProgress(
+                progress,
+                1,
+                "Metadata",
+                "Metadata complete.");
+
             //---------------------------------------------------------
             // Completed Generation 2 Investigations
             //---------------------------------------------------------
@@ -772,6 +834,12 @@ namespace SmartRenamer.Observations
             findings.AddRange(
                 _contentsInvestigation.Investigate(
                     metadataReport));
+
+            ReportProgress(
+                progress,
+                2,
+                "Contents",
+                "Table of contents analysis complete.");
 
             findings.AddRange(
                 _organizationInvestigation.Investigate(
@@ -799,27 +867,137 @@ namespace SmartRenamer.Observations
                     Array.Empty<OrganizationPathOption>();
             }
 
+            ReportProgress(
+                progress,
+                3,
+                "Organization",
+                "Organization analysis complete.");
+
             findings.AddRange(
                 _duplicateInvestigation.Investigate(
                     _ebookFiles));
+
+            ReportProgress(
+                progress,
+                4,
+                "Duplicates",
+                "Duplicate analysis complete.");
 
             findings.AddRange(
                 _qualityInvestigation.Investigate(
                     metadataReport));
 
+            ReportProgress(
+                progress,
+                5,
+                "Quality",
+                "Quality analysis complete.");
+
+            List<ExpertFinding> repairFindings;
+
             if (string.IsNullOrWhiteSpace(_reobservationTargetOriginalFullPath))
             {
-                findings.AddRange(
+                repairFindings =
                     _repairInvestigation.Investigate(
-                        metadataReport));
+                        metadataReport);
             }
             else
             {
-                findings.AddRange(
+                repairFindings =
                     _repairInvestigation.InvestigateBranch(
                         metadataReport,
-                        _reobservationTargetOriginalFullPath));
+                        _reobservationTargetOriginalFullPath);
             }
+
+            //---------------------------------------------------------
+            // Automatic repair loop
+            //---------------------------------------------------------
+            //
+            // Automatic repair is available only when the user has
+            // explicitly delegated authority. A successful repair changes
+            // the working EPUB, so re-observe before another pass.
+            //
+            // Initial investigation may use collection-wide opportunities.
+            // A targeted re-observation stays inside its branch so that
+            // repairing one EPUB never silently repairs another EPUB.
+            //---------------------------------------------------------
+
+            int automaticRepairPass = 0;
+            int maximumAutomaticRepairPasses =
+                Math.Max(
+                    1,
+                    _ebookFiles.Count * 2);
+
+            while (automaticRepairPass < maximumAutomaticRepairPasses)
+            {
+                IReadOnlyList<RepairOpportunity> automaticOpportunities =
+                    string.IsNullOrWhiteSpace(
+                        _reobservationTargetOriginalFullPath)
+                        ? _repairInvestigation.RepairOpportunities
+                        : _repairInvestigation.GetRepairOpportunitiesFor(
+                            _reobservationTargetOriginalFullPath);
+
+                bool repairApplied =
+                    _actionDispatcher.ApplySafeAutomaticRepairs(
+                        automaticOpportunities,
+                        _repairInvestigation.RepairAuthorization
+                            .AutomaticallyHandleQualifyingRepairs);
+
+                if (!repairApplied)
+                    break;
+
+                automaticRepairPass++;
+
+                metadataReport =
+                    _metadataInvestigation.Investigate(
+                        _ebookFiles,
+                        _sourceFolderPath);
+
+                if (string.IsNullOrWhiteSpace(
+                        _reobservationTargetOriginalFullPath))
+                {
+                    repairFindings =
+                        _repairInvestigation.Investigate(
+                            metadataReport);
+                }
+                else
+                {
+                    repairFindings =
+                        _repairInvestigation.InvestigateBranch(
+                            metadataReport,
+                            _reobservationTargetOriginalFullPath);
+                }
+            }
+
+            // Only the final repair pass becomes user-facing. Earlier
+            // findings may have been resolved automatically.
+            findings.AddRange(repairFindings);
+
+            // Refresh organization metadata after automatic repair so an
+            // identity/ISBN change cannot leave the organization plan stale.
+            _organizationInvestigation.Investigate(
+                metadataReport);
+
+            OrganizationReport? refreshedOrganizationReport =
+                _organizationInvestigation.Report;
+
+            if (refreshedOrganizationReport != null)
+            {
+                _organizationPathOptions =
+                    _organizationPathBuilder.Build(
+                        refreshedOrganizationReport);
+            }
+
+            bool repairWaiting =
+                _repairInvestigation.UnresolvedRepairPaths.Count > 0;
+
+            ReportProgress(
+                progress,
+                6,
+                "Repair",
+                repairWaiting
+                    ? "Repair is waiting for a decision."
+                    : "Repair analysis complete.");
 
             _reobservationTargetOriginalFullPath = null;
 
@@ -836,11 +1014,18 @@ namespace SmartRenamer.Observations
             //---------------------------------------------------------
 
             _organizationInvestigation.AcceptRepairHandoffs(
-                _repairInvestigation.RepairHandoffs);
+                _repairInvestigation.RepairHandoffs,
+                _repairInvestigation.UnresolvedRepairPaths);
 
             findings.AddRange(
                 _coverInvestigation.Investigate(
                     metadataReport));
+
+            ReportProgress(
+                progress,
+                7,
+                "Cover",
+                "Cover analysis complete.");
 
             //---------------------------------------------------------
             // Enrichment Investigation
@@ -849,6 +1034,12 @@ namespace SmartRenamer.Observations
             findings.AddRange(
                 _enrichmentInvestigation.Investigate(
                     metadataReport));
+
+            ReportProgress(
+                progress,
+                8,
+                "Enrichment",
+                "Ebook investigation complete.");
 
             //---------------------------------------------------------
             // Persistent collection-level organization commitment
@@ -865,7 +1056,7 @@ namespace SmartRenamer.Observations
 
             if (_organizationCommitted)
             {
-                ExecuteOrganizationAll();
+                ExecuteOrganizationAll(_activeProgress);
             }
 
             return findings;
@@ -882,15 +1073,212 @@ namespace SmartRenamer.Observations
             IReadOnlyList<FileContext> files,
             string? originalFullPath)
         {
-            _reobservationTargetOriginalFullPath = originalFullPath;
-
-            return Investigate(files);
+            return Investigate(
+                files,
+                originalFullPath,
+                null);
         }
 
         /// <summary>
         /// Translates the Expert's findings into conversation-ready
         /// recommendations.
         /// </summary>
+        private IReadOnlyList<ExecutionProgressItem> BuildCollectionProgressItems()
+        {
+            if (_ebookFiles.Count == 0)
+                return Array.Empty<ExecutionProgressItem>();
+
+            IReadOnlyList<string> unresolvedPaths =
+                _repairInvestigation.UnresolvedRepairPaths;
+
+            return _ebookFiles
+                .Select(file =>
+                {
+                    string originalPath = file.OriginalFullPath;
+
+                    if (_organizationInvestigation.IsOrganized(originalPath))
+                    {
+                        return new ExecutionProgressItem
+                        {
+                            Key = originalPath,
+                            DisplayName = file.CurrentName,
+                            State = "Organized",
+                            Status = "Organized.",
+                            Completed = 1,
+                            Total = 1
+                        };
+                    }
+
+                    E_RepairHandoff? terminalHandoff =
+                        _repairInvestigation.RepairHandoffs.FirstOrDefault(
+                            handoff =>
+                                string.Equals(
+                                    handoff.OriginalPath,
+                                    originalPath,
+                                    StringComparison.OrdinalIgnoreCase) &&
+                                (handoff.Status == E_RepairHandoffStatus.AcceptedAsIs ||
+                                 handoff.Status == E_RepairHandoffStatus.Omitted));
+
+                    if (terminalHandoff != null)
+                    {
+                        bool accepted =
+                            terminalHandoff.Status ==
+                            E_RepairHandoffStatus.AcceptedAsIs;
+
+                        return new ExecutionProgressItem
+                        {
+                            Key = originalPath,
+                            DisplayName = file.CurrentName,
+                            State = accepted ? "Accepted" : "Omitted",
+                            Status = accepted
+                                ? "Accepted as-is. Ready for Organization."
+                                : "Omitted from Organization.",
+                            Completed = 1,
+                            Total = 1,
+                            Actions = Array.Empty<ExecutionProgressAction>()
+                        };
+                    }
+
+                    E_RepairHandoff? repairHandoff =
+                        _repairInvestigation.RepairHandoffs.FirstOrDefault(
+                            handoff =>
+                                string.Equals(
+                                    handoff.OriginalPath,
+                                    originalPath,
+                                    StringComparison.OrdinalIgnoreCase));
+
+                    if (repairHandoff?.Status == E_RepairHandoffStatus.RepairCompleted)
+                    {
+                        return new ExecutionProgressItem
+                        {
+                            Key = originalPath,
+                            DisplayName = file.CurrentName,
+                            State = "Ready",
+                            Status = "Repair complete; ready for Organization.",
+                            Completed = 1,
+                            Total = 1,
+                            Actions = Array.Empty<ExecutionProgressAction>()
+                        };
+                    }
+
+                    bool waiting =
+                        unresolvedPaths.Any(
+                            path => string.Equals(
+                                path,
+                                originalPath,
+                                StringComparison.OrdinalIgnoreCase));
+
+                    IReadOnlyList<ExecutionProgressAction> actions =
+                        waiting
+                            ? new[]
+                            {
+                                new ExecutionProgressAction
+                                {
+                                    Id = $"EditInformation:{originalPath}",
+                                    Label = "Edit / add information",
+                                    ActionId = "AddRepairInformation",
+                                    ContextId = originalPath
+                                },
+                                new ExecutionProgressAction
+                                {
+                                    Id = $"AcceptAsIs:{originalPath}",
+                                    Label = "Accept as-is and organize",
+                                    ActionId = "AcceptAsIs",
+                                    ContextId = originalPath
+                                },
+                                new ExecutionProgressAction
+                                {
+                                    Id = $"OmitEbook:{originalPath}",
+                                    Label = "Omit",
+                                    ActionId = "OmitEbook",
+                                    ContextId = originalPath
+                                }
+                            }
+                            : Array.Empty<ExecutionProgressAction>();
+
+                    return new ExecutionProgressItem
+                    {
+                        Key = originalPath,
+                        DisplayName = file.CurrentName,
+                        State = "Unorganized",
+                        Status = waiting
+                            ? "Waiting for repair or decision."
+                            : "Not yet organized.",
+                        Completed = 0,
+                        Total = 1,
+                        Actions = actions
+                    };
+                })
+                .OrderBy(item =>
+                    item.NeedsUserAttention ? 0 :
+                    string.Equals(item.State, "Processing", StringComparison.OrdinalIgnoreCase) ? 1 :
+                    string.Equals(item.State, "Ready", StringComparison.OrdinalIgnoreCase) ? 2 :
+                    item.IsCompleted ? 4 :
+                    3)
+                .ThenBy(item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private void ReportProgress(
+            IProgress<ExecutionProgress>? progress,
+            int stageCompleted,
+            string stage,
+            string status)
+        {
+            if (progress == null)
+                return;
+
+            int collectionTotal =
+                _repairInvestigation.ExpeditionTotal;
+
+            int collectionCompleted =
+                _repairInvestigation.ExpeditionCompleted;
+
+            int collectionProcessing =
+                _repairInvestigation.ExpeditionProcessing;
+
+            int collectionPending =
+                _repairInvestigation.ExpeditionPending;
+
+            int collectionWaiting =
+                _repairInvestigation.UnresolvedRepairPaths.Count;
+
+            int collectionActive =
+                Math.Max(
+                    0,
+                    collectionProcessing - collectionWaiting);
+
+            // Before Organization has been committed, the collection
+            // progress must come from the repair-aware view. Organization's
+            // progress list can be a valid earlier snapshot, but it does not
+            // carry the current repair decision buttons. Reusing that stale
+            // snapshot makes unresolved books appear to have no next action.
+            IReadOnlyList<ExecutionProgressItem> items =
+                _organizationCommitted &&
+                _organizationInvestigation.ProgressItems.Count > 0
+                    ? _organizationInvestigation.ProgressItems
+                    : BuildCollectionProgressItems();
+
+            progress.Report(
+                new ExecutionProgress
+                {
+                    Completed = stageCompleted,
+                    Total = ProgressStageCount,
+                    CurrentFile =
+                        _repairInvestigation.CurrentFile?.CurrentName ?? "",
+                    Status = status,
+                    Stage = stage,
+                    StageCompleted = stageCompleted,
+                    StageTotal = ProgressStageCount,
+                    CollectionTotal = collectionTotal,
+                    CollectionCompleted = collectionCompleted,
+                    CollectionProcessing = collectionActive,
+                    CollectionWaiting = collectionWaiting,
+                    CollectionPending = collectionPending,
+                    Items = items
+                });
+        }
+
         public override List<CV_Recommendation> BuildRecommendations(
             IReadOnlyList<ExpertFinding> findings)
         {
@@ -942,9 +1330,10 @@ namespace SmartRenamer.Observations
         /// does not repeat entries that were already organized successfully
         /// during the expedition.
         /// </summary>
-        internal IReadOnlyList<OrganizationCopyResult> ExecuteOrganizationAll()
+        internal IReadOnlyList<OrganizationCopyResult> ExecuteOrganizationAll(
+            IProgress<ExecutionProgress>? progress = null)
         {
-            return _organizationInvestigation.ExecuteAll();
+            return _organizationInvestigation.ExecuteAll(progress);
         }
 
         /// <summary>
@@ -959,6 +1348,197 @@ namespace SmartRenamer.Observations
         {
             return _repairInvestigation.CompleteCurrentIfComplete(
                 originalFullPath);
+        }
+
+        /// <summary>
+        /// Rebuilds the Ebook Expert's organization context after a terminal
+        /// repair decision changes Organization eligibility.
+        /// </summary>
+        private static string? GetNextUserInputField(
+            RepairOpportunity opportunity)
+        {
+            // Description is deliberately first because it is a direct
+            // narrative value Scout can safely accept from the user. The
+            // remaining text metadata fields use the same conversation path.
+            if (opportunity.MissingDescription)
+                return "Description";
+
+            if (opportunity.MissingTitle)
+                return "Title";
+
+            if (opportunity.MissingAuthor)
+                return "Author";
+
+            if (opportunity.MissingPublisher)
+                return "Publisher";
+
+            if (opportunity.MissingLanguage)
+                return "Language";
+
+            if (opportunity.IdentityEvaluation?.RepairRequired == true)
+            {
+                if (opportunity.IdentityEvaluation.SeriesEvaluation?.State ==
+                    SeriesEvidenceState.Resolved &&
+                    !string.IsNullOrWhiteSpace(
+                        opportunity.IdentityEvaluation.Candidate?.Series) &&
+                    !string.Equals(
+                        opportunity.Record.Metadata.Series,
+                        opportunity.IdentityEvaluation.Candidate.Series,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Series";
+                }
+
+                if (!string.IsNullOrWhiteSpace(
+                        opportunity.IdentityEvaluation.Candidate?.SeriesNumber) &&
+                    !string.Equals(
+                        opportunity.Record.Metadata.SeriesNumber,
+                        opportunity.IdentityEvaluation.Candidate.SeriesNumber,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return "SeriesNumber";
+                }
+            }
+
+            return opportunity.MissingIsbn
+                ? "ISBN"
+                : null;
+        }
+
+        private static string NormalizeUserProvidedFieldValue(
+            string field,
+            string value)
+        {
+            string normalized = value.Trim();
+            string prefix = field.Trim() + ":";
+
+            if (normalized.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized[prefix.Length..].Trim();
+            }
+
+            return normalized;
+        }
+
+        private static CV_ActionResult BuildUserRepairInformationPrompt(
+            CV_ActionRequest request,
+            string field,
+            string? leadingMessage)
+        {
+            string prompt =
+                field.Equals("Description", StringComparison.OrdinalIgnoreCase)
+                    ? "Scout found that Description is missing. If you want Scout to use a description, type it in the chat box below and press Send."
+                    : $"Scout found that {field} is missing. If you have a {field} you want Scout to use, type it in the chat box below and press Send.";
+
+            CV_ActionResult result = new()
+            {
+                ActionId = request.ActionId,
+                Success = true,
+                Message = string.IsNullOrWhiteSpace(leadingMessage)
+                    ? prompt
+                    : leadingMessage + Environment.NewLine + Environment.NewLine + prompt
+            };
+
+            result.Options.Add(
+                new CV_ActionOption
+                {
+                    Id = "AddRepairInformation",
+                    ActionId = "AddRepairInformation",
+                    ContextId = request.ContextId,
+                    Label = $"Provide {field}",
+                    AcceptsUserInput = true,
+                    Source = "Ebook Expert"
+                });
+
+            return result;
+        }
+
+        private static string BuildRepairInformationSummary(
+            RepairOpportunity opportunity)
+        {
+            List<string> missing = new();
+            List<string> conflicting = new();
+
+            if (opportunity.MissingTitle)
+                missing.Add("Title");
+
+            if (opportunity.MissingAuthor)
+                missing.Add("Author");
+
+            if (opportunity.MissingIsbn)
+                missing.Add("ISBN");
+
+            if (opportunity.MissingPublisher)
+                missing.Add("Publisher");
+
+            if (opportunity.MissingLanguage)
+                missing.Add("Language");
+
+            if (opportunity.MissingDescription)
+                missing.Add("Description");
+
+            if (opportunity.MissingCover)
+                missing.Add("Cover");
+
+            if (opportunity.Record.Reconciliation.Title.State ==
+                MetadataFieldReconciliationState.Conflicting)
+                conflicting.Add("Title");
+
+            if (opportunity.Record.Reconciliation.Author.State ==
+                MetadataFieldReconciliationState.Conflicting)
+                conflicting.Add("Author");
+
+            if (opportunity.Record.Reconciliation.Series.State ==
+                MetadataFieldReconciliationState.Conflicting)
+                conflicting.Add("Series");
+
+            if (opportunity.Record.Reconciliation.SeriesNumber.State ==
+                MetadataFieldReconciliationState.Conflicting)
+                conflicting.Add("Series Number");
+
+            if (opportunity.IdentityEvaluation?.RepairRequired == true &&
+                !string.IsNullOrWhiteSpace(opportunity.IdentityEvaluation.Reason))
+            {
+                conflicting.Add(
+                    "Identity / Series information needs reconciliation");
+            }
+
+            List<string> lines = new();
+
+            if (missing.Count > 0)
+            {
+                lines.Add(
+                    "Scout found these missing metadata fields: " +
+                    string.Join(", ", missing) + ".");
+            }
+
+            if (conflicting.Count > 0)
+            {
+                lines.Add(
+                    "Scout also found information that needs reconciliation: " +
+                    string.Join(", ", conflicting) + ".");
+            }
+
+            if (lines.Count == 0)
+            {
+                lines.Add(
+                    "Scout found a metadata repair opportunity, but no simple missing field explains it. " +
+                    "The evidence needs further evaluation.");
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private void RefreshOrganizationAfterRepairDecision()
+        {
+            _organizationInvestigation.AcceptRepairHandoffs(
+                _repairInvestigation.RepairHandoffs,
+                _repairInvestigation.UnresolvedRepairPaths);
+
+            if (_organizationCommitted)
+                ExecuteOrganizationAll(_activeProgress);
         }
 
         /// <summary>
@@ -1007,53 +1587,274 @@ namespace SmartRenamer.Observations
             {
                 _repairInvestigation.AuthorizeAutomaticRepairs();
 
+                //---------------------------------------------------------
+                // Authorization may be granted after the initial
+                // investigation has already produced repair opportunities.
+                // In that case, do not wait for another unrelated action to
+                // trigger the automatic-repair pass. Apply the same safe
+                // automatic repair capability immediately to the current
+                // collection opportunities.
+                //
+                // A successful physical repair requires re-observation.
+                // Authorization by itself does not.
+                //---------------------------------------------------------
+
+                bool repairApplied =
+                    _actionDispatcher.ApplySafeAutomaticRepairs(
+                        _repairInvestigation.RepairOpportunities,
+                        _repairInvestigation.RepairAuthorization
+                            .AutomaticallyHandleQualifyingRepairs);
+
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = true,
+                    RequiresReobservation = repairApplied,
+                    Message = repairApplied
+                        ? "Automatic repairs are now on. I applied the qualifying repairs I could safely determine and will re-check the books."
+                        : "I can now handle qualifying ebook repairs that I can safely determine. I'll still ask you when a repair is ambiguous."
+                };
+            }
+
+            if (string.Equals(
+                    request.ActionId,
+                    "RevokeAutomaticAction",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                _repairInvestigation.RevokeAutomaticRepairs();
+
                 return new CV_ActionResult
                 {
                     ActionId = request.ActionId,
                     Success = true,
                     RequiresReobservation = false,
                     Message =
-                        "I can now handle qualifying ebook repairs that I can safely determine. I'll still ask you when a repair is ambiguous."
+                        "Automatic repairs are now off. I'll ask before applying qualifying repairs."
                 };
             }
 
             //---------------------------------------------------------
-            // Legacy whole-ebook defer action
-            //---------------------------------------------------------
-            //
-            // This remains temporarily supported while the repair
-            // opportunity-level skip behavior is being rebuilt.
-            //
+            // Unresolved repair user decisions
             //---------------------------------------------------------
 
-            if (string.Equals(
-                    request.ActionId,
-                    "SkipCurrentEbook",
-                    StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(request.ActionId, "AcceptAsIs", StringComparison.OrdinalIgnoreCase))
             {
-                bool deferred =
-                    _repairInvestigation.DeferCurrent();
+                bool resolved =
+                    _repairInvestigation.ResolveUserDecision(
+                        request.ContextId,
+                        E_RepairHandoffStatus.AcceptedAsIs,
+                        "The user explicitly accepted this ebook as-is.");
+
+                _awaitingRepairInformationField.Remove(request.ContextId);
+
+                if (resolved)
+                    RefreshOrganizationAfterRepairDecision();
 
                 return new CV_ActionResult
                 {
                     ActionId = request.ActionId,
-                    Success = deferred,
-                    RequiresReobservation = deferred,
-                    Message = deferred
-                        ? "I've set this ebook aside and will continue with the next one."
-                        : "There is no current ebook to skip."
+                    Success = resolved,
+                    RequiresReobservation = resolved,
+                    Message = resolved
+                        ? "This ebook has been accepted as-is. It is no longer blocking repair and is ready for Organization."
+                        : "I couldn't match that ebook to an active or pending repair branch."
                 };
+            }
+
+            if (string.Equals(request.ActionId, "OmitEbook", StringComparison.OrdinalIgnoreCase))
+            {
+                bool resolved =
+                    _repairInvestigation.ResolveUserDecision(
+                        request.ContextId,
+                        E_RepairHandoffStatus.Omitted,
+                        "The user explicitly rejected this ebook for Organization.");
+
+                _awaitingRepairInformationField.Remove(request.ContextId);
+
+                if (resolved)
+                    RefreshOrganizationAfterRepairDecision();
+
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = resolved,
+                    RequiresReobservation = resolved,
+                    Message = resolved
+                        ? "This ebook has been omitted from Organization and will no longer block the collection."
+                        : "I couldn't match that ebook to an active or pending repair branch."
+                };
+            }
+
+            if (string.Equals(
+                    request.ActionId,
+                    "ReviewIncompleteMetadata",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                List<RepairOpportunity> incompleteOpportunities =
+                    _repairInvestigation.RepairOpportunities
+                        .Where(opportunity => !opportunity.IsComplete)
+                        .ToList();
+
+                if (incompleteOpportunities.Count == 0)
+                {
+                    return new CV_ActionResult
+                    {
+                        ActionId = request.ActionId,
+                        Success = true,
+                        Message =
+                            "I rechecked the collection and there are no remaining incomplete metadata repair opportunities."
+                    };
+                }
+
+                CV_ActionResult reviewResult = new()
+                {
+                    ActionId = request.ActionId,
+                    Success = true,
+                    Message =
+                        incompleteOpportunities.Count == 1
+                            ? "I found one ebook that still needs metadata attention. Choose it below and I'll walk you through the missing information."
+                            : $"I found {incompleteOpportunities.Count} ebooks that still need metadata attention. Choose the ebook you want to work on."
+                };
+
+                foreach (RepairOpportunity opportunity
+                    in incompleteOpportunities)
+                {
+                    string contextId =
+                        opportunity.Record.File.OriginalFullPath;
+
+                    if (string.IsNullOrWhiteSpace(contextId))
+                        continue;
+
+                    string displayName =
+                        !string.IsNullOrWhiteSpace(
+                            opportunity.Record.Metadata.Title)
+                            ? opportunity.Record.Metadata.Title
+                            : Path.GetFileNameWithoutExtension(
+                                contextId);
+
+                    reviewResult.Options.Add(
+                        new CV_ActionOption
+                        {
+                            Id = "ReviewRepair:" + contextId,
+                            ActionId = "AddRepairInformation",
+                            ContextId = contextId,
+                            Label = "Review " + displayName,
+                            Source = "Ebook Expert"
+                        });
+                }
+
+                return reviewResult;
+            }
+
+            if (string.Equals(request.ActionId, "AddRepairInformation", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(request.ContextId))
+                {
+                    return new CV_ActionResult
+                    {
+                        ActionId = request.ActionId,
+                        Success = false,
+                        Message = "I don't know which ebook needs the additional information."
+                    };
+                }
+
+                IReadOnlyList<RepairOpportunity> informationOpportunities =
+                    _repairInvestigation.GetRepairOpportunitiesFor(
+                        request.ContextId);
+
+                RepairOpportunity? informationOpportunity =
+                    informationOpportunities.FirstOrDefault();
+
+                if (informationOpportunity == null)
+                {
+                    return new CV_ActionResult
+                    {
+                        ActionId = request.ActionId,
+                        Success = false,
+                        Message = "Scout could not retrieve the current repair details for this ebook."
+                    };
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.UserInput) &&
+                    _awaitingRepairInformationField.TryGetValue(
+                        request.ContextId,
+                        out string? requestedField))
+                {
+                    string suppliedValue =
+                        NormalizeUserProvidedFieldValue(
+                            requestedField,
+                            request.UserInput);
+
+                    if (string.IsNullOrWhiteSpace(suppliedValue))
+                    {
+                        return BuildUserRepairInformationPrompt(
+                            request,
+                            requestedField,
+                            "I need a value for that field before I can add it to the repair plan.");
+                    }
+
+                    _repairInvestigation.AddUserFieldEvidence(
+                        request.ContextId,
+                        requestedField,
+                        suppliedValue);
+
+                    CV_ActionResult userInformationResult =
+                        _actionDispatcher.ApplyUserProvidedMetadata(
+                            request,
+                            informationOpportunity,
+                            requestedField,
+                            suppliedValue,
+                            _repairInvestigation.RepairAuthorization
+                                .AutomaticallyHandleQualifyingRepairs);
+
+                    if (userInformationResult.Success)
+                    {
+                        _awaitingRepairInformationField.Remove(
+                            request.ContextId);
+                    }
+
+                    return userInformationResult;
+                }
+
+                string? nextField =
+                    GetNextUserInputField(
+                        informationOpportunity);
+
+                if (string.IsNullOrWhiteSpace(nextField))
+                {
+                    return new CV_ActionResult
+                    {
+                        ActionId = request.ActionId,
+                        Success = true,
+                        Message =
+                            BuildRepairInformationSummary(
+                                informationOpportunity) +
+                            Environment.NewLine +
+                            "Scout does not currently have a text-based repair path for the remaining field(s)."
+                    };
+                }
+
+                _awaitingRepairInformationField[request.ContextId] =
+                    nextField;
+
+                return BuildUserRepairInformationPrompt(
+                    request,
+                    nextField,
+                    null);
             }
 
             //---------------------------------------------------------
             // Ebook domain action dispatcher
             //---------------------------------------------------------
 
-            return _actionDispatcher.Execute(
-                request,
-                _repairInvestigation.RepairOpportunities,
-                _repairInvestigation.RepairAuthorization
-                    .AutomaticallyHandleQualifyingRepairs);
+            CV_ActionResult actionResult =
+                _actionDispatcher.Execute(
+                    request,
+                    _repairInvestigation.RepairOpportunities,
+                    _repairInvestigation.RepairAuthorization
+                        .AutomaticallyHandleQualifyingRepairs);
+
+            return actionResult;
         }
 
     } // End EbookExpert

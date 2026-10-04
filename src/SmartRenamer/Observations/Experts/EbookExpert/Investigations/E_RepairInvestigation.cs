@@ -60,11 +60,33 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
         private RepairReport? _collectionReport;
 
+        // Stable collection-wide lookup for terminal user decisions.
+        // RepairReport contains opportunities/evidence, not FileContext
+        // records, so terminal decisions must use the expedition's original
+        // FileContext set rather than inventing a Records property on the
+        // repair report.
+        private readonly Dictionary<string, FileContext> _filesByOriginalPath =
+            new(StringComparer.OrdinalIgnoreCase);
+
         //---------------------------------------------------------
         // Semantic repair handoffs
         //---------------------------------------------------------
 
         private readonly List<E_RepairHandoff> _repairHandoffs = new();
+
+        //---------------------------------------------------------
+        // User-supplied evidence
+        //---------------------------------------------------------
+        //
+        // User evidence is tied to OriginalFullPath, the stable identity
+        // of the ebook. It survives re-observation so information supplied
+        // by the user can continue to inform later repair opportunities.
+        //
+        //---------------------------------------------------------
+
+        private readonly Dictionary<string, List<MetadataEvidence>>
+            _userEvidenceByOriginalPath =
+                new(StringComparer.OrdinalIgnoreCase);
 
         //---------------------------------------------------------
         // Repair expedition
@@ -86,6 +108,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             _repairAuthorization.AuthorizeAutomaticRepairs();
         }
 
+        public void RevokeAutomaticRepairs()
+        {
+            _repairAuthorization.RevokeAutomaticRepairs();
+        }
+
         public void BeginExpedition(
             string sourceFolderPath,
             IReadOnlyList<FileContext> files)
@@ -105,8 +132,19 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
             _repairHandoffs.Clear();
 
+            _userEvidenceByOriginalPath.Clear();
+
             _collectionReport = null;
             _reportsByOriginalPath.Clear();
+            _filesByOriginalPath.Clear();
+
+            foreach (FileContext file in files)
+            {
+                if (file == null || string.IsNullOrWhiteSpace(file.OriginalFullPath))
+                    continue;
+
+                _filesByOriginalPath[file.OriginalFullPath] = file;
+            }
 
             _repairExpedition.Begin(
                 sourceFolderPath,
@@ -143,22 +181,43 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             _collectionReport =
                 block.Analyze(metadataReport);
 
+            AttachRetainedUserEvidence(
+                _collectionReport,
+                metadataReport);
+
+            ApplyIdentityEvaluations(
+                _collectionReport,
+                metadataReport);
+
             //---------------------------------------------------------
-            // The Repair Expedition works one EPUB at a time.
+            // Activate the complete collection into branch-aware
+            // expedition state before evaluating repair.
             //
-            // Initial investigation must not stop on an EPUB that is
-            // already complete. If the first EPUB needs no repair, move
-            // forward until the expedition reaches the first EPUB that
-            // actually requires attention.
+            // ActiveFiles is keyed by OriginalFullPath, so a branch that
+            // needs the user's attention can remain active without stopping
+            // the other EPUBs from being investigated. CurrentFile remains
+            // only as a compatibility cursor for older callers.
             //---------------------------------------------------------
+
+            while (_repairExpedition.PendingCount > 0)
+            {
+                _repairExpedition.ActivateNext();
+            }
 
             E_RepairConsultant consultant = new();
 
-            while (_repairExpedition.CurrentFile != null)
-            {
-                FileContext currentFile =
-                    _repairExpedition.CurrentFile;
+            //---------------------------------------------------------
+            // Investigate every active branch.
+            //
+            // Take a snapshot because completed branches are removed from
+            // the expedition during this pass. An unresolved branch remains
+            // active and therefore becomes a waiting branch rather than a
+            // collection-wide stop.
+            //---------------------------------------------------------
 
+            foreach (FileContext currentFile in
+                     _repairExpedition.ActiveFiles.ToList())
+            {
                 MetadataRecord? currentRecord =
                     metadataReport.Records.FirstOrDefault(
                         record =>
@@ -171,14 +230,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                 // If the current EPUB cannot be matched to the shared
                 // metadata report, do not silently advance past it.
                 // The metadata investigation has not established that
-                // this EPUB is complete.
+                // this EPUB is complete. Leave the branch active.
                 //-----------------------------------------------------
 
                 if (currentRecord == null)
                 {
                     _reportsByOriginalPath[currentFile.OriginalFullPath] =
                         new RepairReport();
-                    return findings;
+                    continue;
                 }
 
                 MetadataReport currentMetadataReport =
@@ -190,39 +249,49 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                 RepairReport report =
                     block.Analyze(currentMetadataReport);
 
+                AttachRetainedUserEvidence(
+                    report,
+                    currentRecord);
+
+                ApplyIdentityEvaluations(
+                    report,
+                    currentMetadataReport);
+
                 //-----------------------------------------------------
                 // Preserve the report for this EPUB.
                 //
                 // The original path is the stable branch identity.
-                // This remains separate from _collectionReport and allows
-                // multiple EPUB reports to coexist.
+                // Multiple EPUB reports can now coexist in the same
+                // expedition.
                 //-----------------------------------------------------
 
                 _reportsByOriginalPath[currentFile.OriginalFullPath] = report;
 
                 //-----------------------------------------------------
                 // A complete EPUB requires no repair conversation.
-                // Mark it complete and advance the expedition.
+                // Complete only this branch and continue with the rest
+                // of the collection.
                 //-----------------------------------------------------
 
                 if (report.IsComplete)
                 {
                     CreateCompletedHandoff(currentFile);
 
-                    _repairExpedition.CompleteCurrent();
+                    _repairExpedition.Complete(
+                        currentFile.OriginalFullPath);
 
                     continue;
                 }
 
                 //-----------------------------------------------------
-                // The expedition has reached an EPUB that requires
-                // attention. Let the Consultant describe that finding.
+                // This branch requires attention. Record its finding but
+                // deliberately do NOT return. The branch remains active
+                // and is therefore represented as waiting while other
+                // EPUB branches continue through investigation.
                 //-----------------------------------------------------
 
                 findings.AddRange(
                     consultant.Review(report));
-
-                return findings;
             }
 
             //---------------------------------------------------------
@@ -272,6 +341,73 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         }
 
         /// <summary>
+        /// Returns the original paths of EPUBs that still have active repair
+        /// opportunities and have not reached a terminal repair handoff.
+        ///
+        /// These paths are temporarily ineligible for Organization. The user
+        /// must either resolve the repair, accept the EPUB as-is, or omit it.
+        /// This state remains entirely inside the Ebook Expert.
+        /// </summary>
+        internal IReadOnlyList<string> UnresolvedRepairPaths
+        {
+            get
+            {
+                List<string> paths = new();
+
+                //-----------------------------------------------------
+                // Eligibility must be collection-wide.
+                //
+                // The repair expedition deliberately investigates one EPUB
+                // at a time and therefore _reportsByOriginalPath only contains
+                // books that the expedition has reached. Organization cannot
+                // use that dictionary to decide whether an unreached book is
+                // eligible.
+                //
+                // _collectionReport, however, was analyzed from the complete
+                // metadata collection and has already had identity evaluation
+                // applied. Its opportunities therefore represent every book
+                // currently known to require repair.
+                //-----------------------------------------------------
+
+                if (_collectionReport == null)
+                    return paths;
+
+                foreach (RepairOpportunity opportunity in
+                         _collectionReport.Opportunities)
+                {
+                    string? originalPath =
+                        opportunity.Record?.File?.OriginalFullPath;
+
+                    if (string.IsNullOrWhiteSpace(originalPath))
+                        continue;
+
+                    //-------------------------------------------------
+                    // A terminal handoff means the book has reached an
+                    // explicit organization outcome even if the original
+                    // RepairOpportunity still appears in the collection
+                    // report (for example, after AcceptAsIs).
+                    //-------------------------------------------------
+
+                    bool hasTerminalHandoff =
+                        _repairHandoffs.Any(
+                            handoff =>
+                                string.Equals(
+                                    handoff.OriginalPath,
+                                    originalPath,
+                                    StringComparison.OrdinalIgnoreCase) &&
+                                (handoff.Status == E_RepairHandoffStatus.RepairCompleted ||
+                                 handoff.Status == E_RepairHandoffStatus.AcceptedAsIs ||
+                                 handoff.Status == E_RepairHandoffStatus.Omitted));
+
+                    if (!hasTerminalHandoff)
+                        paths.Add(originalPath);
+                }
+
+                return paths;
+            }
+        }
+
+        /// <summary>
         /// Semantic results produced by the repair stage.
         /// </summary>
         internal IReadOnlyList<E_RepairHandoff> RepairHandoffs =>
@@ -287,15 +423,20 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
         public FileContext? CurrentFile =>
             _repairExpedition.CurrentFile;
-
-        public IReadOnlyList<FileContext> DeferredFiles =>
-            _repairExpedition.DeferredFiles;
-
-        public bool HasDeferredFiles =>
-            _repairExpedition.HasDeferredFiles;
-
         public bool ExpeditionIsComplete =>
             _repairExpedition.IsComplete;
+
+        internal int ExpeditionTotal =>
+            _repairExpedition.TotalCount;
+
+        internal int ExpeditionCompleted =>
+            _repairExpedition.CompletedFiles.Count;
+
+        internal int ExpeditionProcessing =>
+            _repairExpedition.ActiveCount;
+
+        internal int ExpeditionPending =>
+            _repairExpedition.PendingCount;
 
         /// <summary>
         /// Completes the specific repair branch identified by its stable
@@ -342,20 +483,24 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             RepairReport report =
                 block.Analyze(branchMetadata);
 
+            AttachRetainedUserEvidence(
+                report,
+                record);
+
+            ApplyIdentityEvaluations(
+                report,
+                branchMetadata);
+
             _reportsByOriginalPath[originalFullPath] = report;
 
             E_RepairConsultant consultant = new();
             List<ExpertFinding> findings =
                 consultant.Review(report);
 
-            FileContext? branch =
-                _repairExpedition.GetActive(originalFullPath);
-
-            if (branch != null && report.IsComplete)
-            {
-                CreateCompletedHandoff(branch);
-                _repairExpedition.Complete(originalFullPath);
-            }
+            // Completion is intentionally handled by the workflow after the
+            // targeted re-observation returns. Keeping the expedition state
+            // active here lets ProjectWorkflow advance the branch exactly once
+            // and then continue with the next pending EPUB.
 
             return findings;
         }
@@ -399,22 +544,291 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             return true;
         }
 
-        public bool DeferCurrent()
+
+
+        /// <summary>
+        /// Runs identity reconciliation after ordinary missing-field analysis
+        /// and before the repair report may be considered complete.
+        /// </summary>
+        private static void ApplyIdentityEvaluations(
+            RepairReport report,
+            MetadataReport metadataReport)
         {
-            if (_repairExpedition.CurrentFile == null)
+            E_BookIdentityEvaluator evaluator = new();
+
+            foreach (MetadataRecord record in metadataReport.Records)
+            {
+                BookIdentityEvaluation evaluation =
+                    evaluator.Evaluate(record);
+
+                RepairOpportunity? opportunity =
+                    report.Opportunities.FirstOrDefault(
+                        item => string.Equals(
+                            item.Record?.File?.OriginalFullPath,
+                            record.File?.OriginalFullPath,
+                            StringComparison.OrdinalIgnoreCase));
+
+                if (!evaluation.RepairRequired)
+                    continue;
+
+                if (opportunity == null)
+                {
+                    opportunity = new RepairOpportunity
+                    {
+                        Record = record
+                    };
+
+                    report.Opportunities.Add(opportunity);
+                }
+
+                opportunity.IdentityEvaluation = evaluation;
+            }
+
+            report.RepairableBooks = report.Opportunities.Count;
+        }
+
+        /// <summary>
+        /// Adds user-supplied information to the stable evidence history
+        /// for one ebook.
+        ///
+        /// The information is also attached to the currently retained
+        /// repair report so the next repair action can use it immediately.
+        /// </summary>
+        internal bool AddUserEvidence(
+            string originalFullPath,
+            string value)
+        {
+            return AddUserFieldEvidence(
+                originalFullPath,
+                "Identity",
+                value);
+        }
+
+        /// <summary>
+        /// Retains user-provided evidence for a specific metadata field.
+        ///
+        /// The stable OriginalFullPath remains the branch identity, while the
+        /// field name prevents a Description supplied by the user from being
+        /// mistaken for Title, Series, ISBN, or generic identity evidence.
+        /// </summary>
+        internal bool AddUserFieldEvidence(
+            string originalFullPath,
+            string field,
+            string value)
+        {
+            if (string.IsNullOrWhiteSpace(originalFullPath) ||
+                string.IsNullOrWhiteSpace(field) ||
+                string.IsNullOrWhiteSpace(value))
+            {
                 return false;
+            }
 
-            FileContext currentFile =
-                _repairExpedition.CurrentFile;
+            string normalizedValue = value.Trim();
 
-            CreateHandoff(
-                currentFile,
-                E_RepairHandoffStatus.RepairDeferred,
-                "Repair was deferred by the user.");
+            if (!_userEvidenceByOriginalPath.TryGetValue(
+                    originalFullPath,
+                    out List<MetadataEvidence>? evidence))
+            {
+                evidence = new List<MetadataEvidence>();
 
-            _repairExpedition.DeferCurrent();
+                _userEvidenceByOriginalPath[originalFullPath] =
+                    evidence;
+            }
+
+            bool alreadyRecorded =
+                evidence.Any(
+                    item =>
+                        string.Equals(
+                            item.Field,
+                            field,
+                            StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(
+                            item.Value?.Trim(),
+                            normalizedValue,
+                            StringComparison.OrdinalIgnoreCase));
+
+            if (!alreadyRecorded)
+            {
+                evidence.Add(
+                    new MetadataEvidence
+                    {
+                        Source = "User",
+                        Field = field.Trim(),
+                        Value = normalizedValue,
+                        Location = "User-supplied repair information",
+                        Notes =
+                            "Information supplied by the user during repair research."
+                    });
+            }
+
+            if (_reportsByOriginalPath.TryGetValue(
+                    originalFullPath,
+                    out RepairReport? report))
+            {
+                AttachRetainedUserEvidence(
+                    report,
+                    originalFullPath);
+            }
+
+            if (_collectionReport != null)
+            {
+                AttachRetainedUserEvidence(
+                    _collectionReport,
+                    originalFullPath);
+            }
 
             return true;
+        }
+
+        /// <summary>
+        /// Returns the user-supplied evidence retained for one ebook.
+        /// </summary>
+        internal IReadOnlyList<MetadataEvidence> GetUserEvidence(
+            string originalFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalFullPath))
+                return Array.Empty<MetadataEvidence>();
+
+            return _userEvidenceByOriginalPath.TryGetValue(
+                    originalFullPath,
+                    out List<MetadataEvidence>? evidence)
+                ? evidence
+                : Array.Empty<MetadataEvidence>();
+        }
+
+        private void AttachRetainedUserEvidence(
+            RepairReport report,
+            MetadataRecord record)
+        {
+            AttachRetainedUserEvidence(
+                report,
+                record.File?.OriginalFullPath ?? string.Empty);
+        }
+
+        private void AttachRetainedUserEvidence(
+            RepairReport report,
+            MetadataReport metadataReport)
+        {
+            foreach (MetadataRecord record in metadataReport.Records)
+            {
+                AttachRetainedUserEvidence(
+                    report,
+                    record);
+            }
+        }
+
+        private void AttachRetainedUserEvidence(
+            RepairReport report,
+            string originalFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalFullPath))
+                return;
+
+            if (!_userEvidenceByOriginalPath.TryGetValue(
+                    originalFullPath,
+                    out List<MetadataEvidence>? retainedEvidence))
+            {
+                return;
+            }
+
+            foreach (RepairOpportunity opportunity in report.Opportunities)
+            {
+                MetadataRecord? record = opportunity.Record;
+
+                if (!string.Equals(
+                        record?.File?.OriginalFullPath,
+                        originalFullPath,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    record is null)
+                {
+                    continue;
+                }
+
+                foreach (MetadataEvidence evidence in retainedEvidence)
+                {
+                    bool alreadyAttached =
+                        record.Evidence.Any(
+                            existing =>
+                                string.Equals(
+                                    existing.Source,
+                                    evidence.Source,
+                                    StringComparison.OrdinalIgnoreCase) &&
+                                string.Equals(
+                                    existing.Value,
+                                    evidence.Value,
+                                    StringComparison.OrdinalIgnoreCase));
+
+                    if (!alreadyAttached)
+                    {
+                        record.Evidence.Add(
+                            new MetadataEvidence
+                            {
+                                Source = evidence.Source,
+                                Field = evidence.Field,
+                                Value = evidence.Value,
+                                Location = evidence.Location,
+                                Notes = evidence.Notes
+                            });
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resolves an unresolved EPUB through an explicit user decision.
+        ///
+        /// This is deliberately different from the legacy deferred path:
+        /// the user has made a terminal decision for this EPUB, so the branch
+        /// may leave active repair processing.
+        /// </summary>
+        internal bool ResolveUserDecision(
+            string originalFullPath,
+            E_RepairHandoffStatus status,
+            string reason)
+        {
+            if (string.IsNullOrWhiteSpace(originalFullPath))
+                return false;
+
+            if (status != E_RepairHandoffStatus.AcceptedAsIs &&
+                status != E_RepairHandoffStatus.Omitted)
+            {
+                throw new ArgumentException(
+                    "Only AcceptedAsIs or Omitted may resolve an unresolved EPUB.",
+                    nameof(status));
+            }
+
+            FileContext? file =
+                _repairExpedition.GetActive(originalFullPath);
+
+            //---------------------------------------------------------
+            // Collection-wide terminal decisions must not depend on the
+            // branch currently being active. The collection progress UI
+            // deliberately exposes every unresolved EPUB, while the
+            // expedition may still have that EPUB pending or may have
+            // already moved its compatibility cursor elsewhere.
+            //---------------------------------------------------------
+
+            // A terminal decision is intentionally idempotent. The collection
+            // progress UI can briefly outlive the underlying branch after a
+            // click, so a repeated Accept-as-is/Omit must not turn into a
+            // mysterious "no branch" failure.
+            if (_repairExpedition.CompletedFiles.Contains(originalFullPath))
+                return true;
+
+            if (file == null)
+            {
+                _filesByOriginalPath.TryGetValue(
+                    originalFullPath,
+                    out file);
+            }
+
+            if (file == null)
+                return false;
+
+            CreateHandoff(file, status, reason);
+
+            return _repairExpedition.ResolveTerminal(
+                originalFullPath);
         }
 
         /// <summary>

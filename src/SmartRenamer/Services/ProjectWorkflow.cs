@@ -5,6 +5,7 @@ using SmartRenamer.Models.Planning;
 using SmartRenamer.Observations;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SmartRenamer.Services
 {
@@ -125,6 +126,99 @@ namespace SmartRenamer.Services
         /// </summary>
         private readonly ObservationEngine observationEngine = new();
 
+        private readonly object workflowLock = new();
+
+        private bool observationPassInProgress;
+
+        private bool disposed;
+
+        private readonly List<ExpertBackgroundActionCompletedEventArgs>
+            pendingBackgroundCompletions = new();
+
+        public event EventHandler<ExpertBackgroundActionCompletedEventArgs>?
+            BackgroundActionCompleted;
+
+        public ProjectWorkflow()
+        {
+            observationEngine.BackgroundActionCompleted +=
+                ObservationEngine_BackgroundActionCompleted;
+        }
+
+        private void ObservationEngine_BackgroundActionCompleted(
+            object? sender,
+            ExpertBackgroundActionCompletedEventArgs e)
+        {
+            lock (workflowLock)
+            {
+                if (disposed)
+                    return;
+
+                if (observationPassInProgress)
+                {
+                    pendingBackgroundCompletions.Add(e);
+                    return;
+                }
+
+                ProcessBackgroundActionCompletedLocked(e);
+            }
+        }
+
+        private void ProcessBackgroundActionCompletedLocked(
+            ExpertBackgroundActionCompletedEventArgs e)
+        {
+            if (activeFiles == null ||
+                string.IsNullOrWhiteSpace(activeSourceFolderPath))
+            {
+                return;
+            }
+
+            lastReobservationRecommendations =
+                Array.Empty<CV_Recommendation>();
+
+            lastReobservationObservations =
+                Array.Empty<ProjectObservation>();
+
+            if (e.Result.Success &&
+                e.Result.RequiresReobservation)
+            {
+                lastReobservationRecommendations =
+                    Reobserve(e.ContextId);
+
+                bool branchCompleted =
+                    observationEngine.CompleteCurrentIfComplete(
+                        e.ContextId);
+
+                if (branchCompleted)
+                {
+                    lastReobservationRecommendations =
+                        Reobserve();
+                }
+            }
+
+            BackgroundActionCompleted?.Invoke(
+                this,
+                e);
+        }
+
+        /// <summary>
+        /// Ends this workflow's subscription to the shared Observation Expert
+        /// set. A new Guide expedition creates a new workflow instance.
+        /// </summary>
+        public void Dispose()
+        {
+            lock (workflowLock)
+            {
+                if (disposed)
+                    return;
+
+                disposed = true;
+            }
+
+            observationEngine.BackgroundActionCompleted -=
+                ObservationEngine_BackgroundActionCompleted;
+
+            observationEngine.Dispose();
+        }
 
         //---------------------------------------------------------
         // Active Project Files
@@ -136,6 +230,10 @@ namespace SmartRenamer.Services
 
         private IReadOnlyList<FileContext>? activeFiles;
         private string? activeSourceFolderPath;
+
+        // The same reporter is retained for action-triggered re-observation
+        // so the operation remains visible after a repair changes a working copy.
+        private IProgress<ExecutionProgress>? activeProgress;
 
         //---------------------------------------------------------
         // Re-observation Results
@@ -151,6 +249,10 @@ namespace SmartRenamer.Services
             lastReobservationRecommendations =
                 Array.Empty<CV_Recommendation>();
 
+        private IReadOnlyList<ProjectObservation>
+            lastReobservationObservations =
+                Array.Empty<ProjectObservation>();
+
         /// <summary>
         /// Recommendations produced by the most recent action-triggered
         /// re-observation.
@@ -161,6 +263,16 @@ namespace SmartRenamer.Services
         public IReadOnlyList<CV_Recommendation>
             LastReobservationRecommendations =>
                 lastReobservationRecommendations;
+
+        /// <summary>
+        /// Project observations produced by the most recent action-triggered
+        /// re-observation. These observations are mapped from the same
+        /// ObservationEngine findings that produced
+        /// LastReobservationRecommendations.
+        /// </summary>
+        public IReadOnlyList<ProjectObservation>
+            LastReobservationObservations =>
+                lastReobservationObservations;
 
         //---------------------------------------------------------
         // New Workflow
@@ -298,10 +410,18 @@ namespace SmartRenamer.Services
         /// so the Expert findings and recommendations always correspond to
         /// the currently discovered project.
         /// </summary>
-        public WorkflowResult Execute(ProjectContext context)
+        public WorkflowResult Execute(
+            ProjectContext context,
+            IProgress<ExecutionProgress>? progress = null)
         {
 
             ArgumentNullException.ThrowIfNull(context);
+
+            lock (workflowLock)
+            {
+                observationPassInProgress = true;
+                pendingBackgroundCompletions.Clear();
+            }
 
             FolderSummary folder =
                 context.Folder
@@ -313,6 +433,9 @@ namespace SmartRenamer.Services
             activeSourceFolderPath =
                 folder.FolderPath;
 
+            activeProgress =
+                progress;
+
             //---------------------------------------------------------
             // A full workflow execution establishes a new observation
             // state. Any action-triggered re-observation results from the
@@ -321,6 +444,9 @@ namespace SmartRenamer.Services
 
             lastReobservationRecommendations =
                 Array.Empty<CV_Recommendation>();
+
+            lastReobservationObservations =
+                Array.Empty<ProjectObservation>();
 
             //---------------------------------------------------------
             // Analyze the project.
@@ -361,7 +487,9 @@ namespace SmartRenamer.Services
             List<CV_Recommendation> observationRecommendations =
                 observationEngine.Observe(
                     context.Folder.FileContexts,
-                    context.Folder.FolderPath);
+                    context.Folder.FolderPath,
+                    null,
+                    progress);
 
             //---------------------------------------------------------
             // Observation Framework → Existing UI
@@ -429,6 +557,25 @@ namespace SmartRenamer.Services
             plan.RenamePreview.AddRange(preview);
 
             //---------------------------------------------------------
+            // The synchronous observation pass is now complete. Any external
+            // research that finished while the pass was running can safely
+            // resume through the normal re-observation path.
+            //---------------------------------------------------------
+
+            lock (workflowLock)
+            {
+                observationPassInProgress = false;
+
+                foreach (ExpertBackgroundActionCompletedEventArgs completion
+                    in pendingBackgroundCompletions.ToList())
+                {
+                    ProcessBackgroundActionCompletedLocked(completion);
+                }
+
+                pendingBackgroundCompletions.Clear();
+            }
+
+            //---------------------------------------------------------
             // Return the complete workflow result.
             //---------------------------------------------------------
 
@@ -456,6 +603,15 @@ namespace SmartRenamer.Services
         {
             ArgumentNullException.ThrowIfNull(request);
 
+            lock (workflowLock)
+            {
+                return ExecuteActionLocked(request);
+            }
+        }
+
+        private CV_ActionResult ExecuteActionLocked(
+            CV_ActionRequest request)
+        {
             //---------------------------------------------------------
             // Clear the previous action's re-observation result before
             // executing a new action.
@@ -463,6 +619,9 @@ namespace SmartRenamer.Services
 
             lastReobservationRecommendations =
                 Array.Empty<CV_Recommendation>();
+
+            lastReobservationObservations =
+                Array.Empty<ProjectObservation>();
 
             CV_ActionResult result =
                 observationEngine.ExecuteAction(request);
@@ -494,8 +653,21 @@ namespace SmartRenamer.Services
                 // through re-observation so completion cannot accidentally
                 // advance a different branch via the legacy CurrentFile cursor.
                 //---------------------------------------------------------
-                observationEngine.CompleteCurrentIfComplete(
-                    request.ContextId);
+                //---------------------------------------------------------
+                // If the repaired branch is now complete, advance the repair
+                // expedition and immediately continue the existing workflow
+                // against the next pending EPUB. A waiting branch must not
+                // advance the expedition.
+                //---------------------------------------------------------
+                bool branchCompleted =
+                    observationEngine.CompleteCurrentIfComplete(
+                        request.ContextId);
+
+                if (branchCompleted)
+                {
+                    lastReobservationRecommendations =
+                        Reobserve();
+                }
             }
 
             return result;
@@ -526,10 +698,18 @@ namespace SmartRenamer.Services
                 throw new InvalidOperationException(
                     "Cannot re-observe because no project is currently active.");
 
-            return observationEngine.Observe(
-                activeFiles,
-                activeSourceFolderPath,
-                originalFullPath);
+            List<CV_Recommendation> recommendations =
+                observationEngine.Observe(
+                    activeFiles,
+                    activeSourceFolderPath,
+                    originalFullPath,
+                    activeProgress);
+
+            lastReobservationObservations =
+                ObservationMapper.Map(
+                    observationEngine.Findings);
+
+            return recommendations;
         }
 
     }

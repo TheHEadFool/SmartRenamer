@@ -146,6 +146,38 @@ namespace SmartRenamer.Observations
             new EbookExpert()
         ];
 
+        public event EventHandler<ExpertBackgroundActionCompletedEventArgs>?
+            BackgroundActionCompleted;
+
+        public ObservationEngine()
+        {
+            foreach (ObservationExpert expert in _experts)
+            {
+                expert.BackgroundActionCompleted +=
+                    Expert_BackgroundActionCompleted;
+            }
+        }
+
+        private void Expert_BackgroundActionCompleted(
+            object? sender,
+            ExpertBackgroundActionCompletedEventArgs e)
+        {
+            BackgroundActionCompleted?.Invoke(this, e);
+        }
+
+        /// <summary>
+        /// Releases this workflow's subscription to the shared Expert set.
+        /// The Experts themselves intentionally remain application-scoped.
+        /// </summary>
+        public void Dispose()
+        {
+            foreach (ObservationExpert expert in _experts)
+            {
+                expert.BackgroundActionCompleted -=
+                    Expert_BackgroundActionCompleted;
+            }
+        }
+
         //---------------------------------------------------------
         // Discovery Requirements
         //---------------------------------------------------------
@@ -428,7 +460,7 @@ namespace SmartRenamer.Observations
             IReadOnlyList<FileContext> files,
             string sourceFolderPath)
         {
-            return Observe(files, sourceFolderPath, null);
+            return Observe(files, sourceFolderPath, null, null);
         }
 
         /// <summary>
@@ -439,7 +471,8 @@ namespace SmartRenamer.Observations
         public List<CV_Recommendation> Observe(
             IReadOnlyList<FileContext> files,
             string sourceFolderPath,
-            string? originalFullPath)
+            string? originalFullPath,
+            IProgress<ExecutionProgress>? progress = null)
         {
             ArgumentNullException.ThrowIfNull(files);
             ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
@@ -448,17 +481,99 @@ namespace SmartRenamer.Observations
             List<CV_Recommendation> recommendations = new();
 
             //---------------------------------------------------------
-            // Each Expert investigates exactly once.
+            // Build one shared progress scale from the registered Experts.
+            // An Expert may expose several internal stages; those stages are
+            // placed inside the Expert's weighted portion of the operation.
             //---------------------------------------------------------
+
+            int totalWork = 0;
 
             foreach (ObservationExpert expert in _experts)
             {
+                totalWork +=
+                    Math.Max(1, expert.ProgressWeight) *
+                    Math.Max(1, expert.ProgressStageCount);
+            }
+
+            int completedWork = 0;
+
+            // Collection progress is domain-owned. Preserve the most recent
+            // collection values reported by an Expert so the generic
+            // expert-completion message cannot erase them with zeros.
+            int collectionTotal = 0;
+            int collectionCompleted = 0;
+            int collectionProcessing = 0;
+            int collectionWaiting = 0;
+            int collectionPending = 0;
+            IReadOnlyList<ExecutionProgressItem> collectionItems =
+                Array.Empty<ExecutionProgressItem>();
+
+            progress?.Report(
+                new ExecutionProgress
+                {
+                    Completed = 0,
+                    Total = totalWork,
+                    CurrentFile = files.Count > 0 ? files[0].CurrentName : "",
+                    Status = $"Investigating {files.Count:N0} discovered file(s)..."
+                });
+
+            //---------------------------------------------------------
+            // Each Expert investigates exactly once.
+            //---------------------------------------------------------
+
+            for (int expertIndex = 0; expertIndex < _experts.Count; expertIndex++)
+            {
+                ObservationExpert expert = _experts[expertIndex];
+
+                int expertWeight =
+                    Math.Max(1, expert.ProgressWeight);
+
+                int expertStages =
+                    Math.Max(1, expert.ProgressStageCount);
+
+                progress?.Report(
+                    new ExecutionProgress
+                    {
+                        Completed = completedWork,
+                        Total = totalWork,
+                        CurrentFile = files.Count > 0 ? files[0].CurrentName : "",
+                        Stage = expert.Name,
+                        StageCompleted = 0,
+                        StageTotal = expertStages,
+                        Status = $"Investigating with {expert.Name}..."
+                    });
+
                 expert.BeginProject(
                     sourceFolderPath,
                     files);
 
+                IProgress<ExecutionProgress>? expertProgress =
+                    progress == null
+                        ? null
+                        : new OffsetProgress(
+                            progress,
+                            completedWork,
+                            expertWeight,
+                            expertStages,
+                            totalWork,
+                            value =>
+                            {
+                                if (value.CollectionTotal > 0)
+                                {
+                                    collectionTotal = value.CollectionTotal;
+                                    collectionCompleted = value.CollectionCompleted;
+                                    collectionProcessing = value.CollectionProcessing;
+                                    collectionWaiting = value.CollectionWaiting;
+                                    collectionPending = value.CollectionPending;
+                                    collectionItems = value.Items;
+                                }
+                            });
+
                 List<ExpertFinding> expertFindings =
-                    expert.Investigate(files, originalFullPath);
+                    expert.Investigate(
+                        files,
+                        originalFullPath,
+                        expertProgress);
 
                 //-----------------------------------------------------
                 // Preserve the factual findings.
@@ -473,6 +588,27 @@ namespace SmartRenamer.Observations
                 recommendations.AddRange(
                     expert.BuildRecommendations(
                         expertFindings));
+
+                completedWork +=
+                    expertWeight * expertStages;
+
+                progress?.Report(
+                    new ExecutionProgress
+                    {
+                        Completed = completedWork,
+                        Total = totalWork,
+                        CurrentFile = files.Count > 0 ? files[^1].CurrentName : "",
+                        Stage = expert.Name,
+                        StageCompleted = expertStages,
+                        StageTotal = expertStages,
+                        CollectionTotal = collectionTotal,
+                        CollectionCompleted = collectionCompleted,
+                        CollectionProcessing = collectionProcessing,
+                        CollectionWaiting = collectionWaiting,
+                        CollectionPending = collectionPending,
+                        Items = collectionItems,
+                        Status = $"Completed {expert.Name}."
+                    });
             }
 
             //---------------------------------------------------------
@@ -584,5 +720,72 @@ namespace SmartRenamer.Observations
                     $"'{request.ActionId}'."
             };
         }
+        /// <summary>
+        /// Translates an Expert-local progress scale onto the shared
+        /// ObservationEngine scale without changing the Expert's domain data.
+        /// </summary>
+        private sealed class OffsetProgress : IProgress<ExecutionProgress>
+        {
+            private readonly IProgress<ExecutionProgress> _target;
+            private readonly int _offset;
+            private readonly int _weight;
+            private readonly int _stageTotal;
+            private readonly int _total;
+            private readonly Action<ExecutionProgress>? _onReport;
+
+            public OffsetProgress(
+                IProgress<ExecutionProgress> target,
+                int offset,
+                int weight,
+                int stageTotal,
+                int total,
+                Action<ExecutionProgress>? onReport = null)
+            {
+                _target = target;
+                _offset = offset;
+                _weight = weight;
+                _stageTotal = stageTotal;
+                _total = total;
+                _onReport = onReport;
+            }
+
+            public void Report(ExecutionProgress value)
+            {
+                int localStage =
+                    Math.Clamp(
+                        value.StageCompleted,
+                        0,
+                        Math.Max(1, _stageTotal));
+
+                int completed =
+                    _offset +
+                    (localStage * _weight);
+
+                if (localStage == _stageTotal)
+                    completed = _offset + (_weight * _stageTotal);
+
+                ExecutionProgress mapped =
+                    new()
+                    {
+                        Completed = Math.Min(completed, _total),
+                        Total = _total,
+                        CurrentFile = value.CurrentFile,
+                        Status = value.Status,
+                        Stage = value.Stage,
+                        StageCompleted = value.StageCompleted,
+                        StageTotal = value.StageTotal,
+                        CollectionTotal = value.CollectionTotal,
+                        CollectionCompleted = value.CollectionCompleted,
+                        CollectionProcessing = value.CollectionProcessing,
+                        CollectionWaiting = value.CollectionWaiting,
+                        CollectionPending = value.CollectionPending,
+                        Items = value.Items
+                    };
+
+                _onReport?.Invoke(mapped);
+                _target.Report(mapped);
+            }
+        }
+
     }
 }

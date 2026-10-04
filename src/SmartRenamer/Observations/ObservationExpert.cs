@@ -197,9 +197,46 @@ namespace SmartRenamer.Observations
 
         public abstract string Summary { get; }
 
+        /// <summary>
+        /// Relative amount of pipeline work represented by this Expert.
+        /// The Observation Engine uses this only to place Expert progress
+        /// on one shared operation scale.
+        /// </summary>
+        public virtual int ProgressWeight => 1;
+
+        /// <summary>
+        /// Number of meaningful stages reported by this Expert.
+        /// Experts that do not expose internal stages retain the default of one.
+        /// </summary>
+        public virtual int ProgressStageCount => 1;
+
         public abstract string WhyItMatters { get; }
 
         public abstract IReadOnlyList<ObservationSpecialist> Specialists { get; }
+
+        //---------------------------------------------------------
+        // Background domain work
+        //---------------------------------------------------------
+        //
+        // External research may finish after the synchronous observation
+        // pass has returned. The generic framework transports that completion
+        // without interpreting the domain-specific action.
+        //---------------------------------------------------------
+
+        public event EventHandler<ExpertBackgroundActionCompletedEventArgs>?
+            BackgroundActionCompleted;
+
+        protected void ReportBackgroundActionCompleted(
+            string contextId,
+            CV_ActionResult result)
+        {
+            BackgroundActionCompleted?.Invoke(
+                this,
+                new ExpertBackgroundActionCompletedEventArgs(
+                    Name,
+                    contextId,
+                    result));
+        }
 
         //---------------------------------------------------------
         // Expert Responsibilities
@@ -224,6 +261,19 @@ namespace SmartRenamer.Observations
             string? originalFullPath)
         {
             return Investigate(files);
+        }
+
+        /// <summary>
+        /// Performs an observation pass while receiving the same generic
+        /// progress contract used by Scout's operation infrastructure.
+        /// The default implementation preserves existing Expert behavior.
+        /// </summary>
+        public virtual List<ExpertFinding> Investigate(
+            IReadOnlyList<FileContext> files,
+            string? originalFullPath,
+            IProgress<ExecutionProgress>? progress)
+        {
+            return Investigate(files, originalFullPath);
         }
 
         /// <summary>
@@ -314,6 +364,30 @@ namespace SmartRenamer.Observations
                     $"Expert '{Name}' does not handle action '{request.ActionId}'."
             };
         }
+    }
+
+    /// <summary>
+    /// Generic notification that an Expert-owned background action has
+    /// completed. The Observation Framework transports the opaque ContextId
+    /// and action result without interpreting their domain meaning.
+    /// </summary>
+    public sealed class ExpertBackgroundActionCompletedEventArgs : EventArgs
+    {
+        public ExpertBackgroundActionCompletedEventArgs(
+            string expertName,
+            string contextId,
+            CV_ActionResult result)
+        {
+            ExpertName = expertName ?? string.Empty;
+            ContextId = contextId ?? string.Empty;
+            Result = result ?? throw new ArgumentNullException(nameof(result));
+        }
+
+        public string ExpertName { get; }
+
+        public string ContextId { get; }
+
+        public CV_ActionResult Result { get; }
     }
 
     /// <summary>

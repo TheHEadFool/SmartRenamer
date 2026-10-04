@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Conversation;
+using Scout.Observations.Conversation;
 using SmartRenamer.Infrastructure;
 using SmartRenamer.Models;
 using SmartRenamer.Models.Recommendations;
@@ -253,6 +253,18 @@ namespace SmartRenamer.ViewModels.Workspace
         }
 
         /// <summary>
+        /// Clears the focused recommendation after its action has been handled.
+        /// The underlying recommendation remains available to Review All and
+        /// future re-observation; it is simply no longer presented as the
+        /// current action.
+        /// </summary>
+        public void ClearCurrentRecommendation()
+        {
+            SelectedRecommendation = null;
+            SelectedObservation = null;
+        }
+
+        /// <summary>
         /// Selects an observation in the Workspace.
         ///
         /// This remains UI state only. The ViewModel does not decide
@@ -494,6 +506,67 @@ namespace SmartRenamer.ViewModels.Workspace
             RenamePreview.Count > 0;
 
         //---------------------------------------------------------
+        // Re-observation refresh
+        //---------------------------------------------------------
+
+        /// <summary>
+        /// Replaces the Workspace observation and recommendation state with
+        /// the authoritative results of an action-triggered re-observation.
+        ///
+        /// This is deliberately separate from Load(). Load() initializes a
+        /// complete project workflow and also owns rename-preview and legacy
+        /// project summary state. A repair re-observation only needs to
+        /// refresh the observation/recommendation presentation.
+        /// </summary>
+        public void RefreshAfterReobservation(
+            IEnumerable<ProjectObservation> observations,
+            IEnumerable<CV_Recommendation> recommendations)
+        {
+            ArgumentNullException.ThrowIfNull(observations);
+            ArgumentNullException.ThrowIfNull(recommendations);
+
+            IsReviewAllActive = false;
+
+            Observations.Clear();
+            ReviewAllObservations.Clear();
+            ReviewAllItems.Clear();
+
+            foreach (ProjectObservation observation in observations
+                .OrderByDescending(o => o.Priority)
+                .ThenBy(o => o.Title))
+            {
+                observation.IsSelected = false;
+                Observations.Add(observation);
+            }
+
+            ConversationEngine.LoadRecommendations(
+                recommendations.ToList());
+
+            CV_Recommendation? firstRecommendation =
+                ConversationEngine.Recommendations.FirstOrDefault();
+
+            SelectedObservation =
+                firstRecommendation == null
+                    ? Observations.FirstOrDefault()
+                    : Observations.FirstOrDefault(o =>
+                        o.Id == firstRecommendation.Id)
+                      ?? Observations.FirstOrDefault();
+
+            foreach (ProjectObservation observation in Observations)
+            {
+                observation.IsSelected =
+                    ReferenceEquals(observation, SelectedObservation);
+            }
+
+            SelectedRecommendation =
+                SelectedObservation == null
+                    ? null
+                    : ConversationEngine.Recommendations
+                        .FirstOrDefault(r =>
+                            r.Id == SelectedObservation.Id);
+        }
+
+        //---------------------------------------------------------
         // Load
         //---------------------------------------------------------
 
@@ -638,7 +711,24 @@ namespace SmartRenamer.ViewModels.Workspace
             //---------------------------------------------------------
 
             ConversationEngine.LoadRecommendations(
-    result.ObservationRecommendations);
+                result.ObservationRecommendations);
+
+            //---------------------------------------------------------
+            // Keep the initial Workspace selection synchronized with
+            // the authoritative Conversation Framework recommendation.
+            //
+            // SelectObservation() is deliberately NOT called here because
+            // it also discusses the recommendation and raises the
+            // conversation event. The initial load should establish state
+            // without starting a second conversation message.
+            //---------------------------------------------------------
+
+            SelectedRecommendation =
+                SelectedObservation == null
+                    ? null
+                    : ConversationEngine.Recommendations
+                        .FirstOrDefault(r =>
+                            r.Id == SelectedObservation.Id);
 
         }
     }

@@ -1,4 +1,5 @@
-﻿using Scout.Observations.Experts.EbookExpert.Data;
+using Scout.Observations.Experts.EbookExpert.Data;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,6 +8,7 @@ using System.Net.Http.Headers;
 using System.Security.Policy;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 {
@@ -54,26 +56,57 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
         /// No ebook is modified by this operation.
         /// </summary>
         public List<IsbnResearchCandidate> Research(
-            E_EbookMetadata metadata)
+            E_EbookMetadata metadata,
+            string? userEvidence,
+            IReadOnlyList<MetadataEvidence> evidence)
+        {
+            return ResearchWithStatus(
+                metadata,
+                userEvidence,
+                evidence).Candidates;
+        }
+
+        /// <summary>
+        /// Performs the same ISBN research while preserving the distinction
+        /// between "no candidate found" and "the external provider failed".
+        /// </summary>
+        public IsbnResearchResult ResearchWithStatus(
+            E_EbookMetadata metadata,
+            string? userEvidence,
+            IReadOnlyList<MetadataEvidence> evidence)
         {
             if (metadata == null)
                 throw new ArgumentNullException(nameof(metadata));
 
-            //---------------------------------------------------------
-            // There must be enough identifying information to perform
-            // a useful book search.
-            //---------------------------------------------------------
+            if (evidence == null)
+                throw new ArgumentNullException(nameof(evidence));
 
-            if (string.IsNullOrWhiteSpace(metadata.Title) &&
-                string.IsNullOrWhiteSpace(metadata.Author))
+            string searchTitle = GetEvidenceBackedValue(
+                metadata.Title,
+                evidence,
+                "Title");
+
+            string searchAuthor = GetEvidenceBackedValue(
+                metadata.Author,
+                evidence,
+                "Author");
+
+            if (string.IsNullOrWhiteSpace(searchTitle) &&
+                string.IsNullOrWhiteSpace(searchAuthor))
             {
-                return new List<IsbnResearchCandidate>();
+                return new IsbnResearchResult
+                {
+                    Status = IsbnResearchStatus.NoCandidates
+                };
             }
 
             try
             {
                 string requestUrl =
-                    BuildSearchUrl(metadata);
+                    BuildSearchUrl(
+                        searchTitle,
+                        searchAuthor,
+                        userEvidence);
 
                 using HttpRequestMessage request =
                     new(
@@ -88,7 +121,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                             CancellationToken.None);
 
                 if (!response.IsSuccessStatusCode)
-                    return new List<IsbnResearchCandidate>();
+                {
+                    return new IsbnResearchResult
+                    {
+                        Status = IsbnResearchStatus.ProviderUnavailable
+                    };
+                }
 
                 string json =
                     response.Content
@@ -96,19 +134,47 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         .GetAwaiter()
                         .GetResult();
 
-                return ParseCandidates(
-                    json,
-                    metadata,
-                    requestUrl);
+                List<IsbnResearchCandidate> candidates =
+                    ParseCandidates(
+                        json,
+                        metadata,
+                        requestUrl);
+
+                return new IsbnResearchResult
+                {
+                    Status = candidates.Count > 0
+                        ? IsbnResearchStatus.Succeeded
+                        : IsbnResearchStatus.NoCandidates,
+                    Candidates = candidates
+                };
+            }
+            catch (TaskCanceledException)
+            {
+                return new IsbnResearchResult
+                {
+                    Status = IsbnResearchStatus.TimedOut
+                };
+            }
+            catch (HttpRequestException)
+            {
+                return new IsbnResearchResult
+                {
+                    Status = IsbnResearchStatus.ProviderUnavailable
+                };
+            }
+            catch (JsonException)
+            {
+                return new IsbnResearchResult
+                {
+                    Status = IsbnResearchStatus.ProviderUnavailable
+                };
             }
             catch
             {
-                //---------------------------------------------------------
-                // Research failure must not damage the ebook or cause
-                // the Expert to make an unsupported ISBN claim.
-                //---------------------------------------------------------
-
-                return new List<IsbnResearchCandidate>();
+                return new IsbnResearchResult
+                {
+                    Status = IsbnResearchStatus.ProviderUnavailable
+                };
             }
         }
 
@@ -116,24 +182,26 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
         /// Creates the Open Library Search API request.
         /// </summary>
         private static string BuildSearchUrl(
-            E_EbookMetadata metadata)
+            string title,
+            string author,
+            string? userEvidence)
         {
             List<string> parameters = new();
 
-            if (!string.IsNullOrWhiteSpace(metadata.Title))
+            if (!string.IsNullOrWhiteSpace(title))
             {
                 parameters.Add(
                     "title=" +
                     Uri.EscapeDataString(
-                        metadata.Title.Trim()));
+                        title.Trim()));
             }
 
-            if (!string.IsNullOrWhiteSpace(metadata.Author))
+            if (!string.IsNullOrWhiteSpace(author))
             {
                 parameters.Add(
                     "author=" +
                     Uri.EscapeDataString(
-                        metadata.Author.Trim()));
+                        author.Trim()));
             }
 
             parameters.Add(
@@ -141,11 +209,42 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
     Uri.EscapeDataString(
         "title,author_name,isbn,edition_key,publisher,publish_year"));
 
+            if (!string.IsNullOrWhiteSpace(userEvidence))
+            {
+                parameters.Add(
+                    "q=" +
+                    Uri.EscapeDataString(userEvidence.Trim()));
+            }
+
             parameters.Add("limit=10");
 
             return
                 "https://openlibrary.org/search.json?" +
                 string.Join("&", parameters);
+        }
+
+        /// <summary>
+        /// Uses observed metadata first, then field-specific evidence that has
+        /// already been gathered for this ebook. Evidence is used as search
+        /// input only; it is not promoted to fact merely because it was found.
+        /// </summary>
+        private static string GetEvidenceBackedValue(
+            string metadataValue,
+            IReadOnlyList<MetadataEvidence> evidence,
+            string field)
+        {
+            if (!string.IsNullOrWhiteSpace(metadataValue))
+                return metadataValue.Trim();
+
+            MetadataEvidence? match = evidence
+                .FirstOrDefault(item =>
+                    string.Equals(
+                        item.Field,
+                        field,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(item.Value));
+
+            return match?.Value.Trim() ?? string.Empty;
         }
 
         /// <summary>
@@ -792,7 +891,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
         private static HttpClient CreateHttpClient()
         {
-            HttpClient client = new();
+            HttpClient client = new HttpClient
+            {
+                // External research is an optional recovery capability.
+                // It must never be allowed to stall the Ebook Expert
+                // investigation indefinitely when the research service is
+                // unavailable or slow.
+                Timeout = TimeSpan.FromSeconds(15)
+            };
 
             client.DefaultRequestHeaders.UserAgent.Clear();
 
@@ -914,6 +1020,23 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
             public string EditionKey { get; init; } = string.Empty;
         }
+    }
+
+    internal enum IsbnResearchStatus
+    {
+        Succeeded,
+        NoCandidates,
+        TimedOut,
+        ProviderUnavailable
+    }
+
+    internal sealed class IsbnResearchResult
+    {
+        public IsbnResearchStatus Status { get; init; } =
+            IsbnResearchStatus.NoCandidates;
+
+        public List<IsbnResearchCandidate> Candidates { get; init; } =
+            new();
     }
 
     /// <summary>

@@ -74,7 +74,11 @@ namespace SmartRenamer.ViewModels.Guide
         // Legacy rename conversation support
         //---------------------------------------------------------
 
-        private readonly GuideInvestigator guideInvestigator = new();
+        private GuideInvestigator guideInvestigator;
+
+        private readonly ScoutOperation operation;
+
+        private readonly IProgress<ExecutionProgress> investigationProgress;
 
         private readonly ScoutThoughtBuilder thoughtBuilder = new();
 
@@ -102,6 +106,14 @@ namespace SmartRenamer.ViewModels.Guide
         /// The Guide does not interpret their domain meaning.
         /// </summary>
         public ObservableCollection<CV_ActionOption> ActionOptions { get; } =
+            new();
+
+        /// <summary>
+        /// Generic Expert decisions currently available as persistent choices.
+        /// These mirror the inline decision links so the user does not have to
+        /// scroll back through the conversation to answer the current question.
+        /// </summary>
+        public ObservableCollection<GuideInlineAction> DecisionOptions { get; } =
             new();
 
         //---------------------------------------------------------
@@ -171,6 +183,12 @@ namespace SmartRenamer.ViewModels.Guide
 
         private bool canGoBack;
 
+        // True after a source folder has been selected and remains true
+        // until the current expedition is reset. Expert decision history
+        // still controls whether Back rewinds an Expert decision or resets
+        // the expedition.
+        private bool expeditionActive;
+
         public bool CanGoBack
         {
             get => canGoBack;
@@ -206,18 +224,74 @@ namespace SmartRenamer.ViewModels.Guide
 
         public RelayCommand SelectActionOptionCommand { get; }
         public RelayCommand ExecuteRecommendationActionCommand { get; }
+        public RelayCommand ExecuteProgressActionCommand { get; }
+        public RelayCommand SelectDecisionOptionCommand { get; }
+        public RelayCommand ToggleAutomaticRepairsCommand { get; }
+
+        private bool automaticRepairsEnabled = true;
+
+        /// <summary>
+        /// Presentation state for the expedition-scoped automatic-repair
+        /// authorization. The Guide never performs the repair itself; the
+        /// toggle creates the same Conversation Framework action used by
+        /// recommendations and typed conversation.
+        /// </summary>
+        public bool AutomaticRepairsEnabled
+        {
+            get => automaticRepairsEnabled;
+            private set => SetProperty(
+                ref automaticRepairsEnabled,
+                value);
+        }
 
         // =====================================================================
         // Constructor
         // =====================================================================
 
         public GuideViewModel(
-            ProjectWorkspaceViewModel workspace)
+            ProjectWorkspaceViewModel workspace,
+            ScoutOperation operation)
         {
             this.workspace =
                 workspace ??
                 throw new ArgumentNullException(
                     nameof(workspace));
+
+            this.operation =
+                operation ??
+                throw new ArgumentNullException(
+                    nameof(operation));
+
+            investigationProgress =
+                new Progress<ExecutionProgress>(p =>
+                {
+                    operation.CompletedSteps = p.Completed;
+                    operation.TotalSteps = p.Total;
+                    operation.CurrentFile = p.CurrentFile;
+                    operation.Status = p.Status;
+                    operation.Stage = p.Stage;
+                    operation.StageCompleted = p.StageCompleted;
+                    operation.StageTotal = p.StageTotal;
+                    operation.CollectionTotal = p.CollectionTotal;
+                    operation.CollectionCompleted = p.CollectionCompleted;
+                    operation.CollectionProcessing = p.CollectionProcessing;
+                    operation.CollectionWaiting = p.CollectionWaiting;
+                    operation.CollectionPending = p.CollectionPending;
+                    operation.ApplyItems(p.Items);
+
+                    operation.CurrentTask =
+                        p.CollectionTotal > 0
+                            ? $"{p.Stage} — {p.CollectionCompleted:N0}/{p.CollectionTotal:N0} complete"
+                            : p.Total > 0
+                                ? $"Investigating {p.Completed:N0} of {p.Total:N0}"
+                                : "Investigating...";
+                });
+
+            guideInvestigator =
+                new GuideInvestigator(investigationProgress);
+
+            guideInvestigator.BackgroundActionCompleted +=
+                GuideInvestigator_BackgroundActionCompleted;
 
             workspace.ConversationMessageGenerated +=
                 Workspace_ConversationMessageGenerated;
@@ -243,6 +317,25 @@ namespace SmartRenamer.ViewModels.Guide
         if (parameter is CV_Recommendation recommendation)
             ExecuteRecommendationAction(recommendation);
     });
+
+            ExecuteProgressActionCommand =
+                new RelayCommand(parameter =>
+                {
+                    if (parameter is ExecutionProgressAction action)
+                        ExecuteProgressAction(action);
+                });
+
+            SelectDecisionOptionCommand =
+                new RelayCommand(parameter =>
+                {
+                    if (parameter is GuideInlineAction action)
+                        SelectDecisionOption(action);
+                });
+
+            ToggleAutomaticRepairsCommand =
+                new RelayCommand(
+                    () => ToggleAutomaticRepairs(),
+                    () => expeditionActive);
             //---------------------------------------------------------
             // Initial folder picker card.
             //---------------------------------------------------------
@@ -330,7 +423,7 @@ namespace SmartRenamer.ViewModels.Guide
 
             if (awaitingDecisionChoice)
             {
-                if (TryApplyTypedDecisionChoice(answer))
+                if (await TryApplyTypedDecisionChoice(answer))
                     return;
 
                 Conversation.AddGuideMessage(
@@ -633,7 +726,7 @@ namespace SmartRenamer.ViewModels.Guide
         /// and option identifier through GuideInvestigator so the owning Expert
         /// can apply its own meaning.
         /// </summary>
-        public void SelectDiscoveryOption(
+        public async void SelectDiscoveryOption(
             GuideInlineAction action)
         {
             if (action == null)
@@ -644,7 +737,7 @@ namespace SmartRenamer.ViewModels.Guide
             // rather than a discovery choice.
             if (awaitingDecisionChoice)
             {
-                ApplyDecisionChoice(
+                await ApplyDecisionChoice(
                     action.ActionId);
                 return;
             }
@@ -743,42 +836,95 @@ namespace SmartRenamer.ViewModels.Guide
         /// </summary>
         private void GoBack()
         {
-            if (!awaitingDecisionChoice ||
-                decisionHistory.Count == 0)
+            // Expert decisions take precedence. The existing Expert-owned
+            // rewind behavior remains unchanged.
+            if (decisionHistory.Count > 0 &&
+                awaitingDecisionChoice)
             {
-                return;
-            }
-
-            AppliedDecision previous =
+                AppliedDecision previous =
                 decisionHistory.Pop();
 
-            guideInvestigator.RewindDecision(
-                previous.ExpertName);
+                guideInvestigator.RewindDecision(
+                    previous.ExpertName);
 
-            pendingDecisionBindings.Clear();
-            pendingDecisionBindings.AddRange(
-                guideInvestigator.DecisionBindings
-                    .Where(binding =>
-                        binding.Request.Options.Count > 0));
+                pendingDecisionBindings.Clear();
+                pendingDecisionBindings.AddRange(
+                    guideInvestigator.DecisionBindings
+                        .Where(binding =>
+                            binding.Request.Options.Count > 0));
 
-            pendingDecisionIndex = 0;
+                pendingDecisionIndex = 0;
 
-            CanGoBack =
-                decisionHistory.Count > 0 &&
-                pendingDecisionBindings.Count > 0;
+                CanGoBack = expeditionActive;
 
-            Conversation.AddGuideMessage(
-                "Let's go back to the previous decision so you can reconsider it.");
+                Conversation.AddGuideMessage(
+                    "Let's go back to the previous decision so you can reconsider it.");
 
-            if (pendingDecisionBindings.Count == 0)
-            {
-                awaitingDecisionChoice = false;
-                ContinueInvestigationConversation();
+                if (pendingDecisionBindings.Count == 0)
+                {
+                    awaitingDecisionChoice = false;
+                    ContinueInvestigationConversation();
+                    return;
+                }
+
+                awaitingDecisionChoice = true;
+                PresentDecisionQuestion();
                 return;
             }
 
-            awaitingDecisionChoice = true;
-            PresentDecisionQuestion();
+            // No Expert checkpoint remains. Back at this level means
+            // abandon the current expedition and return to source-folder
+            // selection. A fresh GuideInvestigator also guarantees that
+            // selecting the same folder again starts a genuinely new
+            // expedition rather than reusing Expert state from the old one.
+            if (expeditionActive)
+            {
+                ResetExpedition();
+            }
+        }
+
+        private void ResetExpedition()
+        {
+            guideInvestigator.Dispose();
+
+            guideInvestigator =
+                new GuideInvestigator(investigationProgress);
+
+            guideInvestigator.BackgroundActionCompleted +=
+                GuideInvestigator_BackgroundActionCompleted;
+
+            currentWorkflow = null;
+            selectedFolder = null;
+
+            pendingDiscoveryBindings.Clear();
+            pendingDiscoveryIndex = 0;
+            awaitingDiscoveryChoice = false;
+
+            pendingDecisionBindings.Clear();
+            pendingDecisionIndex = 0;
+            awaitingDecisionChoice = false;
+            decisionHistory.Clear();
+
+            ActionOptions.Clear();
+            DecisionOptions.Clear();
+            workspace.ConversationEngine.ClearActionOptions();
+
+            expeditionActive = false;
+            AutomaticRepairsEnabled = true;
+            CanGoBack = false;
+            stage = ConversationStage.Greeting;
+
+            Conversation.Clear();
+            Conversation.Messages.Add(
+                new GuideMessage
+                {
+                    IsGuide = true,
+
+                    Card = new FolderPickerCard
+                    {
+                        Command = BrowseFolderCommand
+                    }
+                });
         }
 
         private void RecordAppliedDecision(
@@ -794,9 +940,7 @@ namespace SmartRenamer.ViewModels.Guide
                     });
             }
 
-            CanGoBack =
-                awaitingDecisionChoice &&
-                decisionHistory.Count > 0;
+            CanGoBack = expeditionActive;
         }
 
         /// <summary>
@@ -807,7 +951,7 @@ namespace SmartRenamer.ViewModels.Guide
         /// back through GuideInvestigator. The Guide never interprets the path
         /// as an Ebook destination; that meaning remains inside the Expert.
         /// </summary>
-        private void ApplyDecisionChoice(
+        private async Task ApplyDecisionChoice(
             string optionId)
         {
             if (!awaitingDecisionChoice)
@@ -848,7 +992,10 @@ namespace SmartRenamer.ViewModels.Guide
                 }
             }
 
-            guideInvestigator.ApplyDecisionChoice(
+            operation.State = ScoutOperationState.Running;
+            operation.Status = "Applying your decision...";
+
+            await guideInvestigator.ApplyDecisionChoiceAsync(
                 binding.Expert.Name,
                 option.Id,
                 value);
@@ -861,6 +1008,17 @@ namespace SmartRenamer.ViewModels.Guide
                     : option.Label);
 
             AdvanceDecisionSequence();
+
+            if (awaitingDecisionChoice)
+            {
+                operation.State = ScoutOperationState.WaitingForUser;
+                operation.Status = "Waiting for your decision.";
+            }
+            else
+            {
+                operation.State = ScoutOperationState.Completed;
+                operation.Status = "Decision complete.";
+            }
         }
 
         /// <summary>
@@ -869,7 +1027,7 @@ namespace SmartRenamer.ViewModels.Guide
         /// options, a typed path is also accepted when it names an existing
         /// directory.
         /// </summary>
-        private bool TryApplyTypedDecisionChoice(
+        private async Task<bool> TryApplyTypedDecisionChoice(
             string answer)
         {
             if (!awaitingDecisionChoice ||
@@ -904,7 +1062,10 @@ namespace SmartRenamer.ViewModels.Guide
                     if (string.IsNullOrWhiteSpace(folder))
                         return true;
 
-                    guideInvestigator.ApplyDecisionChoice(
+                    operation.State = ScoutOperationState.Running;
+                    operation.Status = "Applying your decision...";
+
+                    await guideInvestigator.ApplyDecisionChoiceAsync(
                         binding.Expert.Name,
                         option.Id,
                         folder);
@@ -913,7 +1074,10 @@ namespace SmartRenamer.ViewModels.Guide
                 }
                 else
                 {
-                    guideInvestigator.ApplyDecisionChoice(
+                    operation.State = ScoutOperationState.Running;
+                    operation.Status = "Applying your decision...";
+
+                    await guideInvestigator.ApplyDecisionChoiceAsync(
                         binding.Expert.Name,
                         option.Id);
 
@@ -923,6 +1087,12 @@ namespace SmartRenamer.ViewModels.Guide
                 RecordAppliedDecision(binding);
 
                 AdvanceDecisionSequence();
+                operation.State = awaitingDecisionChoice
+                    ? ScoutOperationState.WaitingForUser
+                    : ScoutOperationState.Completed;
+                operation.Status = awaitingDecisionChoice
+                    ? "Waiting for your decision."
+                    : "Decision complete.";
                 return true;
             }
 
@@ -937,7 +1107,10 @@ namespace SmartRenamer.ViewModels.Guide
             if (folderOption != null &&
                 Directory.Exists(answer))
             {
-                guideInvestigator.ApplyDecisionChoice(
+                operation.State = ScoutOperationState.Running;
+                operation.Status = "Applying your decision...";
+
+                await guideInvestigator.ApplyDecisionChoiceAsync(
                     binding.Expert.Name,
                     folderOption.Id,
                     Path.GetFullPath(answer));
@@ -948,6 +1121,12 @@ namespace SmartRenamer.ViewModels.Guide
                 RecordAppliedDecision(binding);
 
                 AdvanceDecisionSequence();
+                operation.State = awaitingDecisionChoice
+                    ? ScoutOperationState.WaitingForUser
+                    : ScoutOperationState.Completed;
+                operation.Status = awaitingDecisionChoice
+                    ? "Waiting for your decision."
+                    : "Decision complete.";
                 return true;
             }
 
@@ -970,12 +1149,18 @@ namespace SmartRenamer.ViewModels.Guide
             ExpertDecisionBinding binding =
                 pendingDecisionBindings[pendingDecisionIndex];
 
+            DecisionOptions.Clear();
+
             Conversation.AddGuideMessage(
                 binding.Request.Question);
 
             foreach (ExpertDecisionOption option
                 in binding.Request.Options)
             {
+                DecisionOptions.Add(
+                    new GuideInlineAction(
+                        option.Label,
+                        option.Id));
                 Conversation.Messages.Add(
                     new GuideMessage
                     {
@@ -1022,7 +1207,53 @@ namespace SmartRenamer.ViewModels.Guide
 
             awaitingDecisionChoice = false;
             pendingDecisionIndex = 0;
-            CanGoBack = false;
+            DecisionOptions.Clear();
+            CanGoBack = expeditionActive;
+
+            // Organization is a terminal collection-level stage for the
+            // current expedition. Do not feed the old investigation
+            // recommendation set back into the conversation after the
+            // organization decision has already executed. Those findings
+            // describe the state before the decision and otherwise appear
+            // as an unrelated final message.
+            if (string.Equals(
+                    operation.Stage,
+                    "Organization",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                workspace.ConversationEngine.ClearActionOptions();
+                ActionOptions.Clear();
+
+                if (operation.CollectionTotal > 0 &&
+                    operation.CollectionCompleted >= operation.CollectionTotal)
+                {
+                    operation.State = ScoutOperationState.Completed;
+                    operation.Status = "Organization complete.";
+                    operation.CurrentTask =
+                        $"{operation.CollectionCompleted:N0}/{operation.CollectionTotal:N0} organized";
+
+                    Conversation.AddGuideMessage(
+                        $"Organization is complete. Scout processed all {operation.CollectionTotal:N0} ebooks.");
+                }
+                else
+                {
+                    operation.State =
+                        operation.CollectionWaiting > 0
+                            ? ScoutOperationState.WaitingForUser
+                            : ScoutOperationState.Completed;
+
+                    operation.Status =
+                        operation.CollectionWaiting > 0
+                            ? "Organization complete; some ebooks still need attention."
+                            : "Organization finished with pending work.";
+
+                    Conversation.AddGuideMessage(
+                        "Organization has finished, but some ebooks still need attention before the collection is fully organized.");
+                }
+
+                return;
+            }
+
             ContinueInvestigationConversation();
         }
 
@@ -1034,7 +1265,7 @@ namespace SmartRenamer.ViewModels.Guide
         private bool BeginDecisionSequence()
         {
             decisionHistory.Clear();
-            CanGoBack = false;
+            CanGoBack = expeditionActive;
             pendingDecisionBindings.Clear();
             pendingDecisionBindings.AddRange(
                 guideInvestigator.DecisionBindings
@@ -1096,6 +1327,8 @@ namespace SmartRenamer.ViewModels.Guide
         private void BeginDiscovery(
             string folder)
         {
+            expeditionActive = true;
+            CanGoBack = true;
             selectedFolder = folder;
 
             pendingDiscoveryBindings.Clear();
@@ -1121,13 +1354,64 @@ namespace SmartRenamer.ViewModels.Guide
         /// Begins the existing investigation workflow after all required
         /// discovery choices have been supplied.
         /// </summary>
-        private void InvestigateSelectedFolder(
+        private async void InvestigateSelectedFolder(
             string folder)
         {
-            WorkflowResult? result =
-                guideInvestigator.Investigate(folder);
+            operation.Title = "Investigating Project";
+            operation.Status = "Starting investigation...";
+            operation.CurrentTask = "Preparing...";
+            operation.CurrentFile = "";
+            operation.CompletedSteps = 0;
+            operation.TotalSteps = 0;
+            operation.Stage = "";
+            operation.StageCompleted = 0;
+            operation.StageTotal = 0;
+            operation.CollectionTotal = 0;
+            operation.CollectionCompleted = 0;
+            operation.CollectionProcessing = 0;
+            operation.CollectionWaiting = 0;
+            operation.CollectionPending = 0;
+            operation.ApplyItems(Array.Empty<ExecutionProgressItem>());
+            
+            operation.State = ScoutOperationState.Running;
 
-            CompleteInvestigation(result);
+            try
+            {
+                WorkflowResult? result =
+                    await Task.Run(
+                        () => guideInvestigator.Investigate(folder));
+
+                if (result != null)
+                {
+                    operation.Status =
+                        operation.CollectionWaiting > 0
+                            ? "Investigation complete; waiting for your decision."
+                            : "Investigation complete.";
+
+                    operation.CurrentTask =
+                        operation.CollectionTotal > 0
+                            ? $"{operation.CollectionCompleted:N0}/{operation.CollectionTotal:N0} complete"
+                            : "Ready for review.";
+
+                    operation.State =
+                        operation.CollectionWaiting > 0
+                            ? ScoutOperationState.WaitingForUser
+                            : ScoutOperationState.Completed;
+                }
+
+                CompleteInvestigation(result);
+            }
+            catch (Exception ex)
+            {
+                operation.Status = "Investigation failed.";
+                operation.CurrentTask = ex.Message;
+                operation.State = ScoutOperationState.Failed;
+
+                Conversation.AddGuideMessage(
+                    "I wasn't able to complete the investigation." +
+                    Environment.NewLine +
+                    ex.Message);
+            }
         }
 
         /// <summary>
@@ -1260,6 +1544,50 @@ namespace SmartRenamer.ViewModels.Guide
         /// Clicking is simply another way of expressing the user's choice.
         /// It uses the same Conversation Framework action path as typed input.
         /// </summary>
+        private async void SelectDecisionOption(
+            GuideInlineAction action)
+        {
+            if (action == null || !awaitingDecisionChoice)
+                return;
+
+            await ApplyDecisionChoice(action.ActionId);
+        }
+
+        /// <summary>
+        /// Executes a collection-item action through the same CV_ActionRequest
+        /// path used by conversation actions and the bottom action bar.
+        /// </summary>
+        private async void ExecuteProgressAction(
+            ExecutionProgressAction action)
+        {
+            if (action == null ||
+                string.IsNullOrWhiteSpace(action.ActionId) ||
+                string.IsNullOrWhiteSpace(action.ContextId))
+            {
+                return;
+            }
+
+            CV_ActionRequest actionRequest = new()
+            {
+                ActionId = action.ActionId,
+                OptionId = action.Id,
+                ContextId = action.ContextId
+            };
+
+            workspace.ConversationEngine.ClearActionOptions();
+            ActionOptions.Clear();
+
+            operation.State = ScoutOperationState.Running;
+            operation.Status = "Working...";
+
+            Conversation.AddUserMessage(action.Label);
+
+            CV_ActionResult actionResult =
+                await ExecuteActionAsync(actionRequest);
+
+            HandleActionResult(actionResult);
+        }
+
         public async void SelectActionOption(
             CV_ActionOption option)
 
@@ -1282,6 +1610,9 @@ namespace SmartRenamer.ViewModels.Guide
             workspace.ConversationEngine.ClearActionOptions();
 
             ActionOptions.Clear();
+
+            operation.State = ScoutOperationState.Running;
+            operation.Status = "Working...";
 
             Conversation.AddUserMessage(
                 option.Label);
@@ -1322,11 +1653,65 @@ namespace SmartRenamer.ViewModels.Guide
             Conversation.AddUserMessage(
                 recommendation.ActionText);
 
+            operation.State = ScoutOperationState.Running;
+            operation.Status = "Working...";
+
             CV_ActionResult actionResult =
                 await ExecuteActionAsync(
                     actionRequest);
 
             HandleActionResult(actionResult);
+        }
+
+        /// <summary>
+        /// Routes the visible automatic-repair switch through the same generic
+        /// Conversation Framework action used by the conversation and
+        /// recommendation hotlink.
+        /// </summary>
+        private async void ToggleAutomaticRepairs()
+        {
+            string actionId =
+                AutomaticRepairsEnabled
+                    ? "RevokeAutomaticAction"
+                    : "AuthorizeAutomaticAction";
+
+            CV_ActionRequest actionRequest = new()
+            {
+                ActionId = actionId,
+                IsStandaloneAction = true
+            };
+
+            operation.State = ScoutOperationState.Running;
+            operation.Status =
+                AutomaticRepairsEnabled
+                    ? "Enabling automatic repairs..."
+                    : "Disabling automatic repairs...";
+
+            CV_ActionResult actionResult =
+                await ExecuteActionAsync(actionRequest);
+
+            HandleActionResult(actionResult);
+        }
+
+        private void GuideInvestigator_BackgroundActionCompleted(
+            object? sender,
+            ExpertBackgroundActionCompletedEventArgs e)
+        {
+            if (!ReferenceEquals(sender, guideInvestigator))
+                return;
+
+            Action applyResult =
+                () => HandleActionResult(e.Result);
+
+            if (System.Windows.Application.Current?.Dispatcher is
+                System.Windows.Threading.Dispatcher dispatcher)
+            {
+                _ = dispatcher.InvokeAsync(applyResult);
+            }
+            else
+            {
+                applyResult();
+            }
         }
 
         // =====================================================================
@@ -1366,12 +1751,45 @@ namespace SmartRenamer.ViewModels.Guide
             if (actionResult == null)
                 return;
 
+            if (string.Equals(
+                    actionResult.ActionId,
+                    "AuthorizeAutomaticAction",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                AutomaticRepairsEnabled = actionResult.Success;
+            }
+            else if (string.Equals(
+                    actionResult.ActionId,
+                    "RevokeAutomaticAction",
+                    StringComparison.OrdinalIgnoreCase) &&
+                     actionResult.Success)
+            {
+                AutomaticRepairsEnabled = false;
+            }
+
             // -------------------------------------------------------------
             // Report a failed action.
             // -------------------------------------------------------------
 
             if (!actionResult.Success)
             {
+                if (string.Equals(
+                        actionResult.ActionId,
+                        "AuthorizeAutomaticAction",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    AutomaticRepairsEnabled = false;
+                }
+                else if (string.Equals(
+                        actionResult.ActionId,
+                        "RevokeAutomaticAction",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    AutomaticRepairsEnabled = true;
+                }
+
+                operation.State = ScoutOperationState.Failed;
+
                 Conversation.AddGuideMessage(
                     string.IsNullOrWhiteSpace(actionResult.Message)
                         ? "I wasn't able to complete that action."
@@ -1418,6 +1836,14 @@ namespace SmartRenamer.ViewModels.Guide
             foreach (CV_ActionOption option
                 in actionResult.Options)
             {
+                // An input prompt is a conversation state, not a button.
+                // The Conversation Engine retains it so the next typed
+                // message becomes the supplied value. Rendering it as a
+                // clickable option would cause the option's ActionId to be
+                // mistaken for the user's metadata value.
+                if (option.AcceptsUserInput)
+                    continue;
+
                 Conversation.Messages.Add(
                     new GuideMessage
                     {
@@ -1442,17 +1868,27 @@ namespace SmartRenamer.ViewModels.Guide
 
             if (actionResult.RequiresReobservation)
             {
+                operation.State =
+                    operation.CollectionWaiting > 0
+                        ? ScoutOperationState.WaitingForUser
+                        : ScoutOperationState.Completed;
+
                 IReadOnlyList<CV_Recommendation> recommendations =
                     guideInvestigator.ReobservationRecommendations;
 
+                IReadOnlyList<ProjectObservation> observations =
+                    guideInvestigator.ReobservationObservations;
+
                 workspace.ConversationEngine.ClearActionOptions();
                 ActionOptions.Clear();
+                DecisionOptions.Clear();
+
+                workspace.RefreshAfterReobservation(
+                    observations,
+                    recommendations);
 
                 if (recommendations.Count > 0)
                 {
-                    workspace.ConversationEngine.LoadRecommendations(
-                        recommendations);
-
                     CV_Recommendation firstRecommendation =
                         recommendations[0];
 
@@ -1468,6 +1904,37 @@ namespace SmartRenamer.ViewModels.Guide
                             message.Text);
                     }
                 }
+
+                // A terminal repair decision may have removed the final
+                // collection-wide repair blocker. Refresh the generic Expert
+                // decision bindings now so Organization can become the next
+                // explicit step instead of leaving the user at an apparently
+                // complete 100% screen with no way forward.
+                pendingDecisionBindings.Clear();
+                pendingDecisionBindings.AddRange(
+                    guideInvestigator.DecisionBindings
+                        .Where(binding =>
+                            binding.Request.Options.Count > 0));
+
+                if (pendingDecisionBindings.Count > 0)
+                {
+                    pendingDecisionIndex = 0;
+                    awaitingDecisionChoice = true;
+                    operation.State =
+                        ScoutOperationState.WaitingForUser;
+                    operation.Status =
+                        "Investigation complete; ready for the next collection decision.";
+                    PresentDecisionQuestion();
+                }
+            }
+            else
+            {
+                DecisionOptions.Clear();
+
+                workspace.ClearCurrentRecommendation();
+
+                operation.State = ScoutOperationState.Completed;
+                operation.Status = "Action complete.";
             }
         }
 

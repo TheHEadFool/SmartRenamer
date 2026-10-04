@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using SmartRenamer.Observations.Signals;
 
@@ -97,6 +97,16 @@ namespace SmartRenamer.Observations
         /// findings.
         /// </summary>
         public Guid Id { get; init; } = Guid.NewGuid();
+
+        /// <summary>
+        /// Stable domain identity associated with this finding, when the
+        /// finding represents a specific domain object.
+        ///
+        /// For Ebook Expert repair findings this is the OriginalFullPath of
+        /// the ebook. The generic Observation Framework treats this value as
+        /// opaque and simply transports it downstream.
+        /// </summary>
+        public string ContextId { get; init; } = string.Empty;
 
         /// <summary>
         /// Did this Investigation discover anything worth reporting?

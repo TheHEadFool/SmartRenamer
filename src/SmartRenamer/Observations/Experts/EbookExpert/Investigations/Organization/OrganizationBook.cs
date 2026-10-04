@@ -35,6 +35,13 @@
         public string Series { get; init; } = "";
 
         /// <summary>
+        /// Established position within the series, when the available
+        /// metadata/evidence provides one. Organization must never invent
+        /// this value merely because several books share a series folder.
+        /// </summary>
+        public string SeriesNumber { get; init; } = "";
+
+        /// <summary>
         /// Ebook publisher.
         /// </summary>
         public string Publisher { get; init; } = "";

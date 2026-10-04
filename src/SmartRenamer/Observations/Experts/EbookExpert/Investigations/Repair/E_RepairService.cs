@@ -1,8 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.BuildingBlocks;
+using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Resources;
 using Scout.Observations.Experts.EbookExpert.Investigations.Repair;
 
@@ -102,12 +104,57 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
+        /// Recognizes ISBN values directly from the EPUB opening content.
+        ///
+        /// This is local evidence from the EPUB itself. No external research
+        /// is performed, and no repair is applied by this operation.
+        /// </summary>
+        public List<IsbnResearchCandidate> RecognizeIsbnCandidates(
+            RepairOpportunity opportunity,
+            int maxDocuments = 10)
+        {
+            if (opportunity == null)
+                throw new ArgumentNullException(nameof(opportunity));
+
+            if (opportunity.Record?.Metadata == null)
+                return new List<IsbnResearchCandidate>();
+
+            string epubPath =
+                opportunity.Record.File?.CurrentFullPath
+                ?? opportunity.Record.File?.OriginalFullPath
+                ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(epubPath))
+                return new List<IsbnResearchCandidate>();
+
+            string openingContent =
+                new E_EpubContentResource().ExtractOpeningText(
+                    epubPath,
+                    maxDocuments);
+
+            IReadOnlyList<string> recognizedIsbns =
+                new E_IsbnContentRecognizer().Recognize(openingContent);
+
+            return recognizedIsbns
+                .Select(isbn => new IsbnResearchCandidate
+                {
+                    Isbn = isbn,
+                    Source = "LocalEpubContent",
+                    Evidence =
+                        "ISBN was explicitly found in the EPUB opening content.",
+                    Confidence = 1.0
+                })
+                .ToList();
+        }
+
+        /// <summary>
         /// Researches possible ISBN values for a repair opportunity.
         ///
         /// No ebook is modified by this operation.
         /// </summary>
         public List<IsbnResearchCandidate> ResearchMissingIsbn(
-            RepairOpportunity opportunity)
+            RepairOpportunity opportunity,
+            string? userEvidence = null)
         {
             if (opportunity == null)
                 throw new ArgumentNullException(nameof(opportunity));
@@ -128,8 +175,56 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             if (opportunity.Record?.Metadata == null)
                 return new List<IsbnResearchCandidate>();
 
+            string combinedUserEvidence =
+                CombineUserEvidence(
+                    opportunity.Record.Evidence,
+                    userEvidence);
+
             return _isbnResearchResource.Research(
-                opportunity.Record.Metadata);
+                opportunity.Record.Metadata,
+                combinedUserEvidence,
+                opportunity.Record.Evidence);
+        }
+
+        /// <summary>
+        /// Researches a missing ISBN while preserving the external provider
+        /// outcome for the background recovery coordinator.
+        /// </summary>
+        public IsbnResearchResult ResearchMissingIsbnWithStatus(
+            RepairOpportunity opportunity,
+            string? userEvidence = null)
+        {
+            if (opportunity == null)
+                throw new ArgumentNullException(nameof(opportunity));
+
+            if (!opportunity.MissingIsbn)
+            {
+                return new IsbnResearchResult
+                {
+                    Status = IsbnResearchStatus.NoCandidates
+                };
+            }
+
+            if (opportunity.Record?.Metadata == null)
+            {
+                return new IsbnResearchResult
+                {
+                    Status = IsbnResearchStatus.NoCandidates
+                };
+            }
+
+            IReadOnlyList<MetadataEvidence> evidence =
+                opportunity.Record.Evidence;
+
+            string combinedUserEvidence =
+                CombineUserEvidence(
+                    opportunity.Record.Evidence,
+                    userEvidence);
+
+            return _isbnResearchResource.ResearchWithStatus(
+                opportunity.Record.Metadata,
+                combinedUserEvidence,
+                evidence);
         }
 
         /// <summary>
@@ -143,6 +238,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         public List<RepairDecisionCandidate> EvaluateIsbnCandidates(
             RepairOpportunity opportunity,
             IReadOnlyList<IsbnResearchCandidate> candidates,
+            string? userEvidence = null,
             int maxDocuments = 10)
         {
             if (opportunity == null)
@@ -186,11 +282,46 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             // constitutes supporting ISBN evidence.
             //---------------------------------------------------------
 
+            string combinedUserEvidence =
+                CombineUserEvidence(
+                    opportunity.Record.Evidence,
+                    userEvidence);
+
             return _isbnRepairEvidenceEvaluator.Evaluate(
                 opportunity.Record.Metadata,
+                opportunity.Record.Evidence,
                 epubPath,
                 candidates,
+                combinedUserEvidence,
                 maxDocuments);
+        }
+
+        private static string CombineUserEvidence(
+            IReadOnlyList<MetadataEvidence> recordedEvidence,
+            string? currentUserEvidence)
+        {
+            List<string> values = new();
+
+            foreach (MetadataEvidence evidence in recordedEvidence)
+            {
+                if (!string.Equals(
+                        evidence.Source,
+                        "User",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(evidence.Value))
+                    values.Add(evidence.Value.Trim());
+            }
+
+            if (!string.IsNullOrWhiteSpace(currentUserEvidence))
+                values.Add(currentUserEvidence.Trim());
+
+            return string.Join(
+                " | ",
+                values.Distinct(StringComparer.OrdinalIgnoreCase));
         }
 
         /// <summary>
@@ -230,8 +361,25 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             }
 
             //---------------------------------------------------------
-            // Add the approved repair to this EPUB's plan.
+            // Replace an existing change for the same repair type.
+            //
+            // Approval actions may be repeated by the conversation layer.
+            // Keeping one current approved change per field prevents stale
+            // duplicate changes from accumulating in the plan.
             //---------------------------------------------------------
+
+            int existingIndex =
+                repairPlan.Changes.FindIndex(
+                    existing => string.Equals(
+                        existing.RepairType,
+                        change.RepairType,
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (existingIndex >= 0)
+            {
+                repairPlan.Changes[existingIndex] = change;
+                return;
+            }
 
             repairPlan.AddChange(change);
         }
@@ -273,10 +421,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             if (opportunity.Record?.File == null)
                 return null;
 
-            //---------------------------------------------------------
-            // The original EPUB path is the stable identity of the plan.
-            //---------------------------------------------------------
-
             string originalPath =
                 opportunity.Record.File.OriginalFullPath;
 
@@ -289,39 +433,29 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             if (string.IsNullOrWhiteSpace(originalPath))
                 return null;
 
-            //---------------------------------------------------------
-            // Retrieve the approved repair plan.
-            //---------------------------------------------------------
-
             E_RepairPlan? repairPlan =
                 GetRepairPlan(originalPath);
 
-            if (repairPlan == null)
-                return null;
-
-            if (repairPlan.Changes.Count == 0)
+            if (repairPlan == null || repairPlan.Changes.Count == 0)
                 return null;
 
             //---------------------------------------------------------
-            // Create ONE working copy.
-            //
-            // Every approved repair will be applied to this same copy.
+            // Create ONE protected working representation. The current
+            // working representation is not promoted until every approved
+            // change succeeds.
             //---------------------------------------------------------
 
             string workingPath =
                 _repairWorkspace.CreateWorkingCopy(
                     opportunity.Record.File);
 
-            //---------------------------------------------------------
-            // Apply every approved repair in the plan.
-            //
-            // ISBN is the first supported physical repair type.
-            //---------------------------------------------------------
-
             foreach (E_RepairChange change in repairPlan.Changes)
             {
                 if (!change.CanExecute)
-                    continue;
+                {
+                    TryDeleteWorkingCopy(workingPath);
+                    return null;
+                }
 
                 bool repaired =
                     _epubRepairResource.ApplyRepairChange(
@@ -330,20 +464,20 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                         workingPath);
 
                 if (!repaired)
+                {
+                    // Earlier successful changes may already exist in the
+                    // temporary working representation. Never promote a
+                    // partial plan.
+                    TryDeleteWorkingCopy(workingPath);
                     return null;
+                }
             }
 
-            //---------------------------------------------------------
-            // The repaired working copy is now the current version
-            // of this EPUB.
-            //
-            // OriginalFullPath remains unchanged as the stable
-            // identity of the source ebook.
-            //
-            // CurrentFullPath moves forward to the repaired copy so
-            // the next Ebook Expert investigation reads the repaired
-            // EPUB rather than starting over from the original.
-            //---------------------------------------------------------
+            if (!File.Exists(workingPath))
+            {
+                TryDeleteWorkingCopy(workingPath);
+                return null;
+            }
 
             opportunity.Record.File.CurrentFullPath =
                 workingPath;
@@ -351,23 +485,33 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             opportunity.Record.File.CurrentName =
                 Path.GetFileName(workingPath);
 
-            //---------------------------------------------------------
-            // Preserve the completed repaired EPUB for later
-            // workflow/output handling.
-            //---------------------------------------------------------
-
             _preparedFiles[originalPath] =
                 workingPath;
-
-            //---------------------------------------------------------
-            // These approved changes have now been physically applied.
-            // A later repair cycle must create a new plan containing
-            // only newly approved changes.
-            //---------------------------------------------------------
 
             repairPlan.Changes.Clear();
 
             return workingPath;
         }
+
+        private static void TryDeleteWorkingCopy(
+            string workingPath)
+        {
+            if (string.IsNullOrWhiteSpace(workingPath) ||
+                !File.Exists(workingPath))
+            {
+                return;
+            }
+
+            try
+            {
+                File.Delete(workingPath);
+            }
+            catch
+            {
+                // Best-effort cleanup. A failed working copy must never be
+                // promoted to the current ebook representation.
+            }
+        }
+
     }
 }

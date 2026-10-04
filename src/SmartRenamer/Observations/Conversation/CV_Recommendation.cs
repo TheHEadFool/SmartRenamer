@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Scout.Observations.Conversation
@@ -84,6 +84,15 @@ namespace Scout.Observations.Conversation
         /// and Scout's conversational representation of that discovery.
         /// </summary>
         public Guid Id { get; init; }
+
+        /// <summary>
+        /// Stable domain context associated with this recommendation, when
+        /// the underlying finding identifies one specific domain object.
+        ///
+        /// The Conversation Framework preserves this value without
+        /// interpreting it.
+        /// </summary>
+        public string ContextId { get; init; } = string.Empty;
 
         /// <summary>
         /// Human-readable title for the recommendation.

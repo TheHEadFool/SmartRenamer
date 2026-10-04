@@ -1,4 +1,4 @@
-﻿using SmartRenamer.Models;
+using SmartRenamer.Models;
 using System.Collections.Generic;
 using Scout.Observations.Experts.EbookExpert.Data;
 
@@ -95,6 +95,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Data.Reports
         //-----------------------------------------------------
 
         public List<MetadataRecord> Records { get; } = new();
+
+        /// <summary>
+        /// Phase 1 reconciliation results for each researched ebook.
+        /// These remain factual research available to downstream investigations.
+        /// </summary>
+        public List<MetadataReconciliation> Reconciliations { get; } = new();
 
         //-----------------------------------------------------
         // Findings

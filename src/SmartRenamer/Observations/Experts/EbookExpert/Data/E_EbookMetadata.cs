@@ -1,4 +1,4 @@
-﻿namespace Scout.Observations.Experts.EbookExpert.Data
+namespace Scout.Observations.Experts.EbookExpert.Data
 {
     /// <summary>
     /// =========================================================================
@@ -20,6 +20,12 @@
         public string Isbn { get; set; } = "";
 
         public string Series { get; set; } = "";
+
+        /// <summary>
+        /// Position of this book within its series, when observed.
+        /// The value remains text so decimal positions such as 4.5 are preserved.
+        /// </summary>
+        public string SeriesNumber { get; set; } = "";
 
         public string Description { get; set; } = "";
 

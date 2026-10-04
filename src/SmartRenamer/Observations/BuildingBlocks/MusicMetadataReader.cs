@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using TagLib;
 using SmartRenamer.Models;
 
@@ -52,7 +52,7 @@ namespace SmartRenamer.Observations.BuildingBlocks
     /// </summary>
     public static class MusicMetadataReader
     {
-        public static Tag Read(FileContext file)
+        public static Tag? Read(FileContext file)
         {
             try
             {

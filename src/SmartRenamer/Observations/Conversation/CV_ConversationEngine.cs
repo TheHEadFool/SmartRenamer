@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Scout.Observations.Conversation;
 
@@ -246,12 +247,49 @@ public sealed class CV_ConversationEngine
             return null;
 
         // ---------------------------------------------------------
-        // First check whether the user selected one of the options
-        // returned by the previous action.
+        // A pending option may explicitly request free-form input.
+        //
+        // This check comes BEFORE ordinary option matching. Once Scout has
+        // asked for a value, the next typed message is the value; the option
+        // that created the prompt is not itself the value.
+        //
+        // This is intentionally generic: the Conversation Framework does
+        // not interpret the meaning of the input or know which domain field
+        // it represents. It only preserves the option's action and context
+        // so the originating Expert can interpret the supplied text.
+        // ---------------------------------------------------------
+
+        List<CV_ActionOption> inputOptions =
+            _pendingActionOptions
+                .Where(option =>
+                    option.AcceptsUserInput &&
+                    !string.IsNullOrWhiteSpace(option.ActionId) &&
+                    !string.IsNullOrWhiteSpace(option.ContextId))
+                .ToList();
+
+        if (inputOptions.Count == 1)
+        {
+            CV_ActionOption option = inputOptions[0];
+
+            return new CV_ActionRequest
+            {
+                ActionId = option.ActionId,
+                UserInput = userInput,
+                ContextId = option.ContextId,
+                IsStandaloneAction = true
+            };
+        }
+
+        // ---------------------------------------------------------
+        // First check whether the user selected one of the remaining
+        // ordinary options returned by the previous action.
         // ---------------------------------------------------------
 
         foreach (CV_ActionOption option in _pendingActionOptions)
         {
+            if (option.AcceptsUserInput)
+                continue;
+
             if (string.Equals(
                     userInput.Trim(),
                     option.Id,
@@ -269,6 +307,18 @@ public sealed class CV_ConversationEngine
 
         CV_UserIntent intent =
             _userIntent.Interpret(userInput);
+
+        // ---------------------------------------------------------
+        // A pending option may explicitly request free-form input.
+        // This is intentionally generic: the Conversation Framework does
+        // not interpret the meaning of the input or know which domain field
+        // it represents. It only preserves the option's action and context
+        // so the originating Expert can interpret the supplied text.
+        //
+        // This check is deliberately limited to an Unknown intent so that
+        // normal approvals, research requests, and other recognized commands
+        // keep their existing behavior.
+        // ---------------------------------------------------------
 
         // ---------------------------------------------------------
         // If Scout has presented exactly one pending action option,
@@ -308,11 +358,14 @@ public sealed class CV_ConversationEngine
         // The appropriate Expert determines what the action means.
         // ---------------------------------------------------------
 
-        if (intent.Type == CV_UserIntentType.AuthorizeAutomaticAction)
+        if (intent.Type == CV_UserIntentType.AuthorizeAutomaticAction ||
+            intent.Type == CV_UserIntentType.RevokeAutomaticAction)
         {
             return new CV_ActionRequest
             {
-                ActionId = "AuthorizeAutomaticAction",
+                ActionId = intent.Type == CV_UserIntentType.AuthorizeAutomaticAction
+                    ? "AuthorizeAutomaticAction"
+                    : "RevokeAutomaticAction",
                 UserInput = userInput,
                 IsStandaloneAction = true
             };
@@ -341,7 +394,8 @@ public sealed class CV_ConversationEngine
         {
             RecommendationId = currentRecommendation.Id,
             ActionId = currentRecommendation.ActionId,
-            UserInput = userInput
+            UserInput = userInput,
+            ContextId = currentRecommendation.ContextId
         };
     }
 
@@ -356,7 +410,9 @@ public sealed class CV_ConversationEngine
 
         return new CV_ActionRequest
         {
-            ActionId = recommendation.ActionId
+            RecommendationId = recommendation.Id,
+            ActionId = recommendation.ActionId,
+            ContextId = recommendation.ContextId
         };
     }
 

@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Conversation;
+using Scout.Observations.Conversation;
 using SmartRenamer.Observations;
 using System;
 
@@ -96,6 +96,8 @@ public sealed class E_RecommendationTranslator
 
             Id = finding.Id,
 
+            ContextId = finding.ContextId,
+
             //---------------------------------------------------------
             // The ExpertFinding summary becomes the recommendation title.
             //---------------------------------------------------------
@@ -129,11 +131,27 @@ public sealed class E_RecommendationTranslator
 
             ActionId = IsMissingIsbnResearch(finding)
                 ? "ResearchMissingIsbn"
-                : string.Empty,
+                : IsIdentityReconciliation(finding)
+                    ? "ReconcileMetadataIdentity"
+                    : IsIncompleteMetadataReview(finding)
+                        ? "ReviewIncompleteMetadata"
+                        : IsUnsupportedRepair(finding)
+                            ? "ReviewUnsupportedRepair"
+                            : IsAutomaticRepairAuthorization(finding)
+                                ? "AuthorizeAutomaticAction"
+                                : string.Empty,
 
             ActionText = IsMissingIsbnResearch(finding)
                 ? "Research Missing ISBNs"
-                : string.Empty
+                : IsIdentityReconciliation(finding)
+                    ? "Review Metadata Identity"
+                    : IsIncompleteMetadataReview(finding)
+                        ? "Review Missing Metadata"
+                        : IsUnsupportedRepair(finding)
+                            ? "Review Repair Options"
+                            : IsAutomaticRepairAuthorization(finding)
+                                ? "Enable Automatic Repairs"
+                                : string.Empty
         };
 
         //---------------------------------------------------------
@@ -193,4 +211,69 @@ public sealed class E_RecommendationTranslator
 
         return false;
     }
+    /// <summary>
+    /// Determines whether this finding represents the Ebook Expert's
+    /// identity-reconciliation capability.
+    /// </summary>
+    private static bool IsAutomaticRepairAuthorization(
+        ExpertFinding finding)
+    {
+        return finding.Summary.Contains(
+            "Automatic ebook repair authorization is available",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Identifies a collection-level finding that asks Scout to review
+    /// incomplete metadata. This creates an executable conversation action
+    /// instead of leaving an affirmative response with only a generic reply.
+    /// </summary>
+    private static bool IsIncompleteMetadataReview(
+        ExpertFinding finding)
+    {
+        return finding.Summary.Contains(
+            "incomplete metadata",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Identifies a repair finding for which the current Ebook Expert has no
+    /// research or physical-repair capability. The action is a capability
+    /// boundary, not a claim that the missing value has been resolved.
+    /// </summary>
+    private static bool IsUnsupportedRepair(
+        ExpertFinding finding)
+    {
+        return finding.Summary.Contains(
+            "cannot currently recover automatically",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Determines whether this finding represents the Ebook Expert's
+    /// identity-reconciliation capability.
+    /// </summary>
+    private static bool IsIdentityReconciliation(
+        ExpertFinding finding)
+    {
+        if (finding.Summary.Contains(
+            "metadata identity or Series information that needs reconciliation",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        foreach (string evidence in finding.Evidence)
+        {
+            if (evidence.Contains(
+                "Identity reconciliation required",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
 }

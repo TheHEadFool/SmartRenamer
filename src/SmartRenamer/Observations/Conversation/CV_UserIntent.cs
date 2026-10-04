@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace Scout.Observations.Conversation
 {
@@ -102,6 +102,12 @@ namespace Scout.Observations.Conversation
                 return this;
             }
 
+            if (IsAutomaticActionRevocationRequest(normalized))
+            {
+                Type = CV_UserIntentType.RevokeAutomaticAction;
+                return this;
+            }
+
             if (IsAutomaticActionAuthorizationRequest(normalized))
             {
                 Type = CV_UserIntentType.AuthorizeAutomaticAction;
@@ -168,6 +174,24 @@ namespace Scout.Observations.Conversation
         /// It does NOT determine whether any particular action is safe or
         /// appropriate. That decision belongs to the applicable Expert.
         /// </summary>
+        private static bool IsAutomaticActionRevocationRequest(
+            string input)
+        {
+            bool containsDisable =
+                input.Contains("turn off") ||
+                input.Contains("disable") ||
+                input.Contains("stop automatic") ||
+                input.Contains("don't automatically") ||
+                input.Contains("do not automatically");
+
+            bool concernsRepair =
+                input.Contains("repair") ||
+                input.Contains("fix") ||
+                input.Contains("automatic");
+
+            return containsDisable && concernsRepair;
+        }
+
         private static bool IsAutomaticActionAuthorizationRequest(
             string input)
         {
@@ -213,6 +237,8 @@ namespace Scout.Observations.Conversation
 
         ReviewAll,
 
-        AuthorizeAutomaticAction
+        AuthorizeAutomaticAction,
+
+        RevokeAutomaticAction
     }
 }

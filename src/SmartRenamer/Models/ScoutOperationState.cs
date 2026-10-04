@@ -1,4 +1,4 @@
-﻿namespace SmartRenamer.Models
+namespace SmartRenamer.Models
 {
     /// <summary>
     /// Represents the current state of a Scout operation.
@@ -7,6 +7,7 @@
     {
         Idle,
         Running,
+        WaitingForUser,
         Paused,
         Cancelling,
         Cancelled,

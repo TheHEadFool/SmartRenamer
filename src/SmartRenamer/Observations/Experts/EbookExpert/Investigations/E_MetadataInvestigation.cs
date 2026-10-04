@@ -1,6 +1,7 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Blocks;
+using Scout.Observations.Experts.EbookExpert.Data;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
 
@@ -63,6 +64,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
         private readonly E_MetadataConsultant _consultant = new();
 
+        private readonly E_MetadataReconciliationEvaluator _reconciliationEvaluator =
+            new();
+
         /// <summary>
         /// Gets the ExpertFindings produced by the Metadata Consultant during
         /// the most recent investigation.
@@ -84,14 +88,36 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         /// stores the resulting ExpertFindings in Findings.
         /// </summary>
         public MetadataReport Investigate(
-            IReadOnlyList<FileContext> files)
+            IReadOnlyList<FileContext> files,
+            string sourceFolderPath)
         {
             //---------------------------------------------------------
             // Ask the Block to discover facts.
             //---------------------------------------------------------
 
             MetadataReport report =
-                _block.Analyze(files);
+                _block.Analyze(
+                    files,
+                    sourceFolderPath);
+
+            //---------------------------------------------------------
+            // Phase 1: evaluate the freshly observed metadata and evidence.
+            //
+            // This is deliberately before the Consultant's user-facing
+            // findings. The reconciliation result is structured research
+            // that downstream Repair can consume without reacquiring evidence.
+            //---------------------------------------------------------
+
+            report.Reconciliations.Clear();
+
+            foreach (MetadataRecord record in report.Records)
+            {
+                MetadataReconciliation reconciliation =
+                    _reconciliationEvaluator.Evaluate(record);
+
+                record.Reconciliation = reconciliation;
+                report.Reconciliations.Add(reconciliation);
+            }
 
             //---------------------------------------------------------
             // Ask the Consultant to interpret those facts.

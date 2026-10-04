@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Conversation;
+using Scout.Observations.Conversation;
 using Scout.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
@@ -6,6 +6,8 @@ using SmartRenamer.Observations.Experts.EbookExpert.Resources;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 {
@@ -40,10 +42,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
     /// -------------------------------------------------------------------------
     /// • Interpret natural-language conversation.
     /// • Modify EPUB files directly.
-    /// • Perform ISBN research directly.
-    /// • Select an ISBN candidate automatically.
     ///
-    /// The user must explicitly select the candidate.
+    /// Automatic repair uses the existing domain resources and decision engine
+    /// and only acts when those components establish a safe candidate.
     ///
     /// =========================================================================
     /// </summary>
@@ -51,6 +52,102 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
     {
         private readonly E_RepairService _repairService = new();
         private readonly E_RepairDecisionEngine _repairDecisionEngine = new();
+
+        private readonly object _repairExecutionLock = new();
+
+        //---------------------------------------------------------
+        // Background external research
+        //---------------------------------------------------------
+
+        private readonly E_ExternalResearchCoordinator _externalResearchCoordinator =
+            new();
+
+        private readonly HashSet<string> _externalResearchingPaths =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        private readonly Dictionary<string, List<IsbnResearchCandidate>>
+            _researchedIsbnCandidates =
+                new(StringComparer.OrdinalIgnoreCase);
+
+        private readonly object _researchCacheLock = new();
+
+        /// <summary>
+        /// Raised when a background external-research action finishes.
+        /// The Ebook Expert forwards the result through the generic
+        /// Observation Framework so the workflow can re-observe the affected
+        /// branch without teaching Scout infrastructure about ISBNs.
+        /// </summary>
+        public event Action<string, CV_ActionResult>? BackgroundActionCompleted;
+
+        /// <summary>
+        /// Returns true while external research is queued or running for the
+        /// supplied EPUB.
+        /// </summary>
+        public bool IsExternalResearching(string originalPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalPath))
+                return false;
+
+            lock (_externalResearchingPaths)
+            {
+                return _externalResearchingPaths.Contains(originalPath);
+            }
+        }
+
+        public int ExternalResearchCount
+        {
+            get
+            {
+                lock (_externalResearchingPaths)
+                {
+                    return _externalResearchingPaths.Count;
+                }
+            }
+        }
+
+        //---------------------------------------------------------
+        // Automatic recovery attempts
+        //---------------------------------------------------------
+        //
+        // Automatic recovery should use an existing research capability,
+        // but it must not repeatedly call the same external resource for
+        // an unresolved ebook every time another ebook happens to be
+        // repaired. One automatic attempt per ebook is enough until the
+        // user supplies new evidence.
+        //
+        //---------------------------------------------------------
+
+        private readonly HashSet<string> _automaticIsbnResearchAttempts =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        public void ResetAutomaticRecoveryState()
+        {
+            _automaticIsbnResearchAttempts.Clear();
+            _externalResearchCoordinator.Reset();
+
+            lock (_externalResearchingPaths)
+            {
+                _externalResearchingPaths.Clear();
+            }
+
+            lock (_researchCacheLock)
+            {
+                _researchedIsbnCandidates.Clear();
+            }
+        }
+
+        public void ResetAutomaticRecoveryAttempt(string originalPath)
+        {
+            if (!string.IsNullOrWhiteSpace(originalPath))
+            {
+                _automaticIsbnResearchAttempts.Remove(originalPath);
+
+                lock (_researchCacheLock)
+                {
+                    _researchedIsbnCandidates.Remove(originalPath);
+                }
+            }
+        }
 
         //---------------------------------------------------------
         // Approved ISBN selections
@@ -74,7 +171,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         public CV_ActionResult Execute(
             CV_ActionRequest request,
             IReadOnlyList<RepairOpportunity> opportunities,
-            bool automaticAuthorization)
+            bool automaticAuthorization,
+            string? userEvidence = null,
+            Func<bool>? automaticAuthorizationProvider = null,
+            Func<string, RepairOpportunity?>? currentOpportunityResolver = null)
         {
             ArgumentNullException.ThrowIfNull(request);
 
@@ -98,16 +198,40 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     opportunities);
             }
 
+            if (!string.IsNullOrWhiteSpace(request.OptionId) &&
+                string.Equals(
+                    request.ActionId,
+                    "ReconcileMetadataIdentity",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return ApproveIdentityCandidate(
+                    request,
+                    opportunities);
+            }
+
             return request.ActionId switch
             {
                 "ResearchMissingIsbn" =>
                     ResearchMissingIsbn(
                         request,
                         opportunities,
-                        automaticAuthorization),
+                        automaticAuthorization,
+                        userEvidence,
+                        automaticAuthorizationProvider,
+                        currentOpportunityResolver),
 
                 "ExecuteRepairPlan" =>
                     ExecuteRepairPlan(
+                        request,
+                        opportunities),
+
+                "ReconcileMetadataIdentity" =>
+                    ReviewMetadataIdentity(
+                        request,
+                        opportunities),
+
+                "ReviewUnsupportedRepair" =>
+                    ReviewUnsupportedRepair(
                         request,
                         opportunities),
 
@@ -130,6 +254,18 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         /// completed repaired EPUB for the later output stage.
         /// </summary>
         private CV_ActionResult ExecuteRepairPlan(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities)
+        {
+            lock (_repairExecutionLock)
+            {
+                return ExecuteRepairPlanCore(
+                    request,
+                    opportunities);
+            }
+        }
+
+        private CV_ActionResult ExecuteRepairPlanCore(
             CV_ActionRequest request,
             IReadOnlyList<RepairOpportunity> opportunities)
         {
@@ -205,9 +341,205 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         }
 
         /// <summary>
+        /// Adds one explicitly user-provided metadata value to the normal
+        /// repair plan. The user has supplied the value in direct response to
+        /// Scout's request for that specific field, so this is an approved
+        /// repair candidate rather than an inferred value.
+        /// </summary>
+        internal CV_ActionResult ApplyUserProvidedMetadata(
+            CV_ActionRequest request,
+            RepairOpportunity opportunity,
+            string field,
+            string value,
+            bool automaticAuthorization)
+        {
+            lock (_repairExecutionLock)
+            {
+                if (string.IsNullOrWhiteSpace(request.ContextId) ||
+                    opportunity?.Record?.Metadata == null ||
+                    string.IsNullOrWhiteSpace(field) ||
+                    string.IsNullOrWhiteSpace(value))
+                {
+                    return new CV_ActionResult
+                    {
+                        ActionId = request.ActionId,
+                        Success = false,
+                        Message =
+                            "I couldn't match the information you supplied to the ebook or metadata field that needs repair."
+                    };
+                }
+
+                string repairType = field.Trim();
+                string approvedValue = value.Trim();
+                string currentValue = GetCurrentMetadataValue(
+                    opportunity.Record.Metadata,
+                    repairType);
+
+                if (!IsSupportedUserMetadataField(repairType))
+                {
+                    return new CV_ActionResult
+                    {
+                        ActionId = request.ActionId,
+                        Success = false,
+                        Message =
+                            $"Scout cannot currently apply user-provided '{repairType}' metadata through the text conversation."
+                    };
+                }
+
+                if (string.Equals(
+                        repairType,
+                        "ISBN",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    IReadOnlyList<string> recognized =
+                        new E_IsbnContentRecognizer().Recognize(approvedValue);
+
+                    if (recognized.Count != 1)
+                    {
+                        return new CV_ActionResult
+                        {
+                            ActionId = request.ActionId,
+                            Success = false,
+                            Message =
+                                "I couldn't validate the ISBN you supplied. Please provide a valid ISBN-10 or ISBN-13."
+                        };
+                    }
+
+                    approvedValue = recognized[0];
+                }
+
+                if (string.Equals(
+                        currentValue.Trim(),
+                        approvedValue,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return new CV_ActionResult
+                    {
+                        ActionId = request.ActionId,
+                        Success = true,
+                        Message =
+                            $"Scout already has that {repairType} value; no repair is needed for this field."
+                    };
+                }
+
+                _repairService.AddRepairChange(
+                    request.ContextId,
+                    new E_RepairChange(
+                        repairType,
+                        string.IsNullOrWhiteSpace(currentValue)
+                            ? null
+                            : currentValue,
+                        approvedValue,
+                        "UserProvided",
+                        $"The user explicitly supplied the {repairType} value during the repair conversation.",
+                        1.0,
+                        true));
+
+                if (automaticAuthorization)
+                {
+                    string? repairedPath =
+                        _repairService.ExecuteRepairPlan(opportunity);
+
+                    if (!string.IsNullOrWhiteSpace(repairedPath))
+                    {
+                        return new CV_ActionResult
+                        {
+                            ActionId = request.ActionId,
+                            Success = true,
+                            RequiresReobservation = true,
+                            Message =
+                                $"I used the {repairType} you supplied, applied the repair to the protected working copy, and will re-check the ebook."
+                        };
+                    }
+
+                    return new CV_ActionResult
+                    {
+                        ActionId = request.ActionId,
+                        Success = false,
+                        Message =
+                            $"I accepted the {repairType} you supplied, but I could not apply the repair safely. The original EPUB was not modified."
+                    };
+                }
+
+                CV_ActionResult result = new()
+                {
+                    ActionId = request.ActionId,
+                    Success = true,
+                    Message =
+                        $"I have recorded the {repairType} you supplied and added it to the repair plan. The original EPUB has not been modified."
+                };
+
+                result.Options.Add(
+                    new CV_ActionOption
+                    {
+                        Id = "ApplyRepair",
+                        ActionId = "ExecuteRepairPlan",
+                        ContextId = request.ContextId,
+                        Label = $"Apply this {repairType} repair",
+                        Confidence = 1.0,
+                        Source = "Ebook Expert"
+                    });
+
+                return result;
+            }
+        }
+
+        private static bool IsSupportedUserMetadataField(string field)
+        {
+            return field.Equals("Title", StringComparison.OrdinalIgnoreCase) ||
+                   field.Equals("Author", StringComparison.OrdinalIgnoreCase) ||
+                   field.Equals("Series", StringComparison.OrdinalIgnoreCase) ||
+                   field.Equals("SeriesNumber", StringComparison.OrdinalIgnoreCase) ||
+                   field.Equals("ISBN", StringComparison.OrdinalIgnoreCase) ||
+                   field.Equals("Publisher", StringComparison.OrdinalIgnoreCase) ||
+                   field.Equals("Language", StringComparison.OrdinalIgnoreCase) ||
+                   field.Equals("Description", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetCurrentMetadataValue(
+            Scout.Observations.Experts.EbookExpert.Data.E_EbookMetadata metadata,
+            string field)
+        {
+            return field.ToLowerInvariant() switch
+            {
+                "title" => metadata.Title ?? string.Empty,
+                "author" => metadata.Author ?? string.Empty,
+                "series" => metadata.Series ?? string.Empty,
+                "seriesnumber" => metadata.SeriesNumber ?? string.Empty,
+                "isbn" => metadata.Isbn ?? string.Empty,
+                "publisher" => metadata.Publisher ?? string.Empty,
+                "language" => metadata.Language ?? string.Empty,
+                "description" => metadata.Description ?? string.Empty,
+                _ => string.Empty
+            };
+        }
+
+        /// <summary>
         /// Creates a user-facing ISBN action option while keeping the
         /// Conversation Framework domain-neutral.
         /// </summary>
+        private static CV_ActionOption CreateUserDecisionOption(
+            string originalPath,
+            string id,
+            string label,
+            string evidence)
+        {
+            CV_ActionOption option = new()
+            {
+                Id = id,
+                ActionId = id,
+                ContextId = originalPath,
+                Label = label,
+                AcceptsUserInput = string.Equals(
+                    id,
+                    "AddRepairInformation",
+                    StringComparison.OrdinalIgnoreCase)
+            };
+
+            option.Evidence.Add(evidence);
+            return option;
+        }
+
         private static CV_ActionOption CreateIsbnActionOption(
             CV_ActionRequest request,
             string originalPath,
@@ -275,6 +607,1124 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         }
 
         /// <summary>
+        /// Applies every repair that the current evidence already establishes
+        /// as safe to perform without asking the user.
+        ///
+        /// This is the internal automatic-repair pass used by EbookExpert
+        /// during normal investigation. It deliberately uses the existing
+        /// ISBN research, ISBN evidence evaluation, repair decision engine,
+        /// identity evaluator, and repair service rather than creating a
+        /// second repair path.
+        ///
+        /// A repair is only performed when the existing domain machinery has
+        /// already established a safe candidate. Ambiguous or unresolved
+        /// opportunities are left untouched so they can become waiting
+        /// branches for later user interaction.
+        /// </summary>
+        public bool ApplySafeAutomaticRepairs(
+            IReadOnlyList<RepairOpportunity> opportunities,
+            bool automaticAuthorization,
+            Func<bool>? automaticAuthorizationProvider = null,
+            Func<string, RepairOpportunity?>? currentOpportunityResolver = null)
+        {
+            lock (_repairExecutionLock)
+            {
+                return ApplySafeAutomaticRepairsCore(
+                    opportunities,
+                    automaticAuthorization,
+                    automaticAuthorizationProvider,
+                    currentOpportunityResolver);
+            }
+        }
+
+        private bool ApplySafeAutomaticRepairsCore(
+            IReadOnlyList<RepairOpportunity> opportunities,
+            bool automaticAuthorization,
+            Func<bool>? automaticAuthorizationProvider = null,
+            Func<string, RepairOpportunity?>? currentOpportunityResolver = null)
+        {
+            ArgumentNullException.ThrowIfNull(opportunities);
+
+            // Automatic repair is a delegated capability, not an implicit
+            // consequence of finding a high-confidence repair opportunity.
+            // If the user has not authorized automatic repairs, this pass
+            // must not execute any physical repair.
+            if (!automaticAuthorization)
+                return false;
+
+            bool repairApplied = false;
+
+            foreach (RepairOpportunity opportunity in opportunities)
+            {
+                if (opportunity?.Record?.Metadata == null)
+                    continue;
+
+                string originalPath =
+                    opportunity.Record.File?.OriginalFullPath
+                    ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(originalPath))
+                    continue;
+
+                //---------------------------------------------------------
+                // Existing ISBN vertical slice.
+                //
+                // First use information Scout already found in the EPUB.
+                // A single valid ISBN explicitly printed in the opening
+                // content is direct evidence and does not require an
+                // external lookup.
+                //
+                // If local content produces no ISBN, or produces more than
+                // one ISBN, preserve the existing external-research path.
+                // Multiple local ISBNs are deliberately not auto-selected.
+                //---------------------------------------------------------
+
+                if (opportunity.MissingIsbn)
+                {
+                    bool localIsbnRepairApplied = false;
+
+                    List<IsbnResearchCandidate> localIsbnCandidates =
+                        _repairService.RecognizeIsbnCandidates(opportunity);
+
+                    if (localIsbnCandidates.Count == 1)
+                    {
+                        List<RepairDecisionCandidate> evaluatedLocalCandidates =
+                            _repairService.EvaluateIsbnCandidates(
+                                opportunity,
+                                localIsbnCandidates);
+
+                        RepairDecisionResult localDecision =
+                            _repairDecisionEngine.Evaluate(
+                                evaluatedLocalCandidates,
+                                E_RepairDecisionEngine.MinimumConfidenceThreshold,
+                                automaticAuthorization);
+
+                        if (localDecision.State ==
+                                RepairRecommendation.RepairDecisionState.SafeToApply &&
+                            localDecision.SelectedCandidate != null)
+                        {
+                            RepairDecisionCandidate selectedLocalCandidate =
+                                localDecision.SelectedCandidate;
+
+                            string approvedLocalIsbn =
+                                selectedLocalCandidate.Value?.ToString() ?? string.Empty;
+
+                            if (!string.IsNullOrWhiteSpace(approvedLocalIsbn))
+                            {
+                                _repairService.AddRepairChange(
+                                    originalPath,
+                                    new E_RepairChange(
+                                        "ISBN",
+                                        opportunity.Record.Metadata.Isbn,
+                                        approvedLocalIsbn,
+                                        selectedLocalCandidate.Source,
+                                        selectedLocalCandidate.Evidence,
+                                        selectedLocalCandidate.Confidence,
+                                        true));
+
+                                if (!string.IsNullOrWhiteSpace(
+                                        _repairService.ExecuteRepairPlan(opportunity)))
+                                {
+                                    repairApplied = true;
+                                    localIsbnRepairApplied = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!localIsbnRepairApplied &&
+                        _automaticIsbnResearchAttempts.Add(originalPath))
+                    {
+                        QueueAutomaticIsbnResearch(
+                            opportunity,
+                            automaticAuthorization,
+                            automaticAuthorizationProvider,
+                            currentOpportunityResolver);
+                    }
+                }
+
+                //---------------------------------------------------------
+                // Existing local identity repair.
+                //
+                // Title/Author reversal is deterministic when the identity
+                // evaluator establishes the candidate. If Series evidence
+                // is resolved, Series and SeriesNumber can be repaired too.
+                // If Series remains unresolved/conflicting, do not block a
+                // safe Title/Author correction; leave only the unresolved
+                // Series question for later evidence/user decision.
+                //---------------------------------------------------------
+
+                E_BookIdentityEvaluator identityEvaluator =
+                    new();
+
+                BookIdentityEvaluation evaluation =
+                    identityEvaluator.Evaluate(
+                        opportunity.Record);
+
+                opportunity.IdentityEvaluation = evaluation;
+
+                if (!evaluation.RepairRequired ||
+                    evaluation.Candidate == null)
+                {
+                    continue;
+                }
+
+                BookIdentityCandidate candidate =
+                    evaluation.Candidate;
+
+                string evidence = string.Join(
+                    Environment.NewLine,
+                    evaluation.Evidence.Where(
+                        item => !string.IsNullOrWhiteSpace(item)));
+
+                if (string.IsNullOrWhiteSpace(evidence))
+                    evidence = evaluation.Reason;
+
+                const string source = "LocalIdentityEvidence";
+                const double establishedConfidence = 1.0;
+
+                int changesAdded = 0;
+
+                if (!string.IsNullOrWhiteSpace(candidate.Title) &&
+                    !string.Equals(
+                        opportunity.Record.Metadata.Title,
+                        candidate.Title,
+                        StringComparison.Ordinal))
+                {
+                    _repairService.AddRepairChange(
+                        originalPath,
+                        new E_RepairChange(
+                            "Title",
+                            opportunity.Record.Metadata.Title,
+                            candidate.Title,
+                            source,
+                            evidence,
+                            establishedConfidence,
+                            true));
+
+                    changesAdded++;
+                }
+
+                if (!string.IsNullOrWhiteSpace(candidate.Authors) &&
+                    !string.Equals(
+                        opportunity.Record.Metadata.Author,
+                        candidate.Authors,
+                        StringComparison.Ordinal))
+                {
+                    _repairService.AddRepairChange(
+                        originalPath,
+                        new E_RepairChange(
+                            "Author",
+                            opportunity.Record.Metadata.Author,
+                            candidate.Authors,
+                            source,
+                            evidence,
+                            establishedConfidence,
+                            true));
+
+                    changesAdded++;
+                }
+
+                bool seriesResolved =
+                    evaluation.SeriesEvaluation?.State ==
+                    SeriesEvidenceState.Resolved;
+
+                if (seriesResolved &&
+                    !string.IsNullOrWhiteSpace(candidate.Series) &&
+                    !string.Equals(
+                        opportunity.Record.Metadata.Series,
+                        candidate.Series,
+                        StringComparison.Ordinal))
+                {
+                    _repairService.AddRepairChange(
+                        originalPath,
+                        new E_RepairChange(
+                            "Series",
+                            opportunity.Record.Metadata.Series,
+                            candidate.Series,
+                            source,
+                            evidence,
+                            establishedConfidence,
+                            true));
+
+                    changesAdded++;
+                }
+
+                if (seriesResolved &&
+                    !string.IsNullOrWhiteSpace(candidate.SeriesNumber) &&
+                    !string.Equals(
+                        opportunity.Record.Metadata.SeriesNumber,
+                        candidate.SeriesNumber,
+                        StringComparison.Ordinal))
+                {
+                    _repairService.AddRepairChange(
+                        originalPath,
+                        new E_RepairChange(
+                            "SeriesNumber",
+                            opportunity.Record.Metadata.SeriesNumber,
+                            candidate.SeriesNumber,
+                            source,
+                            evidence,
+                            establishedConfidence,
+                            true));
+
+                    changesAdded++;
+                }
+
+                if (changesAdded > 0 &&
+                    !string.IsNullOrWhiteSpace(
+                        _repairService.ExecuteRepairPlan(opportunity)))
+                {
+                    repairApplied = true;
+                }
+            }
+
+            return repairApplied;
+        }
+
+        /// <summary>
+        /// Queues one ISBN recovery job. External research is deliberately
+        /// removed from the synchronous EbookExpert investigation path.
+        /// Only one external research job runs at a time so the provider is
+        /// not flooded, while local Scout processing can continue.
+        /// </summary>
+        private void QueueAutomaticIsbnResearch(
+            RepairOpportunity opportunity,
+            bool automaticAuthorization,
+            Func<bool>? automaticAuthorizationProvider,
+            Func<string, RepairOpportunity?>? currentOpportunityResolver)
+        {
+            string originalPath =
+                opportunity.Record?.File?.OriginalFullPath
+                ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(originalPath))
+                return;
+
+            lock (_externalResearchingPaths)
+            {
+                _externalResearchingPaths.Add(originalPath);
+            }
+
+            bool queued =
+                _externalResearchCoordinator.Enqueue(
+                    originalPath,
+                    cancellationToken =>
+                    {
+                        // The current ISBN resource is synchronous by design.
+                        // The coordinator owns the background worker, so this
+                        // call no longer blocks EbookExpert.Investigate().
+                        // Cancellation is checked before the external call;
+                        // the resource itself remains protected by its timeout.
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        RepairOpportunity? currentOpportunity =
+                            currentOpportunityResolver?.Invoke(
+                                originalPath)
+                            ?? opportunity;
+
+                        if (currentOpportunity == null ||
+                            !currentOpportunity.MissingIsbn)
+                        {
+                            return Task.FromResult(
+                                new CV_ActionResult
+                                {
+                                    ActionId = "BackgroundResearchMissingIsbn",
+                                    Success = true,
+                                    RequiresReobservation = false,
+                                    Message =
+                                        "This ebook no longer needs the queued ISBN research, so Scout did not perform another external lookup."
+                                });
+                        }
+
+                        IsbnResearchResult research =
+                            _repairService.ResearchMissingIsbnWithStatus(
+                                currentOpportunity);
+
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        return Task.FromResult(
+                            CompleteAutomaticIsbnResearch(
+                                currentOpportunity,
+                                research,
+                                automaticAuthorization,
+                                automaticAuthorizationProvider));
+                    },
+                    result =>
+                    {
+                        lock (_externalResearchingPaths)
+                        {
+                            _externalResearchingPaths.Remove(originalPath);
+                        }
+
+                        BackgroundActionCompleted?.Invoke(
+                            originalPath,
+                            result);
+                    });
+
+            if (!queued)
+            {
+                lock (_externalResearchingPaths)
+                {
+                    _externalResearchingPaths.Remove(originalPath);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Evaluates a completed background ISBN search using the same repair
+        /// decision engine and physical repair service used by the proven
+        /// synchronous path.
+        /// </summary>
+        private CV_ActionResult CompleteAutomaticIsbnResearch(
+            RepairOpportunity opportunity,
+            IsbnResearchResult research,
+            bool automaticAuthorization,
+            Func<bool>? automaticAuthorizationProvider)
+        {
+            lock (_repairExecutionLock)
+            {
+                return CompleteAutomaticIsbnResearchCore(
+                    opportunity,
+                    research,
+                    automaticAuthorization,
+                    automaticAuthorizationProvider);
+            }
+        }
+
+        private CV_ActionResult CompleteAutomaticIsbnResearchCore(
+            RepairOpportunity opportunity,
+            IsbnResearchResult research,
+            bool automaticAuthorization,
+            Func<bool>? automaticAuthorizationProvider)
+        {
+            string originalPath =
+                opportunity.Record?.File?.OriginalFullPath
+                ?? string.Empty;
+
+            string fileName =
+                opportunity.Record?.File?.CurrentName
+                ?? "Unknown ebook";
+
+            bool currentAutomaticAuthorization =
+                automaticAuthorizationProvider?.Invoke()
+                ?? automaticAuthorization;
+
+            if (research.Candidates.Count > 0)
+            {
+                lock (_researchCacheLock)
+                {
+                    _researchedIsbnCandidates[originalPath] =
+                        research.Candidates.ToList();
+                }
+            }
+
+            if (research.Status == IsbnResearchStatus.TimedOut)
+            {
+                return CreateBackgroundResearchFailureResult(
+                    originalPath,
+                    fileName,
+                    "Open Library did not respond within Scout's research time limit. " +
+                    "I have not treated that as evidence that this ebook has no ISBN.");
+            }
+
+            if (research.Status == IsbnResearchStatus.ProviderUnavailable)
+            {
+                return CreateBackgroundResearchFailureResult(
+                    originalPath,
+                    fileName,
+                    "The external ISBN research service was unavailable. " +
+                    "I have not treated that as evidence that this ebook has no ISBN.");
+            }
+
+            if (research.Candidates.Count == 0)
+            {
+                CV_ActionResult result = new()
+                {
+                    ActionId = "BackgroundResearchMissingIsbn",
+                    Success = true,
+                    RequiresReobservation = false,
+                    Message =
+                        $"External ISBN research finished for {fileName}, but I could not establish a usable ISBN candidate safely."
+                };
+
+                AddTerminalRepairOptions(
+                    result,
+                    originalPath,
+                    "No ISBN candidate could be established safely. You can accept the ebook as-is, omit it, or provide additional identifying information.");
+
+                return result;
+            }
+
+            List<RepairDecisionCandidate> evaluatedCandidates =
+                _repairService.EvaluateIsbnCandidates(
+                    opportunity,
+                    research.Candidates);
+
+            RepairDecisionResult decision =
+                _repairDecisionEngine.Evaluate(
+                    evaluatedCandidates,
+                    E_RepairDecisionEngine.MinimumConfidenceThreshold,
+                    automaticAuthorization: currentAutomaticAuthorization);
+
+            if (decision.State ==
+                    RepairRecommendation.RepairDecisionState.SafeToApply &&
+                decision.SelectedCandidate != null &&
+                currentAutomaticAuthorization)
+            {
+                RepairDecisionCandidate selectedCandidate =
+                    decision.SelectedCandidate;
+
+                string approvedIsbn =
+                    selectedCandidate.Value?.ToString() ?? string.Empty;
+
+                if (!string.IsNullOrWhiteSpace(approvedIsbn))
+                {
+                    _repairService.AddRepairChange(
+                        originalPath,
+                        new E_RepairChange(
+                            "ISBN",
+                            opportunity.Record?.Metadata?.Isbn,
+                            approvedIsbn,
+                            selectedCandidate.Source,
+                            selectedCandidate.Evidence,
+                            selectedCandidate.Confidence,
+                            true));
+
+                    string? repairedPath =
+                        _repairService.ExecuteRepairPlan(opportunity);
+
+                    if (!string.IsNullOrWhiteSpace(repairedPath))
+                    {
+                        CV_ActionResult result = new()
+                        {
+                            ActionId = "BackgroundResearchMissingIsbn",
+                            Success = true,
+                            RequiresReobservation = true,
+                            Message =
+                                $"External ISBN research finished for {fileName}. " +
+                                $"I found and applied ISBN {approvedIsbn}; Scout is re-checking the ebook."
+                        };
+
+                        result.Evidence.Add(
+                            selectedCandidate.Evidence);
+
+                        return result;
+                    }
+                }
+            }
+
+            CV_ActionResult decisionResult = new()
+            {
+                ActionId = "BackgroundResearchMissingIsbn",
+                Success = true,
+                RequiresReobservation = false,
+                Message =
+                    currentAutomaticAuthorization
+                        ? $"External ISBN research finished for {fileName}, but the evidence was not strong enough for Scout to repair it automatically."
+                        : $"External ISBN research finished for {fileName}. I will not apply the repair automatically because automatic repairs are currently off."
+            };
+
+            foreach (RepairDecisionCandidate candidate in decision.Candidates)
+            {
+                CV_ActionOption option =
+                    new()
+                    {
+                        Id = candidate.Value?.ToString() ?? string.Empty,
+                        ActionId = "ResearchMissingIsbn",
+                        ContextId = originalPath,
+                        Label = "Use this ISBN: " +
+                            (candidate.Value?.ToString() ?? "unknown"),
+                        Confidence = candidate.Confidence,
+                        Source = candidate.Source
+                    };
+
+                if (!string.IsNullOrWhiteSpace(candidate.Evidence))
+                    option.Evidence.Add(candidate.Evidence);
+
+                decisionResult.Options.Add(option);
+            }
+
+            if (decisionResult.Options.Count == 0)
+            {
+                AddTerminalRepairOptions(
+                    decisionResult,
+                    originalPath,
+                    "Scout could not establish a safe ISBN repair from the available evidence.");
+            }
+
+            return decisionResult;
+        }
+
+        private static CV_ActionResult CreateBackgroundResearchFailureResult(
+            string originalPath,
+            string fileName,
+            string message)
+        {
+            CV_ActionResult result = new()
+            {
+                ActionId = "BackgroundResearchMissingIsbn",
+                Success = true,
+                RequiresReobservation = false,
+                Message = $"External ISBN research for {fileName}: {message}"
+            };
+
+            AddTerminalRepairOptions(
+                result,
+                originalPath,
+                message);
+
+            return result;
+        }
+
+        private static void AddTerminalRepairOptions(
+            CV_ActionResult result,
+            string originalPath,
+            string evidence)
+        {
+            result.Evidence.Add(evidence);
+
+            result.Options.Add(
+                new CV_ActionOption
+                {
+                    Id = "AcceptAsIs",
+                    ActionId = "AcceptAsIs",
+                    ContextId = originalPath,
+                    Label = "Accept this ebook as-is",
+                    Source = "Ebook Expert"
+                });
+
+            result.Options.Add(
+                new CV_ActionOption
+                {
+                    Id = "OmitEbook",
+                    ActionId = "OmitEbook",
+                    ContextId = originalPath,
+                    Label = "Reject / omit this ebook",
+                    Source = "Ebook Expert"
+                });
+
+            result.Options.Add(
+                new CV_ActionOption
+                {
+                    Id = "AddRepairInformation",
+                    ActionId = "AddRepairInformation",
+                    ContextId = originalPath,
+                    Label = "Add information",
+                    Source = "Ebook Expert"
+                });
+        }
+
+        /// <summary>
+        /// Presents the locally evaluated identity candidate for explicit
+        /// user approval. No EPUB is modified by this action.
+        /// </summary>
+        private static CV_ActionResult ReviewMetadataIdentity(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities)
+        {
+            if (string.IsNullOrWhiteSpace(request.ContextId))
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I found a metadata identity issue, but I don't know which ebook it belongs to."
+                };
+            }
+
+            RepairOpportunity? opportunity =
+                FindOpportunity(request.ContextId, opportunities);
+
+            if (opportunity?.Record == null)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I couldn't find the ebook associated with this metadata recovery request."
+                };
+            }
+
+            // Re-evaluate the current evidence so newly supplied user
+            // information can immediately participate in the same recovery
+            // path. The original MetadataRecord remains the evidence store.
+            E_BookIdentityEvaluator evaluator = new();
+            BookIdentityEvaluation evaluation =
+                evaluator.Evaluate(opportunity.Record);
+
+            opportunity.IdentityEvaluation = evaluation;
+
+            if (!evaluation.RepairRequired ||
+                evaluation.Candidate == null)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = true,
+                    Message =
+                        "The current evidence no longer shows a metadata identity repair that needs approval."
+                };
+            }
+
+            BookIdentityCandidate candidate = evaluation.Candidate;
+
+            bool seriesNeedsMoreEvidence =
+                evaluation.SeriesEvaluation?.State == SeriesEvidenceState.Unresolved ||
+                evaluation.SeriesEvaluation?.State == SeriesEvidenceState.Conflicting;
+
+            CV_ActionResult result = new()
+            {
+                ActionId = request.ActionId,
+                Success = true,
+                Message = seriesNeedsMoreEvidence
+                    ? "Scout has evidence about this ebook's identity, but the Series cannot yet be established safely. I need another piece of evidence before changing it."
+                    : BuildIdentityCandidateMessage(candidate)
+            };
+
+            result.Evidence.AddRange(
+                evaluation.Evidence.Where(
+                    evidence => !string.IsNullOrWhiteSpace(evidence)));
+
+            if (seriesNeedsMoreEvidence)
+            {
+                result.Options.Add(
+                    new CV_ActionOption
+                    {
+                        Id = "AddRepairInformation",
+                        ActionId = "AddRepairInformation",
+                        ContextId = request.ContextId,
+                        Label = "Add identifying information",
+                        Source = "Ebook Expert"
+                    });
+
+                result.Options.Add(
+                    CreateUserDecisionOption(
+                        request.ContextId,
+                        "AcceptAsIs",
+                        "Accept this ebook as-is",
+                        "The Series could not be established safely from the current evidence."));
+
+                result.Options.Add(
+                    CreateUserDecisionOption(
+                        request.ContextId,
+                        "OmitEbook",
+                        "Reject / omit this ebook",
+                        "The Series could not be established safely from the current evidence."));
+
+                return result;
+            }
+
+            result.Options.Add(
+                new CV_ActionOption
+                {
+                    Id = "ApproveIdentity",
+                    ActionId = request.ActionId,
+                    ContextId = request.ContextId,
+                    Label = BuildIdentityApprovalLabel(candidate),
+                    Source = "Ebook Expert"
+                });
+
+            return result;
+        }
+
+        private static string BuildIdentityCandidateMessage(
+            BookIdentityCandidate candidate)
+        {
+            List<string> parts = new();
+
+            if (!string.IsNullOrWhiteSpace(candidate.Title))
+                parts.Add($"Title '{candidate.Title}'");
+
+            if (!string.IsNullOrWhiteSpace(candidate.Authors))
+                parts.Add($"Author '{candidate.Authors}'");
+
+            if (!string.IsNullOrWhiteSpace(candidate.Series))
+                parts.Add($"Series '{candidate.Series}'");
+
+            if (!string.IsNullOrWhiteSpace(candidate.SeriesNumber))
+                parts.Add($"SeriesNumber '{candidate.SeriesNumber}'");
+
+            return parts.Count == 0
+                ? "Scout found metadata evidence that needs reconciliation."
+                : "Scout found a metadata correction: " + string.Join("; ", parts) + ".";
+        }
+
+        private static string BuildIdentityApprovalLabel(
+            BookIdentityCandidate candidate)
+        {
+            List<string> parts = new();
+
+            if (!string.IsNullOrWhiteSpace(candidate.Title))
+                parts.Add($"Title '{candidate.Title}'");
+
+            if (!string.IsNullOrWhiteSpace(candidate.Authors))
+                parts.Add($"Author '{candidate.Authors}'");
+
+            if (!string.IsNullOrWhiteSpace(candidate.Series))
+                parts.Add($"Series '{candidate.Series}'");
+
+            if (!string.IsNullOrWhiteSpace(candidate.SeriesNumber))
+                parts.Add($"# {candidate.SeriesNumber}");
+
+            return "Use " + string.Join(" / ", parts);
+        }
+
+        /// <summary>
+        /// Converts an explicitly approved local identity candidate into the
+        /// ordinary repair changes already understood by E_RepairPlan.
+        ///
+        /// Series and SeriesNumber are created only when the evidence evaluator
+        /// has established them as local candidates. Unresolved or conflicting
+        /// Series evidence is routed back to evidence gathering instead of being
+        /// silently written.
+        /// </summary>
+        private CV_ActionResult ApproveIdentityCandidate(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities)
+        {
+            lock (_repairExecutionLock)
+            {
+                return ApproveIdentityCandidateCore(
+                    request,
+                    opportunities);
+            }
+        }
+
+        private CV_ActionResult ApproveIdentityCandidateCore(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities)
+        {
+            if (!string.Equals(
+                    request.OptionId,
+                    "ApproveIdentity",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message = "I couldn't verify that identity approval."
+                };
+            }
+
+            if (string.IsNullOrWhiteSpace(request.ContextId))
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I received the identity approval, but I don't know which ebook it belongs to."
+                };
+            }
+
+            RepairOpportunity? opportunity =
+                FindOpportunity(request.ContextId, opportunities);
+
+            if (opportunity?.Record?.Metadata == null)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I couldn't verify the current identity candidate for this ebook."
+                };
+            }
+
+            E_BookIdentityEvaluator evaluator = new();
+            BookIdentityEvaluation evaluation =
+                evaluator.Evaluate(opportunity.Record);
+
+            opportunity.IdentityEvaluation = evaluation;
+
+            if (evaluation.RepairRequired != true ||
+                evaluation.Candidate == null)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "The current evidence no longer supports an approved identity correction."
+                };
+            }
+
+            if (evaluation.SeriesEvaluation?.State == SeriesEvidenceState.Unresolved ||
+                evaluation.SeriesEvaluation?.State == SeriesEvidenceState.Conflicting)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "The Series is still unresolved. Scout needs additional evidence before it can approve this identity correction."
+                };
+            }
+
+            BookIdentityCandidate candidate = evaluation.Candidate;
+            string evidence = string.Join(
+                Environment.NewLine,
+                evaluation.Evidence.Where(
+                    item => !string.IsNullOrWhiteSpace(item)));
+
+            if (string.IsNullOrWhiteSpace(evidence))
+                evidence = evaluation.Reason;
+
+            const string source = "UserApprovedIdentity";
+            const double approvedConfidence = 1.0;
+
+            int changesAdded = 0;
+
+            if (!string.IsNullOrWhiteSpace(candidate.Title) &&
+                !string.Equals(
+                    opportunity.Record.Metadata.Title,
+                    candidate.Title,
+                    StringComparison.Ordinal))
+            {
+                _repairService.AddRepairChange(
+                    request.ContextId,
+                    new E_RepairChange(
+                        "Title",
+                        opportunity.Record.Metadata.Title,
+                        candidate.Title,
+                        source,
+                        evidence,
+                        approvedConfidence,
+                        true));
+
+                changesAdded++;
+            }
+
+            if (!string.IsNullOrWhiteSpace(candidate.Authors) &&
+                !string.Equals(
+                    opportunity.Record.Metadata.Author,
+                    candidate.Authors,
+                    StringComparison.Ordinal))
+            {
+                _repairService.AddRepairChange(
+                    request.ContextId,
+                    new E_RepairChange(
+                        "Author",
+                        opportunity.Record.Metadata.Author,
+                        candidate.Authors,
+                        source,
+                        evidence,
+                        approvedConfidence,
+                        true));
+
+                changesAdded++;
+            }
+
+            if (!string.IsNullOrWhiteSpace(candidate.Series) &&
+                !string.Equals(
+                    opportunity.Record.Metadata.Series,
+                    candidate.Series,
+                    StringComparison.Ordinal))
+            {
+                _repairService.AddRepairChange(
+                    request.ContextId,
+                    new E_RepairChange(
+                        "Series",
+                        opportunity.Record.Metadata.Series,
+                        candidate.Series,
+                        source,
+                        evidence,
+                        approvedConfidence,
+                        true));
+
+                changesAdded++;
+            }
+
+            if (!string.IsNullOrWhiteSpace(candidate.SeriesNumber) &&
+                !string.Equals(
+                    opportunity.Record.Metadata.SeriesNumber,
+                    candidate.SeriesNumber,
+                    StringComparison.Ordinal))
+            {
+                _repairService.AddRepairChange(
+                    request.ContextId,
+                    new E_RepairChange(
+                        "SeriesNumber",
+                        opportunity.Record.Metadata.SeriesNumber,
+                        candidate.SeriesNumber,
+                        source,
+                        evidence,
+                        approvedConfidence,
+                        true));
+
+                changesAdded++;
+            }
+
+            if (changesAdded == 0)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "The approved identity does not contain a new metadata value to repair."
+                };
+            }
+
+            CV_ActionResult result = new()
+            {
+                ActionId = request.ActionId,
+                Success = true,
+                Message =
+                    "The identity correction has been approved and added to the repair plan. " +
+                    "The original EPUB has not been modified."
+            };
+
+            result.Evidence.Add(
+                $"Approved identity: {candidate.Title} — {candidate.Authors}");
+
+            result.Options.Add(
+                new CV_ActionOption
+                {
+                    Id = "ApplyRepair",
+                    ActionId = "ExecuteRepairPlan",
+                    ContextId = request.ContextId,
+                    Label = "Click to apply this identity repair",
+                    Confidence = 1.0,
+                    Source = "Ebook Expert"
+                });
+
+            return result;
+        }
+
+        /// <summary>
+        /// Presents the human decision boundary for repair facts that the
+        /// Ebook Expert can detect but cannot currently research or repair.
+        /// No EPUB is modified by this action.
+        /// </summary>
+        private static CV_ActionResult ReviewUnsupportedRepair(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities)
+        {
+            if (string.IsNullOrWhiteSpace(request.ContextId))
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I found a repair need that Scout cannot currently recover, but I don't know which ebook it belongs to."
+                };
+            }
+
+            RepairOpportunity? opportunity =
+                FindOpportunity(request.ContextId, opportunities);
+
+            if (opportunity?.Record == null)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I couldn't find the ebook associated with this repair boundary."
+                };
+            }
+
+            string fileName =
+                opportunity.Record.File.CurrentName
+                ?? opportunity.Record.File.OriginalName
+                ?? request.ContextId;
+
+            List<string> missingFields = new();
+
+            if (opportunity.MissingTitle &&
+                opportunity.IdentityEvaluation?.RepairRequired != true)
+                missingFields.Add("Title");
+
+            if (opportunity.MissingAuthor &&
+                opportunity.IdentityEvaluation?.RepairRequired != true)
+                missingFields.Add("Author");
+
+            if (opportunity.MissingPublisher)
+                missingFields.Add("Publisher");
+
+            if (opportunity.MissingLanguage)
+                missingFields.Add("Language");
+
+            if (opportunity.MissingDescription)
+                missingFields.Add("Description");
+
+            if (opportunity.MissingCover)
+                missingFields.Add("Cover");
+
+            CV_ActionResult result = new()
+            {
+                ActionId = request.ActionId,
+                Success = true,
+                Message = missingFields.Count == 0
+                    ? $"Scout no longer sees an unsupported repair need for {fileName}."
+                    : $"Scout found these missing fields for {fileName}: {string.Join(", ", missingFields)}. For text metadata, I can ask you for the value and send it through the normal repair path; Cover requires an image-selection workflow."
+            };
+
+            foreach (string field in missingFields)
+            {
+                result.Evidence.Add(
+                    $"Unsupported repair field: {field}.");
+            }
+
+            if (missingFields.Count > 0)
+            {
+                result.Evidence.Add(
+                    "The original EPUB has not been modified by this action.");
+
+                result.Options.Add(
+                    CreateUserDecisionOption(
+                        request.ContextId,
+                        "AcceptAsIs",
+                        "Accept this ebook as-is",
+                        "You are choosing to organize the current ebook without repairing the unsupported fields."));
+
+                result.Options.Add(
+                    CreateUserDecisionOption(
+                        request.ContextId,
+                        "OmitEbook",
+                        "Reject / omit this ebook",
+                        "You are choosing not to include this ebook in Organization."));
+
+                result.Options.Add(
+                    CreateUserDecisionOption(
+                        request.ContextId,
+                        "AddRepairInformation",
+                        "Provide missing information",
+                        "Provide a value for the missing text metadata and Scout will send it through the normal repair path."));
+            }
+
+            return result;
+        }
+
+        private static RepairOpportunity? FindOpportunity(
+            string originalPath,
+            IReadOnlyList<RepairOpportunity> opportunities)
+        {
+            foreach (RepairOpportunity opportunity in opportunities)
+            {
+                string path =
+                    opportunity.Record?.File?.OriginalFullPath
+                    ?? string.Empty;
+
+                if (string.Equals(
+                    path,
+                    originalPath,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return opportunity;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Records an ISBN candidate explicitly selected by the user.
         ///
         /// The selected ISBN is validated against the candidates produced
@@ -283,6 +1733,18 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         /// No EPUB is modified here.
         /// </summary>
         private CV_ActionResult SelectIsbnCandidate(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities)
+        {
+            lock (_repairExecutionLock)
+            {
+                return SelectIsbnCandidateCore(
+                    request,
+                    opportunities);
+            }
+        }
+
+        private CV_ActionResult SelectIsbnCandidateCore(
             CV_ActionRequest request,
             IReadOnlyList<RepairOpportunity> opportunities)
         {
@@ -336,9 +1798,27 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             // This is validation only. No file is modified.
             //---------------------------------------------------------
 
-            List<IsbnResearchCandidate> candidates =
-                _repairService.ResearchMissingIsbn(
-                    selectedOpportunity);
+            List<IsbnResearchCandidate> candidates;
+
+            lock (_researchCacheLock)
+            {
+                candidates =
+                    _researchedIsbnCandidates.TryGetValue(
+                        request.ContextId,
+                        out List<IsbnResearchCandidate>? cachedCandidates)
+                        ? cachedCandidates.ToList()
+                        : new List<IsbnResearchCandidate>();
+            }
+
+            // A candidate normally comes from the background research that
+            // produced the option. If no cached result exists, retain the
+            // existing validation fallback.
+            if (candidates.Count == 0)
+            {
+                candidates =
+                    _repairService.ResearchMissingIsbn(
+                        selectedOpportunity);
+            }
 
             IsbnResearchCandidate? selectedCandidate = null;
 
@@ -470,11 +1950,155 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         ///
         /// Research never modifies an EPUB.
         /// </summary>
-        private CV_ActionResult ResearchMissingIsbn(
-    CV_ActionRequest request,
-    IReadOnlyList<RepairOpportunity> opportunities,
-    bool automaticAuthorization)
+        private CV_ActionResult QueueManualIsbnResearch(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities,
+            bool automaticAuthorization,
+            string? userEvidence,
+            Func<bool>? automaticAuthorizationProvider,
+            Func<string, RepairOpportunity?>? currentOpportunityResolver)
         {
+            int queued = 0;
+
+            foreach (RepairOpportunity opportunity in opportunities)
+            {
+                if (!opportunity.MissingIsbn)
+                    continue;
+
+                string originalPath =
+                    opportunity.Record?.File?.OriginalFullPath
+                    ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(originalPath))
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(request.ContextId) &&
+                    !string.Equals(
+                        originalPath,
+                        request.ContextId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                lock (_externalResearchingPaths)
+                {
+                    _externalResearchingPaths.Add(originalPath);
+                }
+
+                bool accepted =
+                    _externalResearchCoordinator.Enqueue(
+                        originalPath,
+                        cancellationToken =>
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            RepairOpportunity? currentOpportunity =
+                                currentOpportunityResolver?.Invoke(
+                                    originalPath)
+                                ?? opportunity;
+
+                            if (currentOpportunity == null ||
+                                !currentOpportunity.MissingIsbn)
+                            {
+                                return Task.FromResult(
+                                    new CV_ActionResult
+                                    {
+                                        ActionId = "BackgroundResearchMissingIsbn",
+                                        Success = true,
+                                        RequiresReobservation = false,
+                                        Message =
+                                            "This ebook no longer needs the queued ISBN research, so Scout did not perform another external lookup."
+                                    });
+                            }
+
+                            IsbnResearchResult research =
+                                _repairService.ResearchMissingIsbnWithStatus(
+                                    currentOpportunity,
+                                    userEvidence);
+
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            return Task.FromResult(
+                                CompleteAutomaticIsbnResearch(
+                                    currentOpportunity,
+                                    research,
+                                    automaticAuthorization,
+                                    automaticAuthorizationProvider));
+                        },
+                        result =>
+                        {
+                            lock (_externalResearchingPaths)
+                            {
+                                _externalResearchingPaths.Remove(originalPath);
+                            }
+
+                            BackgroundActionCompleted?.Invoke(
+                                originalPath,
+                                result);
+                        });
+
+                if (accepted)
+                    queued++;
+                else
+                {
+                    lock (_externalResearchingPaths)
+                    {
+                        _externalResearchingPaths.Remove(originalPath);
+                    }
+                }
+            }
+
+            if (queued == 0)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message =
+                        "I couldn't find an active ebook that needs ISBN research."
+                };
+            }
+
+            return new CV_ActionResult
+            {
+                ActionId = request.ActionId,
+                Success = true,
+                RequiresReobservation = false,
+                Message =
+                    queued == 1
+                        ? "I'm researching the ISBN in the background while Scout continues processing the collection."
+                        : $"I'm researching ISBNs for {queued:N0} ebooks in the background while Scout continues processing the collection."
+            };
+        }
+
+        private CV_ActionResult ResearchMissingIsbn(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities,
+            bool automaticAuthorization,
+            string? userEvidence = null,
+            Func<bool>? automaticAuthorizationProvider = null,
+            Func<string, RepairOpportunity?>? currentOpportunityResolver = null)
+        {
+            //---------------------------------------------------------
+            // External ISBN research is always background work. The
+            // conversation action returns immediately and the eventual
+            // result comes back through BackgroundActionCompleted.
+            // A request with an OptionId is handled by SelectIsbnCandidate
+            // before this method and therefore remains a selection action.
+            //---------------------------------------------------------
+
+            if (string.IsNullOrWhiteSpace(request.OptionId))
+            {
+                return QueueManualIsbnResearch(
+                    request,
+                    opportunities,
+                    automaticAuthorization,
+                    userEvidence,
+                    automaticAuthorizationProvider,
+                    currentOpportunityResolver);
+            }
+
             List<string> evidence = [];
             List<CV_ActionOption> options = [];
 
@@ -512,7 +2136,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
                 List<IsbnResearchCandidate> candidates =
                     _repairService.ResearchMissingIsbn(
-                        opportunity);
+                        opportunity,
+                        request.UserInput);
 
                 string fileName =
                     opportunity.Record?.File?.CurrentName
@@ -521,7 +2146,28 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 if (candidates.Count == 0)
                 {
                     evidence.Add(
-                        $"No ISBN candidates were found for {fileName}.");
+                        $"{fileName}: Scout could not find a usable ISBN candidate.");
+
+                    options.Add(
+                        CreateUserDecisionOption(
+                            originalPath,
+                            "AcceptAsIs",
+                            "Accept this ebook as-is",
+                            "No ISBN candidate could be established safely. You are choosing to organize the current ebook without repairing this ISBN."));
+
+                    options.Add(
+                        CreateUserDecisionOption(
+                            originalPath,
+                            "OmitEbook",
+                            "Reject / omit this ebook",
+                            "No ISBN candidate could be established safely. You are choosing not to include this ebook in Organization."));
+
+                    options.Add(
+                        CreateUserDecisionOption(
+                            originalPath,
+                            "AddRepairInformation",
+                            "Add information",
+                            "No ISBN candidate could be established safely. Provide additional identifying information, then ask Scout to research the ISBN again."));
 
                     continue;
                 }
@@ -538,7 +2184,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 List<RepairDecisionCandidate> evaluatedCandidates =
                     _repairService.EvaluateIsbnCandidates(
                         opportunity,
-                        candidates);
+                        candidates,
+                        userEvidence);
 
                 RepairDecisionResult decision =
                     _repairDecisionEngine.Evaluate(
@@ -580,20 +2227,56 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                             selectedCandidate.Confidence,
                             true));
 
-                    _repairService.ExecuteRepairPlan(opportunity);
+                    string? repairedPath =
+                        _repairService.ExecuteRepairPlan(opportunity);
 
-                    repairExecuted = true;
+                    if (!string.IsNullOrWhiteSpace(repairedPath))
+                    {
+                        repairExecuted = true;
 
-                    evidence.Add(
-                        $"{fileName}: Scout authorized and selected ISBN " +
-                        $"{approvedIsbn} for automatic repair.");
+                        evidence.Add(
+                            $"{fileName}: Scout authorized and selected ISBN " +
+                            $"{approvedIsbn} for automatic repair.");
 
-                    evidence.Add(
-                        $"{fileName}: {selectedCandidate.Evidence}");
+                        evidence.Add(
+                            $"{fileName}: {selectedCandidate.Evidence}");
 
-                    evidence.Add(
-                        $"{fileName}: repair applied successfully; " +
-                        "the EPUB will be re-observed.");
+                        evidence.Add(
+                            $"{fileName}: repair applied successfully; " +
+                            "the EPUB will be re-observed.");
+                    }
+                    else
+                    {
+                        evidence.Add(
+                            $"{fileName}: Scout selected ISBN {approvedIsbn}, " +
+                            "but the physical repair did not complete.");
+
+                        options.Add(
+                            CreateUserDecisionOption(
+                                originalPath,
+                                "AcceptAsIs",
+                                "Accept this ebook as-is",
+                                "Scout could not complete the physical ISBN repair. " +
+                                "You are choosing to organize the current ebook without " +
+                                "repairing this ISBN."));
+
+                        options.Add(
+                            CreateUserDecisionOption(
+                                originalPath,
+                                "OmitEbook",
+                                "Reject / omit this ebook",
+                                "Scout could not complete the physical ISBN repair. " +
+                                "You are choosing not to include this ebook in Organization."));
+
+                        options.Add(
+                            CreateUserDecisionOption(
+                                originalPath,
+                                "AddRepairInformation",
+                                "Add information",
+                                "Scout could not complete the physical ISBN repair. " +
+                                "Provide additional information, then ask Scout to research " +
+                                "the ISBN again."));
+                    }
                 }
                 else if (decision.State ==
                          RepairRecommendation.RepairDecisionState.UserDecisionRequired)
@@ -684,6 +2367,27 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     evidence.Add(
                         $"{fileName}: there was not enough evidence to " +
                         "select an ISBN safely.");
+
+                    options.Add(
+                        CreateUserDecisionOption(
+                            originalPath,
+                            "AcceptAsIs",
+                            "Accept this ebook as-is",
+                            "You are choosing to organize the current ebook without repairing this ISBN."));
+
+                    options.Add(
+                        CreateUserDecisionOption(
+                            originalPath,
+                            "OmitEbook",
+                            "Reject / omit this ebook",
+                            "You are choosing not to include this ebook in Organization."));
+
+                    options.Add(
+                        CreateUserDecisionOption(
+                            originalPath,
+                            "AddRepairInformation",
+                            "Add information",
+                            "Provide additional identifying information, then ask Scout to research the ISBN again."));
                 }
 
                 evidence.Add(

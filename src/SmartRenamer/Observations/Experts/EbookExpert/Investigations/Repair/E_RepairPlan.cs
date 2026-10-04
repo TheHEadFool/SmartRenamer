@@ -77,6 +77,22 @@ internal sealed class E_RepairPlan
         if (change == null)
             throw new ArgumentNullException(nameof(change));
 
+        // One approved change per repair type is sufficient. If a later
+        // decision replaces an earlier approval, keep only the newest
+        // approved value so a stale change cannot survive a retry.
+        int existingIndex =
+            Changes.FindIndex(
+                existing => string.Equals(
+                    existing.RepairType,
+                    change.RepairType,
+                    StringComparison.OrdinalIgnoreCase));
+
+        if (existingIndex >= 0)
+        {
+            Changes[existingIndex] = change;
+            return;
+        }
+
         Changes.Add(change);
     }
 }

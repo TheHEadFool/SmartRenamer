@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace Scout.Observations.Conversation
 {
@@ -45,11 +45,19 @@ namespace Scout.Observations.Conversation
         public bool Success { get; init; }
 
         /// <summary>
-        /// Indicates that the completed action changed the underlying
-        /// file state and the current project should be observed again.
+        /// Indicates that the completed action changed project or domain state
+        /// enough that the current project should be observed again. Physical
+        /// file changes are one reason; a terminal repair decision is another.
         /// </summary>
         public bool RequiresReobservation { get; init; }
 
+        /// <summary>
+        /// When true, re-observation must cover the whole active collection
+        /// rather than only the branch identified by CV_ActionRequest.ContextId.
+        /// This is used for semantic decisions that change branch eligibility,
+        /// such as accepting an unresolved ebook as-is.
+        /// </summary>
+        public bool ReobserveCollection { get; init; }
 
         /// <summary>
         /// Human-readable description of the result.

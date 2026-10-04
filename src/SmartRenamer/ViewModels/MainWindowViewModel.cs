@@ -1,4 +1,4 @@
-﻿using Scout.Core;
+using Scout.Core;
 using Scout.Observations.Conversation;
 using SmartRenamer.Capabilities;
 using SmartRenamer.Guide;
@@ -173,7 +173,9 @@ namespace SmartRenamer.ViewModels
         public MainWindowViewModel()
         {
             Workspace = new ProjectWorkspaceViewModel();
-            Guide = new GuideViewModel(Workspace);
+            Guide = new GuideViewModel(
+                Workspace,
+                operation);
             Pipeline = new PipelineViewModel();
             AddFilesCommand =
                 new RelayCommand(AddFiles);

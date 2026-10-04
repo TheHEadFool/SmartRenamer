@@ -1,9 +1,10 @@
-﻿using SmartRenamer.Models;
+using SmartRenamer.Models;
 using Scout.Observations.Experts.EbookExpert.Data;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Resources;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
 {
@@ -48,9 +49,15 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
         //---------------------------------------------------------
 
         public MetadataReport Analyze(
-            IReadOnlyList<FileContext> files)
+            IReadOnlyList<FileContext> files,
+            string sourceFolderPath)
         {
             MetadataReport report = new();
+
+            ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolderPath);
+
+            string normalizedSourceFolder =
+                System.IO.Path.GetFullPath(sourceFolderPath);
 
             _isbnEvidence.Clear();
             _titleEvidence.Clear();
@@ -78,12 +85,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                     continue;
                 }
 
-                report.Records.Add(
-                    new MetadataRecord
-                    {
-                        File = file,
-                        Metadata = metadata
-                    });
+                MetadataRecord record = new()
+                {
+                    File = file,
+                    Metadata = metadata
+                };
+
+                report.Records.Add(record);
 
                 AnalyzeMetadata(metadata, report);
 
@@ -98,14 +106,111 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                 CollectSourceEvidence(
                     metadata,
                     file,
-                    report);
+                    record,
+                    report,
+                    normalizedSourceFolder);
             }
+
+            //---------------------------------------------------------
+            // Collection-context evidence
+            //---------------------------------------------------------
+            //
+            // A folder name is not automatically a series assignment.
+            // However, when the selected source folder name is itself
+            // observed as a Series value by one or more EPUBs in that
+            // collection, that relationship becomes useful collection
+            // evidence for the sibling books.
+            //
+            // This is deliberately recorded as derived collection evidence.
+            // It is NOT treated as an independent source and does not
+            // change any observed metadata. Domain evaluators may later
+            // decide whether this corroborates or conflicts with the
+            // evidence for an individual book.
+            //---------------------------------------------------------
+
+            PropagateCollectionSeriesEvidence(
+                report,
+                normalizedSourceFolder);
 
             CalculateMissingMetadata(report);
 
             AnalyzeConsistency(report);
 
             return report;
+        }
+
+        private static void PropagateCollectionSeriesEvidence(
+            MetadataReport report,
+            string sourceFolderPath)
+        {
+            string sourceFolderName =
+                new System.IO.DirectoryInfo(sourceFolderPath).Name.Trim();
+
+            if (string.IsNullOrWhiteSpace(sourceFolderName))
+                return;
+
+            List<MetadataRecord> matchingRecords =
+                report.Records
+                    .Where(record =>
+                        string.Equals(
+                            record.Metadata.Series?.Trim(),
+                            sourceFolderName,
+                            StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+            if (matchingRecords.Count == 0)
+                return;
+
+            List<string> supportingFiles =
+                matchingRecords
+                    .Select(record => record.File.OriginalFullPath)
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+            foreach (MetadataRecord record in report.Records)
+            {
+                bool alreadyObserved =
+                    string.Equals(
+                        record.Metadata.Series?.Trim(),
+                        sourceFolderName,
+                        StringComparison.OrdinalIgnoreCase);
+
+                if (alreadyObserved)
+                    continue;
+
+                bool alreadyRecorded =
+                    record.Evidence.Any(evidence =>
+                        string.Equals(
+                            evidence.Source,
+                            "Collection",
+                            StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(
+                            evidence.Field,
+                            "Series",
+                            StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(
+                            evidence.Value?.Trim(),
+                            sourceFolderName,
+                            StringComparison.OrdinalIgnoreCase));
+
+                if (alreadyRecorded)
+                    continue;
+
+                MetadataEvidence evidence = new()
+                {
+                    Source = "Collection",
+                    Field = "Series",
+                    Value = sourceFolderName,
+                    Location = sourceFolderPath,
+                    Notes =
+                        $"Derived collection evidence: {matchingRecords.Count} EPUB metadata record(s) in the same source folder identify the series as '{sourceFolderName}'. This is corroborating context, not an independent source."
+                };
+
+                evidence.Files.AddRange(supportingFiles);
+                record.Evidence.Add(evidence);
+                report.Evidence.Add(evidence);
+            }
         }
 
         //---------------------------------------------------------
@@ -262,9 +367,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
         private static void CollectSourceEvidence(
             E_EbookMetadata metadata,
             FileContext file,
-            MetadataReport report)
+            MetadataRecord record,
+            MetadataReport report,
+            string sourceFolderPath)
         {
             AddObservedEvidence(
+                record,
                 report,
                 "EPUB Metadata",
                 "Title",
@@ -272,6 +380,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                 "OPF");
 
             AddObservedEvidence(
+                record,
                 report,
                 "EPUB Metadata",
                 "Author",
@@ -279,6 +388,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                 "OPF");
 
             AddObservedEvidence(
+                record,
                 report,
                 "EPUB Metadata",
                 "Series",
@@ -286,17 +396,51 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                 "OPF");
 
             AddObservedEvidence(
+                record,
+                report,
+                "EPUB Metadata",
+                "SeriesNumber",
+                metadata.SeriesNumber,
+                "OPF");
+
+            AddObservedEvidence(
+                record,
                 report,
                 "EPUB Metadata",
                 "ISBN",
                 metadata.Isbn,
                 "OPF");
 
+            //---------------------------------------------------------
+            // Collection-context evidence
+            //---------------------------------------------------------
+            //
+            // The selected source folder is an observation about the
+            // collection, not a conclusion about the individual book.
+            // Preserve the folder name as evidence so downstream domain
+            // evaluators can decide whether it supports or contradicts
+            // a candidate. Do not interpret it here.
+            //
+            //---------------------------------------------------------
+
+            string sourceFolderName =
+                new System.IO.DirectoryInfo(sourceFolderPath).Name;
+
+            AddObservedEvidence(
+                record,
+                report,
+                "Source Folder",
+                "Series",
+                sourceFolderName,
+                sourceFolderPath,
+                "Collection-context evidence; folder name may support or contradict a series candidate and is not interpreted here.");
+
             string fileName =
                 System.IO.Path.GetFileNameWithoutExtension(
                     file.CurrentName);
 
             AddObservedEvidence(
+                record,
                 report,
                 "Filename",
                 "Filename",
@@ -316,6 +460,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                 foreach (E_EpubContentResource.ContentDocument document in documents)
                 {
                     AddOpeningContentEvidence(
+                        record,
                         report,
                         document);
                 }
@@ -329,6 +474,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
         }
 
         private static void AddOpeningContentEvidence(
+            MetadataRecord record,
             MetadataReport report,
             E_EpubContentResource.ContentDocument document)
         {
@@ -340,17 +486,21 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
             if (value.Length > 500)
                 value = value[..500];
 
-            report.Evidence.Add(new MetadataEvidence
+            MetadataEvidence evidence = new()
             {
                 Source = "Opening Content",
                 Field = "Content",
                 Value = value,
                 Location = document.Path,
                 Notes = "Observed opening-content evidence; not interpreted here."
-            });
+            };
+
+            record.Evidence.Add(evidence);
+            report.Evidence.Add(evidence);
         }
 
         private static void AddObservedEvidence(
+            MetadataRecord record,
             MetadataReport report,
             string source,
             string field,
@@ -371,6 +521,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
             };
 
             evidence.Files.Add(location);
+            record.Evidence.Add(evidence);
             report.Evidence.Add(evidence);
         }
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 {
@@ -84,14 +84,25 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         RepairCompleted,
 
         /// <summary>
-        /// Repair processing was intentionally deferred.
+        /// The user explicitly accepted the EPUB without further repair.
         /// </summary>
-        RepairDeferred,
+        AcceptedAsIs,
+
+        /// <summary>
+        /// The user explicitly rejected the EPUB for organization.
+        /// </summary>
+        Omitted,
 
         /// <summary>
         /// Repair processing completed its available work but the EPUB
-        /// remains unresolved.
+        /// remains unresolved and requires a user decision.
         /// </summary>
-        RepairUnresolved
+        RepairUnresolved,
+
+        /// <summary>
+        /// Legacy state retained temporarily for compatibility with older
+        /// repair action paths. New user decisions must not create this state.
+        /// </summary>
+        RepairDeferred
     }
 }

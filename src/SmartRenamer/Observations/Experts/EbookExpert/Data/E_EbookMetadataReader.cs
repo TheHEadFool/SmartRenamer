@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -173,6 +173,51 @@ namespace Scout.Observations.Experts.EbookExpert.Data
                 }
 
                 metadata.Series = series;
+
+                // -----------------------------------------------------------------
+                // Series Number
+                //
+                // EPUB 3 commonly stores the position using a
+                // group-position meta element that refines the
+                // belongs-to-collection element. Calibre commonly stores
+                // the same information as calibre:series_index.
+                // Preserve the observed value as text so positions such as
+                // 4.5 are not reduced or discarded.
+                // -----------------------------------------------------------------
+
+                string seriesNumber =
+                    package.Descendants()
+                        .Where(element =>
+                            element.Name.LocalName.Equals(
+                                "meta",
+                                StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(
+                                (string?)element.Attribute("property"),
+                                "group-position",
+                                StringComparison.OrdinalIgnoreCase))
+                        .Select(element => element.Value.Trim())
+                        .FirstOrDefault(value =>
+                            !string.IsNullOrWhiteSpace(value)) ?? "";
+
+                if (string.IsNullOrWhiteSpace(seriesNumber))
+                {
+                    seriesNumber =
+                        package.Descendants()
+                            .Where(element =>
+                                element.Name.LocalName.Equals(
+                                    "meta",
+                                    StringComparison.OrdinalIgnoreCase) &&
+                                string.Equals(
+                                    (string?)element.Attribute("name"),
+                                    "calibre:series_index",
+                                    StringComparison.OrdinalIgnoreCase))
+                            .Select(element =>
+                                ((string?)element.Attribute("content") ?? "").Trim())
+                            .FirstOrDefault(value =>
+                                !string.IsNullOrWhiteSpace(value)) ?? "";
+                }
+
+                metadata.SeriesNumber = seriesNumber;
 
                 // -----------------------------------------------------------------
                 // ISBN

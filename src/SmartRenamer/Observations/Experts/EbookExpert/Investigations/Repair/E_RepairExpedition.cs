@@ -16,15 +16,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     /// An expedition is different from repairing one ebook.
     ///
     /// The Repair Service knows how to repair one ebook.
-    /// The Expedition knows which ebooks still need attention and which ebooks
-    /// must be deferred so the rest of the folder can continue.
+    /// The Expedition knows which ebooks still need attention.
     ///
     /// Responsibilities
     /// -------------------------------------------------------------------------
     /// • Hold the EPUBs participating in the expedition.
     /// • Track the current EPUB.
     /// • Track EPUBs still waiting to be processed.
-    /// • Track EPUBs that require user input.
     /// • Preserve the original source folder identity.
     /// • Preserve the current confidence threshold for this expedition.
     ///
@@ -72,8 +70,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
         private readonly Queue<FileContext> _pending = new();
 
-        private readonly List<FileContext> _deferred = new();
-
         // Each active EPUB is tracked independently by its stable original path.
         // CurrentFile remains as a compatibility cursor for the existing UI and
         // workflow while callers migrate to branch-aware operations.
@@ -112,13 +108,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         /// </summary>
         public IReadOnlyCollection<FileContext> ActiveFiles => _active.Values;
 
-        //---------------------------------------------------------
-        // Deferred EPUBs
-        //---------------------------------------------------------
-
-        public IReadOnlyList<FileContext> DeferredFiles =>
-            _deferred;
-
         public IReadOnlyCollection<string> CompletedFiles => _completed;
 
         //---------------------------------------------------------
@@ -131,11 +120,16 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         public bool IsComplete =>
             !IsActive;
 
-        public bool HasDeferredFiles =>
-            _deferred.Count > 0;
-
         public int PendingCount =>
             _pending.Count;
+
+        public int ActiveCount =>
+            _active.Count;
+
+        public int TotalCount =>
+            _pending.Count +
+            _active.Count +
+            _completed.Count;
 
         //---------------------------------------------------------
         // Begin
@@ -160,7 +154,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 throw new ArgumentNullException(nameof(files));
 
             _pending.Clear();
-            _deferred.Clear();
             _active.Clear();
             _completed.Clear();
 
@@ -279,6 +272,77 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         }
 
         /// <summary>
+        /// Resolves an EPUB through a terminal user decision such as
+        /// AcceptedAsIs or Omitted.
+        ///
+        /// A collection-wide decision may target a branch that is active or
+        /// still pending. The collection progress UI is deliberately
+        /// collection-wide, so terminal decisions must not depend on the
+        /// compatibility CurrentFile cursor or on the branch already being
+        /// active.
+        /// </summary>
+        public bool ResolveTerminal(string originalFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(originalFullPath))
+                return false;
+
+            // Terminal decisions are idempotent. If the user clicks a stale
+            // collection-wide action after the branch was already resolved,
+            // the decision has already succeeded.
+            if (_completed.Contains(originalFullPath))
+                return true;
+
+            if (_active.TryGetValue(
+                    originalFullPath,
+                    out FileContext? activeFile))
+            {
+                _completed.Add(originalFullPath);
+                _active.Remove(originalFullPath);
+
+                if (ReferenceEquals(CurrentFile, activeFile))
+                {
+                    CurrentFile = null;
+                    MoveNext();
+                }
+
+                return true;
+            }
+
+            if (_pending.Count > 0)
+            {
+                Queue<FileContext> remaining = new();
+                bool found = false;
+
+                while (_pending.Count > 0)
+                {
+                    FileContext file = _pending.Dequeue();
+
+                    if (string.Equals(
+                            file.OriginalFullPath,
+                            originalFullPath,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        found = true;
+                        continue;
+                    }
+
+                    remaining.Enqueue(file);
+                }
+
+                while (remaining.Count > 0)
+                    _pending.Enqueue(remaining.Dequeue());
+
+                if (found)
+                {
+                    _completed.Add(originalFullPath);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Marks the current EPUB as completed and advances to the next EPUB.
         /// </summary>
         public void CompleteCurrent()
@@ -301,25 +365,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             MoveNext();
         }
 
-        /// <summary>
-        /// Removes the current EPUB from active processing and places it
-        /// at the end of the expedition's deferred work.
-        ///
-        /// The expedition can therefore continue with the next EPUB instead
-        /// of stopping the entire folder operation.
-        /// </summary>
-        public void DeferCurrent()
-        {
-            if (CurrentFile == null)
-                return;
-
-            _deferred.Add(CurrentFile);
-            _active.Remove(CurrentFile.OriginalFullPath);
-
-            CurrentFile = null;
-
-            MoveNext();
-        }
 
         //---------------------------------------------------------
         // Reset
@@ -331,7 +376,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         public void Reset()
         {
             _pending.Clear();
-            _deferred.Clear();
             _active.Clear();
             _completed.Clear();
 

@@ -1,10 +1,11 @@
-﻿using Scout.Observations.Conversation;
+using Scout.Observations.Conversation;
 using SmartRenamer.Models;
 using SmartRenamer.Observations;
 using SmartRenamer.Services;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace SmartRenamer.Guide
 {
@@ -24,6 +25,37 @@ namespace SmartRenamer.Guide
         private readonly ProjectWorkflow workflow = new();
 
         private readonly ProjectInvestigator projectInvestigator = new();
+
+        private readonly IProgress<ExecutionProgress>? progress;
+
+        public event EventHandler<ExpertBackgroundActionCompletedEventArgs>?
+            BackgroundActionCompleted;
+
+        public GuideInvestigator(
+            IProgress<ExecutionProgress>? progress = null)
+        {
+            this.progress = progress;
+
+            workflow.BackgroundActionCompleted +=
+                Workflow_BackgroundActionCompleted;
+        }
+
+        private void Workflow_BackgroundActionCompleted(
+            object? sender,
+            ExpertBackgroundActionCompletedEventArgs e)
+        {
+            BackgroundActionCompleted?.Invoke(
+                this,
+                e);
+        }
+
+        public void Dispose()
+        {
+            workflow.BackgroundActionCompleted -=
+                Workflow_BackgroundActionCompleted;
+
+            workflow.Dispose();
+        }
 
         /// <summary>
         /// Exposes the generic discovery choices supplied by the
@@ -45,6 +77,15 @@ namespace SmartRenamer.Guide
         /// </summary>
         public IReadOnlyList<CV_Recommendation> ReobservationRecommendations =>
             workflow.LastReobservationRecommendations;
+
+        /// <summary>
+        /// Exposes the ProjectObservation snapshot produced by the same
+        /// re-observation that produced ReobservationRecommendations.
+        /// The Guide transports the snapshot to the Workspace without
+        /// interpreting the domain findings.
+        /// </summary>
+        public IReadOnlyList<ProjectObservation> ReobservationObservations =>
+            workflow.LastReobservationObservations;
 
         /// <summary>
         /// Applies a discovery choice through the same generic workflow
@@ -95,11 +136,11 @@ namespace SmartRenamer.Guide
         /// The Guide does not know what the option means. The owning
         /// Observation Expert interprets the opaque option identifier.
         /// </summary>
-        public void ApplyDecisionChoice(
+        public Task ApplyDecisionChoiceAsync(
             string expertName,
             string optionId)
         {
-            ApplyDecisionChoice(
+            return ApplyDecisionChoiceAsync(
                 expertName,
                 optionId,
                 null);
@@ -110,15 +151,16 @@ namespace SmartRenamer.Guide
         /// through the Guide/workflow boundary. The Guide does not interpret
         /// the value; the owning Expert does.
         /// </summary>
-        public void ApplyDecisionChoice(
+        public Task ApplyDecisionChoiceAsync(
             string expertName,
             string optionId,
             string? value)
         {
-            workflow.ApplyDecisionChoice(
-                expertName,
-                optionId,
-                value);
+            return Task.Run(
+                () => workflow.ApplyDecisionChoice(
+                    expertName,
+                    optionId,
+                    value));
         }
 
         /// <summary>
@@ -168,7 +210,9 @@ namespace SmartRenamer.Guide
             if (context == null)
                 return null;
 
-            return workflow.Execute(context);
+            return workflow.Execute(
+                context,
+                progress);
         }
 
         /// <summary>

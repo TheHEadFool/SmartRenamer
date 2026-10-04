@@ -1,5 +1,8 @@
-﻿using System;
+using System;
 using System.ComponentModel;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 
 namespace SmartRenamer.Models
 {
@@ -15,6 +18,24 @@ namespace SmartRenamer.Models
 
         private int completedSteps;
         private int totalSteps;
+
+        // The collection instance is intentionally stable while an expedition
+        // is running. WPF binds the Collection Progress ListBox directly to
+        // this collection, so replacing the list on every progress tick can
+        // force container teardown/recreation while WPF is already processing
+        // visual-tree changes.
+        private readonly ObservableCollection<ExecutionProgressItem> items =
+            new();
+
+        private string stage = "";
+        private int stageCompleted;
+        private int stageTotal;
+
+        private int collectionTotal;
+        private int collectionCompleted;
+        private int collectionProcessing;
+        private int collectionWaiting;
+        private int collectionPending;
 
         private TimeSpan elapsedTime = TimeSpan.Zero;
         private TimeSpan? estimatedRemaining = null;
@@ -109,10 +130,124 @@ namespace SmartRenamer.Models
             }
         }
 
+        /// <summary>
+        /// Collection completion is the primary operation percentage whenever
+        /// a collection has been established. Stage progress remains available
+        /// through StageCompleted/StageTotal but must not masquerade as
+        /// collection completion.
+        /// </summary>
         public int PercentComplete =>
-            TotalSteps == 0
-                ? 0
-                : CompletedSteps * 100 / TotalSteps;
+            CollectionTotal > 0
+                ? CollectionCompleted * 100 / CollectionTotal
+                : TotalSteps == 0
+                    ? 0
+                    : CompletedSteps * 100 / TotalSteps;
+
+        public string Stage
+        {
+            get => stage;
+            set
+            {
+                if (stage == value)
+                    return;
+
+                stage = value;
+                OnPropertyChanged(nameof(Stage));
+            }
+        }
+
+        public int StageCompleted
+        {
+            get => stageCompleted;
+            set
+            {
+                if (stageCompleted == value)
+                    return;
+
+                stageCompleted = value;
+                OnPropertyChanged(nameof(StageCompleted));
+            }
+        }
+
+        public int StageTotal
+        {
+            get => stageTotal;
+            set
+            {
+                if (stageTotal == value)
+                    return;
+
+                stageTotal = value;
+                OnPropertyChanged(nameof(StageTotal));
+            }
+        }
+
+        public int CollectionTotal
+        {
+            get => collectionTotal;
+            set
+            {
+                if (collectionTotal == value)
+                    return;
+
+                collectionTotal = value;
+                OnPropertyChanged(nameof(CollectionTotal));
+                OnPropertyChanged(nameof(PercentComplete));
+            }
+        }
+
+        public int CollectionCompleted
+        {
+            get => collectionCompleted;
+            set
+            {
+                if (collectionCompleted == value)
+                    return;
+
+                collectionCompleted = value;
+                OnPropertyChanged(nameof(CollectionCompleted));
+                OnPropertyChanged(nameof(PercentComplete));
+            }
+        }
+
+        public int CollectionProcessing
+        {
+            get => collectionProcessing;
+            set
+            {
+                if (collectionProcessing == value)
+                    return;
+
+                collectionProcessing = value;
+                OnPropertyChanged(nameof(CollectionProcessing));
+            }
+        }
+
+        public int CollectionWaiting
+        {
+            get => collectionWaiting;
+            set
+            {
+                if (collectionWaiting == value)
+                    return;
+
+                collectionWaiting = value;
+                OnPropertyChanged(nameof(CollectionWaiting));
+            }
+        }
+
+        public int CollectionPending
+        {
+            get => collectionPending;
+            set
+            {
+                if (collectionPending == value)
+                    return;
+
+                collectionPending = value;
+                OnPropertyChanged(nameof(CollectionPending));
+            }
+        }
 
         public TimeSpan ElapsedTime
         {
@@ -140,6 +275,95 @@ namespace SmartRenamer.Models
             }
         }
 
+        public IReadOnlyList<ExecutionProgressItem> Items =>
+            items;
+
+        /// <summary>
+        /// Applies a progress snapshot without replacing the collection bound
+        /// to the WPF Collection Progress ListBox. Existing rows are updated
+        /// in place by stable Key, which allows WPF to keep its realized
+        /// containers instead of tearing down and recreating the entire list
+        /// on every progress report.
+        ///
+        /// The incoming snapshot may be sorted for calculation purposes, but
+        /// this method deliberately does not reorder the live collection.
+        /// Attention ordering is therefore not changed as a side effect of a
+        /// progress tick. A later, explicitly scheduled presentation update
+        /// can address ordering without coupling it to domain progress.
+        /// </summary>
+        public void ApplyItems(
+            IReadOnlyList<ExecutionProgressItem>? snapshots)
+        {
+            snapshots ??= Array.Empty<ExecutionProgressItem>();
+
+            bool wasEmpty =
+                items.Count == 0;
+
+            var snapshotsByKey =
+                new Dictionary<string, ExecutionProgressItem>(
+                    StringComparer.OrdinalIgnoreCase);
+
+            foreach (ExecutionProgressItem snapshot in snapshots)
+            {
+                if (snapshot == null ||
+                    string.IsNullOrWhiteSpace(snapshot.Key))
+                {
+                    continue;
+                }
+
+                snapshotsByKey[snapshot.Key] = snapshot;
+            }
+
+            // Update rows that already exist. This is the normal path during
+            // investigation and re-observation and produces only property
+            // changes on the affected row.
+            foreach (ExecutionProgressItem item in items)
+            {
+                if (snapshotsByKey.TryGetValue(item.Key, out ExecutionProgressItem? snapshot))
+                {
+                    item.UpdateFrom(snapshot);
+                }
+            }
+
+            // A collection's membership should normally remain stable for an
+            // expedition. These structural changes are retained for discovery
+            // or reset scenarios, but they are deliberately not accompanied by
+            // an ItemsSource replacement.
+            for (int index = items.Count - 1; index >= 0; index--)
+            {
+                if (!snapshotsByKey.ContainsKey(items[index].Key))
+                {
+                    items.RemoveAt(index);
+                }
+            }
+
+            var existingKeys =
+                new HashSet<string>(
+                    items.Select(item => item.Key),
+                    StringComparer.OrdinalIgnoreCase);
+
+            foreach (ExecutionProgressItem snapshot in snapshots)
+            {
+                if (snapshot == null ||
+                    string.IsNullOrWhiteSpace(snapshot.Key) ||
+                    existingKeys.Contains(snapshot.Key))
+                {
+                    continue;
+                }
+
+                items.Add(snapshot);
+                existingKeys.Add(snapshot.Key);
+            }
+
+            if (wasEmpty != (items.Count == 0))
+            {
+                OnPropertyChanged(nameof(HasCollectionItems));
+            }
+        }
+
+        public bool HasCollectionItems =>
+            items.Count > 0;
+
         #endregion
 
         #region State
@@ -163,7 +387,8 @@ namespace SmartRenamer.Models
         }
 
         public bool IsRunning =>
-            State == ScoutOperationState.Running;
+            State == ScoutOperationState.Running ||
+            State == ScoutOperationState.WaitingForUser;
 
         public bool IsFinished =>
             State == ScoutOperationState.Completed ||
@@ -175,7 +400,8 @@ namespace SmartRenamer.Models
 
         public bool CanCancel =>
             State == ScoutOperationState.Running ||
-            State == ScoutOperationState.Paused;
+            State == ScoutOperationState.Paused ||
+            State == ScoutOperationState.WaitingForUser;
 
         #endregion
 

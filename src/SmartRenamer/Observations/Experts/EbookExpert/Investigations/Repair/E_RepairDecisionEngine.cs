@@ -1,4 +1,4 @@
-﻿using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,17 +15,26 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
     /// Scout confidence policy:
     ///
     ///     90% - 100%
-    ///         Silent automatic repair when exactly one preferred candidate
-    ///         exists.
+    ///         Candidate is eligible for automatic repair when automatic
+    ///         repair authorization is enabled.
     ///
-    ///     70% - &lt;90%
+    ///     70% - <90%
     ///         User decision required.
     ///
-    ///     50% - &lt;70%
+    ///     50% - <70%
     ///         Set aside for end-of-expedition review.
     ///
-    ///     0% - &lt;50%
+    ///     0% - <50%
     ///         Set aside for end-of-expedition review.
+    ///
+    /// Confidence and authorization are separate decisions:
+    ///
+    ///     Confidence answers:
+    ///         "Can Scout safely determine the answer?"
+    ///
+    ///     Automatic authorization answers:
+    ///         "Has the user allowed Scout to apply such a determination
+    ///          automatically?"
     ///
     /// The decision engine does not perform the repair. It determines whether
     /// the repair service may proceed automatically, whether Scout needs the
@@ -46,7 +55,7 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
 
         /// <summary>
         /// Confidence at or above which Scout may automatically apply a
-        /// repair when exactly one preferred candidate exists.
+        /// repair when automatic repair authorization is enabled.
         /// </summary>
         public const double AutomaticConfidenceThreshold = 0.90;
 
@@ -75,12 +84,8 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
         /// The Scout confidence policy establishes the actual decision bands.
         /// </param>
         /// <param name="automaticAuthorization">
-        /// Existing authorization state supplied by the Ebook Expert.
-        ///
-        /// This parameter is retained for compatibility with the existing
-        /// action pipeline. A candidate at 90% or above does not require a
-        /// separate automatic-authorization prompt because Scout's confidence
-        /// policy already establishes that it is safe to act silently.
+        /// Indicates whether the user has authorized Scout to automatically
+        /// apply qualifying repairs.
         /// </param>
         public RepairDecisionResult Evaluate(
             IReadOnlyList<RepairDecisionCandidate> candidates,
@@ -101,9 +106,9 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
             // Preserve the existing API parameter, but use Scout's
             // confidence policy rather than the old single threshold.
             //
-            // The caller may continue supplying its existing threshold.
-            // The policy here determines what Scout actually does with
-            // the evidence.
+            // Candidates are ordered from highest confidence to lowest.
+            // The highest-confidence candidate is therefore the candidate
+            // Scout evaluates for automatic repair.
             //---------------------------------------------------------
 
             var orderedCandidates =
@@ -113,41 +118,56 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
                     .ToList();
 
             //---------------------------------------------------------
-            // Determine candidates that the domain research identified
+            // 90% - 100%
+            //
+            // Confidence establishes that Scout can safely determine
+            // the candidate.
+            //
+            // Authorization establishes whether Scout is currently
+            // permitted to apply that determination automatically.
+            //
+            // IsPreferred is deliberately NOT an additional gate here.
+            // A 100% confidence candidate must not regress to a waiting
+            // state merely because the research provider did not mark it
             // as preferred.
             //---------------------------------------------------------
 
-            var preferredCandidates =
-                orderedCandidates
-                    .Where(candidate => candidate.IsPreferred)
-                    .ToList();
-
-            //---------------------------------------------------------
-            // 90% - 100%
-            //
-            // Scout can act silently when exactly one preferred candidate
-            // exists.
-            //
-            // The previous implementation required explicit automatic
-            // authorization here. That caused a 100% confidence ISBN
-            // match to stop and ask the user.
-            //
-            // That is no longer Scout behavior.
-            //---------------------------------------------------------
-
             if (orderedCandidates[0].Confidence >=
-                AutomaticConfidenceThreshold)
+                    AutomaticConfidenceThreshold)
             {
+                if (automaticAuthorization)
+                {
+                    return new RepairDecisionResult
+                    {
+                        State =
+                            RepairRecommendation.RepairDecisionState
+                                .SafeToApply,
+
+                        SelectedCandidate =
+                            orderedCandidates[0],
+
+                        Candidates =
+                            new[] { orderedCandidates[0] }
+                    };
+                }
+
+                //-----------------------------------------------------
+                // The evidence is strong enough for Scout to know the
+                // answer, but automatic repair is currently disabled.
+                //
+                // Preserve the candidate so the user can explicitly
+                // authorize/choose the repair through the normal action
+                // path.
+                //-----------------------------------------------------
+
                 return new RepairDecisionResult
                 {
                     State =
                         RepairRecommendation.RepairDecisionState
-                            .SafeToApply,
+                            .UserDecisionRequired,
 
-                    SelectedCandidate =
-                        orderedCandidates[0],
-
-                    Candidates = new[] { orderedCandidates[0] }
+                    Candidates =
+                        new[] { orderedCandidates[0] }
                 };
             }
 
@@ -188,11 +208,7 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
             //
             // These opportunities are retained as insufficient evidence
             // for immediate action. The later end-of-expedition review
-            // will collect them for the user's blanket decision.
-            //
-            // We intentionally retain the existing enum state here so
-            // that the review collection mechanism can be added without
-            // changing the current action-result contract prematurely.
+            // can collect them for the user's blanket decision.
             //---------------------------------------------------------
 
             return new RepairDecisionResult

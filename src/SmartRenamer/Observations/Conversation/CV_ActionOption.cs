@@ -46,6 +46,15 @@ namespace Scout.Observations.Conversation
         public string Label { get; init; } = string.Empty;
 
         /// <summary>
+        /// Indicates that this option is a prompt for free-form user input
+        /// rather than a selection from the displayed options.
+        ///
+        /// The Conversation Framework remains domain-neutral: the originating
+        /// Expert decides what the input means.
+        /// </summary>
+        public bool AcceptsUserInput { get; init; }
+
+        /// <summary>
         /// Supporting evidence for this option.
         /// </summary>
         public List<string> Evidence { get; } = new();

@@ -1,4 +1,4 @@
-﻿<Window x:Class="SmartRenamer.MainWindow"
+<Window x:Class="SmartRenamer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:SmartRenamer.Controls"
@@ -13,6 +13,7 @@
 
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="96"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -25,10 +26,127 @@
             Grid.Row="0"/>
 
         <!-- ========================================================= -->
+        <!-- Scout Operation Progress                                  -->
+        <!-- ========================================================= -->
+
+        <Border
+            Grid.Row="1"
+            Margin="0,6,0,6"
+            Padding="8"
+            CornerRadius="10"
+            Background="White"
+            BorderBrush="{StaticResource BorderBrush}"
+            BorderThickness="1">
+
+            <Grid>
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+
+                    <TextBlock
+                        Text="{Binding Operation.Status}"
+                        FontWeight="SemiBold"
+                        FontSize="9"/>
+
+                    <ProgressBar
+                        Margin="0,4,0,3"
+                        Height="7"
+                        Minimum="0"
+                        Maximum="100"
+                        Value="{Binding Operation.PercentComplete, Mode=OneWay}"/>
+
+                    <TextBlock
+                        Text="{Binding Operation.CurrentTask}"
+                        Foreground="{StaticResource SecondaryTextBrush}"
+                        FontSize="11"/>
+
+                    <TextBlock
+                        Margin="0,1,0,0"
+                        Text="{Binding Operation.CurrentFile}"
+                        Foreground="{StaticResource SecondaryTextBrush}"
+                        FontSize="9"
+                        TextTrimming="CharacterEllipsis"/>
+
+                </StackPanel>
+
+                <StackPanel
+                    Grid.Column="1"
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Center">
+
+                    <ToggleButton
+                        Margin="0,0,0,2"
+                        Padding="8,3"
+                        HorizontalAlignment="Right"
+                        IsChecked="{Binding Guide.AutomaticRepairsEnabled, Mode=OneWay}"
+                        Command="{Binding Guide.ToggleAutomaticRepairsCommand}"
+                        ToolTip="Allow Scout to perform repairs that meet its existing automatic-repair safety rules. Ambiguous repairs still require you."
+                        Cursor="Hand">
+                        <ToggleButton.Style>
+                            <Style TargetType="ToggleButton">
+                                <Setter Property="Content" Value="Automatic Repairs: OFF"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Guide.AutomaticRepairsEnabled}" Value="True">
+                                        <Setter Property="Content" Value="Automatic Repairs: ON"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ToggleButton.Style>
+                    </ToggleButton>
+
+                    <TextBlock
+                        Text="{Binding Operation.PercentComplete, StringFormat={}{0}%}"
+                        FontSize="18"
+                        FontWeight="Bold"
+                        HorizontalAlignment="Right"/>
+
+                    <StackPanel
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,1,0,0">
+
+                        <TextBlock
+                            Margin="0,0,8,0"
+                            Text="{Binding Operation.CollectionTotal, StringFormat={}{0} ebooks}"
+                            FontSize="9"
+                            Foreground="{StaticResource SecondaryTextBrush}"/>
+
+                        <TextBlock
+                            Margin="0,0,8,0"
+                            Text="{Binding Operation.CollectionCompleted, StringFormat=Completed {0}}"
+                            FontSize="9"/>
+
+                        <TextBlock
+                            Margin="0,0,8,0"
+                            Text="{Binding Operation.CollectionProcessing, StringFormat=Processing {0}}"
+                            FontSize="9"/>
+
+                        <TextBlock
+                            Margin="0,0,8,0"
+                            Text="{Binding Operation.CollectionWaiting, StringFormat=Waiting {0}}"
+                            FontSize="9"/>
+
+                        <TextBlock
+                            Text="{Binding Operation.CollectionPending, StringFormat=Pending {0}}"
+                            FontSize="9"/>
+
+                    </StackPanel>
+
+                </StackPanel>
+
+            </Grid>
+
+        </Border>
+
+        <!-- ========================================================= -->
         <!-- Main Scout Workspace                                      -->
         <!-- ========================================================= -->
 
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="2">
 
             <Grid.ColumnDefinitions>
 
@@ -205,11 +323,178 @@
 
                 <Grid Margin="20,2,20,10">
 
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- ================================================= -->
+                    <!-- COLLECTION DASHBOARD -->
+                    <!-- ================================================= -->
+
+                    <Border
+                        Grid.Row="0"
+                        Margin="0,0,0,14"
+                        Padding="12"
+                        CornerRadius="10"
+                        Background="#F8FAFD"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1">
+
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger
+                                        Binding="{Binding Operation.HasCollectionItems}"
+                                        Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock
+                                Grid.Row="0"
+                                FontSize="22"
+                                FontWeight="Bold"
+                                Text="Collection Progress"/>
+
+                            <TextBlock
+                                Grid.Row="1"
+                                Margin="0,3,0,10"
+                                Foreground="{StaticResource SecondaryTextBrush}"
+                                Text="Each book is tracked independently while Scout works through the collection."
+                                TextWrapping="Wrap"/>
+
+                            <ListBox
+                                Grid.Row="2"
+                                MaxHeight="280"
+                                ItemsSource="{Binding Operation.Items}"
+                                BorderThickness="0"
+                                Background="Transparent"
+                                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                ScrollViewer.CanContentScroll="True"
+                                VirtualizingPanel.IsVirtualizing="True"
+                                VirtualizingPanel.VirtualizationMode="Recycling"
+                                VirtualizingPanel.ScrollUnit="Pixel"
+                                SelectionMode="Single">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Padding" Value="0"/>
+                                        <Setter Property="Margin" Value="0,0,0,8"/>
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Focusable" Value="False"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel/>
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="125"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="250"/>
+                                                <ColumnDefinition Width="130"/>
+                                                <ColumnDefinition Width="48"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock
+                                                Grid.Column="0"
+                                                VerticalAlignment="Center"
+                                                FontWeight="SemiBold"
+                                                Text="{Binding State}"/>
+
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                Margin="8,0"
+                                                VerticalAlignment="Center"
+                                                Text="{Binding DisplayName}"
+                                                TextTrimming="CharacterEllipsis"
+                                                ToolTip="{Binding DisplayName}"/>
+
+                                            <ItemsControl
+                                                Grid.Column="2"
+                                                Margin="8,0"
+                                                ItemsSource="{Binding Actions}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <StackPanel Orientation="Horizontal"/>
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Button
+                                                            Content="{Binding Label}"
+                                                            Margin="0,0,6,0"
+                                                            Padding="8,4"
+                                                            Background="{StaticResource ConversationSendBrush}"
+                                                            Foreground="White"
+                                                            BorderBrush="{StaticResource ConversationSendBorderBrush}"
+                                                            BorderThickness="1"
+                                                            FontWeight="SemiBold"
+                                                            Cursor="Hand"
+                                                            Command="{Binding DataContext.Guide.ExecuteProgressActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+
+                                            <ProgressBar
+                                                Grid.Column="3"
+                                                Height="8"
+                                                VerticalAlignment="Center"
+                                                Minimum="0"
+                                                Maximum="100"
+                                                Value="{Binding PercentComplete, Mode=OneWay}">
+                                                <ProgressBar.Style>
+                                                    <Style TargetType="ProgressBar">
+                                                        <Setter Property="IsIndeterminate" Value="False"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding State}" Value="Processing">
+                                                                <Setter Property="IsIndeterminate" Value="True"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ProgressBar.Style>
+                                            </ProgressBar>
+
+                                            <TextBlock
+                                                Grid.Column="4"
+                                                Margin="8,0,0,0"
+                                                VerticalAlignment="Center"
+                                                HorizontalAlignment="Right"
+                                                Text="{Binding PercentComplete, StringFormat={}{0}%}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
+
                     <!-- ================================================= -->
                     <!-- NORMAL MODE -->
                     <!-- ================================================= -->
 
-                    <Grid>
+                    <Grid Grid.Row="1">
 
                         <Grid.Style>
                             <Style TargetType="Grid">
@@ -558,7 +843,7 @@ DataContext="{Binding Guide}"/>
 
         <!-- Action Button Bar -->
 
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
         Margin="0,20,0,0"
         Padding="12"
         CornerRadius="10"
@@ -567,34 +852,57 @@ DataContext="{Binding Guide}"/>
         BorderThickness="1">
 
             <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                  VerticalScrollBarVisibility="Disabled">
+                          VerticalScrollBarVisibility="Disabled">
 
-                <ItemsControl ItemsSource="{Binding Guide.ActionOptions}">
+                <StackPanel Orientation="Horizontal">
 
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
+                    <ItemsControl ItemsSource="{Binding Guide.DecisionOptions}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Content="{Binding Text}"
+                                        Margin="0,0,8,0"
+                                        Padding="18,8"
+                                        Background="{StaticResource ConversationSendBrush}"
+                                        Foreground="White"
+                                        BorderBrush="{StaticResource ConversationSendBorderBrush}"
+                                        BorderThickness="1"
+                                        FontWeight="SemiBold"
+                                        Cursor="Hand"
+                                        Command="{Binding DataContext.Guide.SelectDecisionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
 
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Button Content="{Binding Label}"
-                            Margin="0,0,8,0"
-                            Padding="18,8"
-                            Background="{StaticResource ConversationSendBrush}"
-                            Foreground="White"
-                            BorderBrush="{StaticResource ConversationSendBorderBrush}"
-                            BorderThickness="1"
-                            FontWeight="SemiBold"
-                            Cursor="Hand"
-                            Command="{Binding DataContext.Guide.SelectActionOptionCommand,
-                                      RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding}"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
+                    <ItemsControl ItemsSource="{Binding Guide.ActionOptions}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Content="{Binding Label}"
+                                        Margin="0,0,8,0"
+                                        Padding="18,8"
+                                        Background="{StaticResource ConversationSendBrush}"
+                                        Foreground="White"
+                                        BorderBrush="{StaticResource ConversationSendBorderBrush}"
+                                        BorderThickness="1"
+                                        FontWeight="SemiBold"
+                                        Cursor="Hand"
+                                        Command="{Binding DataContext.Guide.SelectActionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
 
-                </ItemsControl>
+                </StackPanel>
 
             </ScrollViewer>
 

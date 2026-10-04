@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
@@ -53,33 +54,68 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                     item => item.RelativeFolder,
                     StringComparer.OrdinalIgnoreCase);
 
+            bool organizeBySeries =
+                context.Options.FolderLevels.Contains(
+                    OrganizationDimension.Series);
+
             foreach (IGrouping<string, PlannedBook> group in groups)
             {
-                IEnumerable<PlannedBook> ordered =
-                    context.Options.FileOrderDirection ==
-                    OrganizationSortDirection.Descending
-                        ? group
-                            .OrderByDescending(
-                                item => item.SortValue,
-                                StringComparer.OrdinalIgnoreCase)
-                            .ThenBy(
-                                item => item.Book.Title,
-                                StringComparer.OrdinalIgnoreCase)
-                            .ThenBy(
-                                item => item.Book.OriginalPath,
-                                StringComparer.OrdinalIgnoreCase)
-                        : group
-                            .OrderBy(
-                                item => item.SortValue,
-                                StringComparer.OrdinalIgnoreCase)
-                            .ThenBy(
-                                item => item.Book.Title,
-                                StringComparer.OrdinalIgnoreCase)
-                            .ThenBy(
-                                item => item.Book.OriginalPath,
-                                StringComparer.OrdinalIgnoreCase);
+                IEnumerable<PlannedBook> ordered;
 
-                int position = 1;
+                if (organizeBySeries)
+                {
+                    ordered =
+                        context.Options.FileOrderDirection ==
+                        OrganizationSortDirection.Descending
+                            ? group
+                                .OrderBy(
+                                    item => GetSeriesNumberSortValue(item.Book.SeriesNumber).HasValue ? 0 : 1)
+                                .ThenByDescending(
+                                    item => GetSeriesNumberSortValue(item.Book.SeriesNumber) ?? decimal.MinValue)
+                                .ThenBy(
+                                    item => item.Book.Title,
+                                    StringComparer.OrdinalIgnoreCase)
+                                .ThenBy(
+                                    item => item.Book.OriginalPath,
+                                    StringComparer.OrdinalIgnoreCase)
+                            : group
+                                .OrderBy(
+                                    item => GetSeriesNumberSortValue(item.Book.SeriesNumber).HasValue ? 0 : 1)
+                                .ThenBy(
+                                    item => GetSeriesNumberSortValue(item.Book.SeriesNumber) ?? decimal.MaxValue)
+                                .ThenBy(
+                                    item => item.Book.Title,
+                                    StringComparer.OrdinalIgnoreCase)
+                                .ThenBy(
+                                    item => item.Book.OriginalPath,
+                                    StringComparer.OrdinalIgnoreCase);
+                }
+                else
+                {
+                    ordered =
+                        context.Options.FileOrderDirection ==
+                        OrganizationSortDirection.Descending
+                            ? group
+                                .OrderByDescending(
+                                    item => item.SortValue,
+                                    StringComparer.OrdinalIgnoreCase)
+                                .ThenBy(
+                                    item => item.Book.Title,
+                                    StringComparer.OrdinalIgnoreCase)
+                                .ThenBy(
+                                    item => item.Book.OriginalPath,
+                                    StringComparer.OrdinalIgnoreCase)
+                            : group
+                                .OrderBy(
+                                    item => item.SortValue,
+                                    StringComparer.OrdinalIgnoreCase)
+                                .ThenBy(
+                                    item => item.Book.Title,
+                                    StringComparer.OrdinalIgnoreCase)
+                                .ThenBy(
+                                    item => item.Book.OriginalPath,
+                                    StringComparer.OrdinalIgnoreCase);
+                }
 
                 foreach (PlannedBook item in ordered)
                 {
@@ -94,16 +130,22 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                             ? Path.GetFileNameWithoutExtension(item.Book.WorkingPath)
                             : item.Book.Title);
 
+                    string filePrefix =
+                        organizeBySeries &&
+                        TryFormatSeriesNumber(
+                            item.Book.SeriesNumber,
+                            out string formattedSeriesNumber)
+                            ? $"{formattedSeriesNumber} - "
+                            : string.Empty;
+
                     plan.Entries.Add(
                         new OrganizationPlanEntry
                         {
                             OriginalPath = item.Book.OriginalPath,
                             RelativeDestinationFolder = item.RelativeFolder,
                             DestinationFileName =
-                                $"{position:00} - {title}{extension}"
+                                $"{filePrefix}{title}{extension}"
                         });
-
-                    position++;
                 }
             }
 
@@ -118,11 +160,30 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
 
             foreach (OrganizationDimension dimension in dimensions)
             {
-                string value = SanitizeFolderName(
-                    GetDimensionValue(book, dimension));
+                string rawValue =
+                    GetDimensionValue(book, dimension);
+
+                // A selected organization dimension is a policy choice, not
+                // a requirement to manufacture a placeholder folder. If this
+                // particular book has no usable value for that dimension,
+                // remove that dimension from this book's path and preserve
+                // the remaining selected hierarchy. For example:
+                //
+                //     Series → Author → Title
+                //
+                // becomes Author → Title when Series is genuinely absent.
+                //
+                // "Unknown" is therefore reserved for a future explicit
+                // unresolved state rather than being used to hide missing
+                // metadata during organization.
+                if (string.IsNullOrWhiteSpace(rawValue))
+                    continue;
+
+                string value =
+                    SanitizeFolderName(rawValue);
 
                 if (string.IsNullOrWhiteSpace(value))
-                    value = "Unknown";
+                    continue;
 
                 parts.Add(value);
             }
@@ -130,6 +191,42 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
             return string.Join(
                 Path.DirectorySeparatorChar,
                 parts);
+        }
+
+        private static decimal? GetSeriesNumberSortValue(
+            string value)
+        {
+            if (decimal.TryParse(
+                    value?.Trim(),
+                    NumberStyles.Number,
+                    CultureInfo.InvariantCulture,
+                    out decimal number))
+            {
+                return number;
+            }
+
+            return null;
+        }
+
+        private static bool TryFormatSeriesNumber(
+            string value,
+            out string formatted)
+        {
+            decimal? number =
+                GetSeriesNumberSortValue(value);
+
+            if (!number.HasValue)
+            {
+                formatted = string.Empty;
+                return false;
+            }
+
+            formatted =
+                number.Value.ToString(
+                    "00.##",
+                    CultureInfo.InvariantCulture);
+
+            return true;
         }
 
         private static string GetDimensionValue(

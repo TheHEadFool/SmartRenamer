@@ -28,6 +28,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 _ => { };
 
             public long Generation { get; init; }
+
+            public int RetryCount { get; init; }
         }
 
         private readonly ConcurrentQueue<WorkItem> _queue = new();
@@ -42,6 +44,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             new(StringComparer.OrdinalIgnoreCase);
 
         private long _generation;
+
+        // Provider gateways may retry a request safely inside one research
+        // operation. The coordinator deliberately does not schedule another
+        // whole research operation. A provider limit must become a user-facing
+        // NEEDS decision rather than a multi-minute WORKING state.
+        private const int CoordinatorRetryLimit = 0;
 
         public E_ExternalResearchCoordinator()
         {
@@ -149,7 +157,21 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                                 ex.Message
                         };
                     }
-                    finally
+                    bool currentGeneration;
+
+                    lock (_keysLock)
+                    {
+                        currentGeneration =
+                            item.Generation == _generation;
+                    }
+
+                    bool retry =
+                        currentGeneration &&
+                        result.RetrySuggested &&
+                        result.RetryAfterSeconds > 0 &&
+                        item.RetryCount < CoordinatorRetryLimit;
+
+                    if (!retry)
                     {
                         lock (_keysLock)
                         {
@@ -160,22 +182,25 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                         }
                     }
 
-                    bool currentGeneration;
-
-                    lock (_keysLock)
+                    if (retry)
                     {
-                        currentGeneration =
-                            item.Generation == _generation;
+                        ScheduleRetry(
+                            item,
+                            result.RetryAfterSeconds);
                     }
-
-                    if (currentGeneration)
+                    else if (currentGeneration)
                     {
                         try
                         {
+                            if (result.RetrySuggested)
+                            {
+                                result = BuildRetryExhaustedResult(result);
+                            }
+
                             item.Completed(result);
                         }
                         catch
-                    {
+                        {
                             // Background completion must never terminate the
                             // research worker. The workflow owns presentation and
                             // error handling for completion callbacks.
@@ -183,8 +208,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     }
 
                     // Keep external research deliberately serialized. The
-                    // provider-specific resource remains responsible for its
-                    // own timeout and request behavior.
+                    // provider-specific gateway also applies provider-specific
+                    // spacing and cooldowns, so independent providers cannot
+                    // accidentally be hammered by a collection-wide burst.
                     try
                     {
                         await Task.Delay(
@@ -197,6 +223,68 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     }
                 }
             }
+        }
+
+        private void ScheduleRetry(
+            WorkItem item,
+            int retryAfterSeconds)
+        {
+            _ = Task.Run(
+                async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(
+                            TimeSpan.FromSeconds(
+                                Math.Max(1, retryAfterSeconds)),
+                            _cancellation.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+
+                    lock (_keysLock)
+                    {
+                        if (item.Generation != _generation)
+                        {
+                            _queuedOrRunningKeys.Remove(item.Key);
+                            return;
+                        }
+                    }
+
+                    _queue.Enqueue(
+                        new WorkItem
+                        {
+                            Key = item.Key,
+                            Work = item.Work,
+                            Completed = item.Completed,
+                            Generation = item.Generation,
+                            RetryCount = item.RetryCount + 1
+                        });
+
+                    _signal.Release();
+                });
+        }
+
+        private static CV_ActionResult BuildRetryExhaustedResult(
+            CV_ActionResult result)
+        {
+            CV_ActionResult finalResult = new()
+            {
+                ActionId = result.ActionId,
+                Success = result.Success,
+                RequiresReobservation = result.RequiresReobservation,
+                ReobserveCollection = result.ReobserveCollection,
+                RetrySuggested = false,
+                RetryAfterSeconds = 0,
+                Message = result.Message +
+                    " Scout will not keep waiting on this provider during the current research cycle. The ebook has been returned to NEEDS so you can continue; the research can be retried later."
+            };
+
+            finalResult.Evidence.AddRange(result.Evidence);
+            finalResult.Options.AddRange(result.Options);
+            return finalResult;
         }
     }
 }

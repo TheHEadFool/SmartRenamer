@@ -15,7 +15,6 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="96"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- ========================================================= -->
@@ -212,12 +211,122 @@
                             </Button>
                         </Grid>
 
+                        <!-- ================================================= -->
+                        <!-- Scout Controls                                     -->
+                        <!-- ================================================= -->
+                        <!-- All user actions belong here.                    -->
+                        <!-- Conversation explains; Scout Controls acts.      -->
+                        <!-- ================================================= -->
+
+                        <Border
+                            Margin="0,20,0,0"
+                            Padding="12"
+                            CornerRadius="10"
+                            Background="White"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Guide.HasScoutControls}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+
+                            <StackPanel>
+                                <TextBlock
+                                    Text="Scout Controls"
+                                    FontWeight="SemiBold"
+                                    Margin="0,0,0,4"/>
+
+                                <TextBlock
+                                    Text="{Binding Guide.ScoutControlsPrompt}"
+                                    TextWrapping="Wrap"
+                                    Foreground="{StaticResource ConversationSubtitleBrush}"
+                                    Margin="0,0,0,10"/>
+
+                                <ItemsControl ItemsSource="{Binding Guide.DiscoveryOptions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button
+                                                Content="{Binding Text}"
+                                                Margin="0,0,0,8"
+                                                Padding="10,8"
+                                                HorizontalContentAlignment="Left"
+                                                Background="{StaticResource ConversationSendBrush}"
+                                                Foreground="White"
+                                                BorderBrush="{StaticResource ConversationSendBorderBrush}"
+                                                BorderThickness="1"
+                                                FontWeight="SemiBold"
+                                                Cursor="Hand"
+                                                Command="{Binding DataContext.Guide.SelectDiscoveryOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <ItemsControl ItemsSource="{Binding Guide.DecisionOptions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button
+                                                Content="{Binding Text}"
+                                                Margin="0,0,0,8"
+                                                Padding="10,8"
+                                                HorizontalContentAlignment="Left"
+                                                Background="{StaticResource ConversationSendBrush}"
+                                                Foreground="White"
+                                                BorderBrush="{StaticResource ConversationSendBorderBrush}"
+                                                BorderThickness="1"
+                                                FontWeight="SemiBold"
+                                                Cursor="Hand"
+                                                Command="{Binding DataContext.Guide.SelectDecisionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <ItemsControl ItemsSource="{Binding Guide.ActionOptions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button
+                                                Content="{Binding Label}"
+                                                Margin="0,0,0,8"
+                                                Padding="10,8"
+                                                HorizontalContentAlignment="Left"
+                                                Background="{StaticResource ConversationSendBrush}"
+                                                Foreground="White"
+                                                BorderBrush="{StaticResource ConversationSendBorderBrush}"
+                                                BorderThickness="1"
+                                                FontWeight="SemiBold"
+                                                Cursor="Hand"
+                                                Command="{Binding DataContext.Guide.SelectActionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
                         <Border
                 Padding="16"
                 CornerRadius="12"
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1"
                 Background="#F8FAFD">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Visible"/>
+
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Guide.ShowWorkspaceObservations}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
 
                             <StackPanel>
 
@@ -304,6 +413,8 @@
 
                         </Border>
 
+
+
                     </StackPanel>
 
                 </ScrollViewer>
@@ -329,7 +440,7 @@
                     </Grid.RowDefinitions>
 
                     <!-- ================================================= -->
-                    <!-- COLLECTION DASHBOARD -->
+                    <!-- SCOUT LIVE REPORT -->
                     <!-- ================================================= -->
 
                     <Border
@@ -354,140 +465,290 @@
                             </Style>
                         </Border.Style>
 
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
+                        <ScrollViewer
+                            MaxHeight="520"
+                            VerticalScrollBarVisibility="Auto"
+                            HorizontalScrollBarVisibility="Disabled"
+                            CanContentScroll="True">
 
-                            <TextBlock
-                                Grid.Row="0"
-                                FontSize="22"
-                                FontWeight="Bold"
-                                Text="Collection Progress"/>
+                            <StackPanel>
+                                <TextBlock
+                                    FontSize="22"
+                                    FontWeight="Bold"
+                                    Text="Live Report"
+                                    Margin="0,0,0,10"/>
 
-                            <TextBlock
-                                Grid.Row="1"
-                                Margin="0,3,0,10"
-                                Foreground="{StaticResource SecondaryTextBrush}"
-                                Text="Each book is tracked independently while Scout works through the collection."
-                                TextWrapping="Wrap"/>
+                                <!-- NEEDS -->
+                                <DockPanel
+                                    LastChildFill="False"
+                                    Margin="0,0,0,4">
+                                    <DockPanel.Style>
+                                        <Style TargetType="DockPanel">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Operation.HasNeedsItems}" Value="False">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DockPanel.Style>
+                                    <TextBlock
+                                        FontSize="17"
+                                        FontWeight="Bold"
+                                        Text="NEEDS"
+                                        VerticalAlignment="Center"/>
 
-                            <ListBox
-                                Grid.Row="2"
-                                MaxHeight="280"
-                                ItemsSource="{Binding Operation.Items}"
-                                BorderThickness="0"
-                                Background="Transparent"
-                                ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                ScrollViewer.CanContentScroll="True"
-                                VirtualizingPanel.IsVirtualizing="True"
-                                VirtualizingPanel.VirtualizationMode="Recycling"
-                                VirtualizingPanel.ScrollUnit="Pixel"
-                                SelectionMode="Single">
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem">
-                                        <Setter Property="Padding" Value="0"/>
-                                        <Setter Property="Margin" Value="0,0,0,8"/>
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="BorderThickness" Value="0"/>
-                                        <Setter Property="Focusable" Value="False"/>
-                                        <Style.Triggers>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter Property="Background" Value="Transparent"/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                                <ListBox.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <VirtualizingStackPanel/>
-                                    </ItemsPanelTemplate>
-                                </ListBox.ItemsPanel>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="125"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="250"/>
-                                                <ColumnDefinition Width="130"/>
-                                                <ColumnDefinition Width="48"/>
-                                            </Grid.ColumnDefinitions>
+                                    <Button
+                                        DockPanel.Dock="Right"
+                                        Margin="12,0,0,0"
+                                        Padding="8,2"
+                                        Content="Accept All"
+                                        Command="{Binding Guide.AcceptAllAsIsCommand}"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Foreground="{StaticResource ConversationSendBrush}"
+                                        FontWeight="SemiBold"
+                                        Cursor="Hand">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Operation.HasNeedsItems}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </DockPanel>
 
-                                            <TextBlock
-                                                Grid.Column="0"
-                                                VerticalAlignment="Center"
-                                                FontWeight="SemiBold"
-                                                Text="{Binding State}"/>
+                                <ListBox
+                                    ItemsSource="{Binding Operation.NeedsItems}"
+                                    BorderThickness="0"
+                                    Background="Transparent"
+                                    Margin="0,0,0,12"
+                                    ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                    VirtualizingPanel.IsVirtualizing="True"
+                                    VirtualizingPanel.VirtualizationMode="Recycling">
+                                    <ListBox.Style>
+                                        <Style TargetType="ListBox">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Operation.HasNeedsItems}" Value="False">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ListBox.Style>
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Margin" Value="0"/>
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                            <Setter Property="Focusable" Value="False"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Height="32">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
 
-                                            <TextBlock
-                                                Grid.Column="1"
-                                                Margin="8,0"
-                                                VerticalAlignment="Center"
-                                                Text="{Binding DisplayName}"
-                                                TextTrimming="CharacterEllipsis"
-                                                ToolTip="{Binding DisplayName}"/>
+                                                <TextBlock
+                                                    Grid.Column="0"
+                                                    Text="!"
+                                                    FontWeight="Bold"
+                                                    VerticalAlignment="Center"/>
 
-                                            <ItemsControl
-                                                Grid.Column="2"
-                                                Margin="8,0"
-                                                ItemsSource="{Binding Actions}">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate>
-                                                        <StackPanel Orientation="Horizontal"/>
-                                                    </ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Button
-                                                            Content="{Binding Label}"
-                                                            Margin="0,0,6,0"
-                                                            Padding="8,4"
-                                                            Background="{StaticResource ConversationSendBrush}"
-                                                            Foreground="White"
-                                                            BorderBrush="{StaticResource ConversationSendBorderBrush}"
-                                                            BorderThickness="1"
-                                                            FontWeight="SemiBold"
-                                                            Cursor="Hand"
-                                                            Command="{Binding DataContext.Guide.ExecuteProgressActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"/>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    Margin="4,0,10,0"
+                                                    VerticalAlignment="Center"
+                                                    Text="{Binding DisplayName}"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    ToolTip="{Binding DisplayName}"/>
 
-                                            <ProgressBar
-                                                Grid.Column="3"
-                                                Height="8"
-                                                VerticalAlignment="Center"
-                                                Minimum="0"
-                                                Maximum="100"
-                                                Value="{Binding PercentComplete, Mode=OneWay}">
-                                                <ProgressBar.Style>
-                                                    <Style TargetType="ProgressBar">
-                                                        <Setter Property="IsIndeterminate" Value="False"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding State}" Value="Processing">
-                                                                <Setter Property="IsIndeterminate" Value="True"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </ProgressBar.Style>
-                                            </ProgressBar>
+                                                <ItemsControl
+                                                    Grid.Column="2"
+                                                    ItemsSource="{Binding Actions}"
+                                                    VerticalAlignment="Center">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <StackPanel Orientation="Horizontal"/>
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Button
+                                                                Margin="0,0,8,0"
+                                                                Padding="0"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Cursor="Hand"
+                                                                Command="{Binding DataContext.Guide.ExecuteProgressActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                CommandParameter="{Binding}">
+                                                                <TextBlock
+                                                                    Text="{Binding Label}"
+                                                                    TextDecorations="Underline"
+                                                                    Foreground="{StaticResource ConversationSendBrush}"/>
+                                                            </Button>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
 
-                                            <TextBlock
-                                                Grid.Column="4"
-                                                Margin="8,0,0,0"
-                                                VerticalAlignment="Center"
-                                                HorizontalAlignment="Right"
-                                                Text="{Binding PercentComplete, StringFormat={}{0}%}"/>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </Grid>
+                                <!-- WORKING -->
+                                <TextBlock
+                                    FontSize="17"
+                                    FontWeight="Bold"
+                                    Text="WORKING"
+                                    Margin="0,4,0,4">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Operation.HasWorkingItems}" Value="False">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <ListBox
+                                    ItemsSource="{Binding Operation.WorkingItems}"
+                                    MaxHeight="190"
+                                    BorderThickness="0"
+                                    Background="Transparent"
+                                    Margin="0,0,0,12"
+                                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                    VirtualizingPanel.IsVirtualizing="True"
+                                    VirtualizingPanel.VirtualizationMode="Recycling">
+                                    <ListBox.Style>
+                                        <Style TargetType="ListBox">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Operation.HasWorkingItems}" Value="False">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ListBox.Style>
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Margin" Value="0"/>
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Focusable" Value="False"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Height="30">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="●" VerticalAlignment="Center"/>
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    Margin="4,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Text="{Binding DisplayName}"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    ToolTip="{Binding Status}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <!-- COMPLETE -->
+                                <TextBlock
+                                    FontSize="17"
+                                    FontWeight="Bold"
+                                    Text="COMPLETE"
+                                    Margin="0,4,0,4">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Operation.HasCompleteItems}" Value="False">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <ListBox
+                                    ItemsSource="{Binding Operation.CompleteItems}"
+                                    MaxHeight="190"
+                                    BorderThickness="0"
+                                    Background="Transparent"
+                                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                    VirtualizingPanel.IsVirtualizing="True"
+                                    VirtualizingPanel.VirtualizationMode="Recycling">
+                                    <ListBox.Style>
+                                        <Style TargetType="ListBox">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Operation.HasCompleteItems}" Value="False">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ListBox.Style>
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Margin" Value="0"/>
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Focusable" Value="False"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Height="30">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="✓" VerticalAlignment="Center"/>
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    Margin="4,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Text="{Binding DisplayName}"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    ToolTip="{Binding DisplayName}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </ScrollViewer>
                     </Border>
 
                     <!-- ================================================= -->
@@ -515,8 +776,8 @@
                             <!-- Recommendation -->
                             <RowDefinition Height="Auto"/>
 
-                            <!-- Supporting Evidence - priority area -->
-                            <RowDefinition Height="*"/>
+                            <!-- Supporting Evidence - collapses completely when no recommendation exists -->
+                            <RowDefinition Height="Auto"/>
 
                             <!-- Rename Preview heading -->
                             <RowDefinition Height="Auto"/>
@@ -529,9 +790,30 @@
                 Grid.Row="0"
                 FontSize="30"
                 FontWeight="Bold"
-                Text="Scout's Recommendation"/>
+                Text="Scout's Recommendation">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Workspace.SelectedRecommendation}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
 
                         <StackPanel Grid.Row="1">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Workspace.SelectedRecommendation}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
 
                             <TextBlock
         FontSize="20"
@@ -840,73 +1122,6 @@ DataContext="{Binding Guide}"/>
             </Border>
 
         </Grid>
-
-        <!-- Action Button Bar -->
-
-        <Border Grid.Row="3"
-        Margin="0,20,0,0"
-        Padding="12"
-        CornerRadius="10"
-        Background="White"
-        BorderBrush="{StaticResource BorderBrush}"
-        BorderThickness="1">
-
-            <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Disabled">
-
-                <StackPanel Orientation="Horizontal">
-
-                    <ItemsControl ItemsSource="{Binding Guide.DecisionOptions}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Button Content="{Binding Text}"
-                                        Margin="0,0,8,0"
-                                        Padding="18,8"
-                                        Background="{StaticResource ConversationSendBrush}"
-                                        Foreground="White"
-                                        BorderBrush="{StaticResource ConversationSendBorderBrush}"
-                                        BorderThickness="1"
-                                        FontWeight="SemiBold"
-                                        Cursor="Hand"
-                                        Command="{Binding DataContext.Guide.SelectDecisionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        CommandParameter="{Binding}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <ItemsControl ItemsSource="{Binding Guide.ActionOptions}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Button Content="{Binding Label}"
-                                        Margin="0,0,8,0"
-                                        Padding="18,8"
-                                        Background="{StaticResource ConversationSendBrush}"
-                                        Foreground="White"
-                                        BorderBrush="{StaticResource ConversationSendBorderBrush}"
-                                        BorderThickness="1"
-                                        FontWeight="SemiBold"
-                                        Cursor="Hand"
-                                        Command="{Binding DataContext.Guide.SelectActionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        CommandParameter="{Binding}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                </StackPanel>
-
-            </ScrollViewer>
-
-        </Border>
 
     </Grid>
 

@@ -103,7 +103,7 @@ internal sealed class E_CoverConsultant
                 FoundSomething = true,
 
                 Summary =
-                    $"{report.MissingCovers} ebooks are missing cover images.",
+                    $"{EbookGrammar.CountNoun(report.MissingCovers)} {EbookGrammar.IsAre(report.MissingCovers)} missing cover images.",
 
                 Confidence = 1.0
             };

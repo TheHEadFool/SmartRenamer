@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization
@@ -125,10 +126,16 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                     if (string.IsNullOrWhiteSpace(extension))
                         extension = ".epub";
 
-                    string title = SanitizeFileName(
+                    string rawTitle =
                         string.IsNullOrWhiteSpace(item.Book.Title)
                             ? Path.GetFileNameWithoutExtension(item.Book.WorkingPath)
-                            : item.Book.Title);
+                            : item.Book.Title;
+
+                    string title = SanitizeFileName(
+                        NormalizeTitleForOrganizationFileName(
+                            rawTitle,
+                            item.Book.Series,
+                            item.Book.SeriesNumber));
 
                     string filePrefix =
                         organizeBySeries &&
@@ -245,6 +252,71 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                 OrganizationDimension.PublicationDate => "Unknown",
                 _ => string.Empty
             } ?? string.Empty;
+        }
+
+
+        /// <summary>
+        /// Removes a redundant series/series-number prefix from the physical
+        /// filename when those values have already been independently
+        /// established by the organization model. The series remains in the
+        /// folder hierarchy; it is not duplicated in the filename.
+        ///
+        /// Example:
+        ///     SERRAted Edge #02 - Wheels of Fire
+        /// becomes:
+        ///     Wheels of Fire
+        ///
+        /// No series name is hard-coded here, and the method refuses to strip
+        /// a prefix unless both Series and SeriesNumber are established.
+        /// </summary>
+        private static string NormalizeTitleForOrganizationFileName(
+            string title,
+            string series,
+            string seriesNumber)
+        {
+            if (string.IsNullOrWhiteSpace(title) ||
+                string.IsNullOrWhiteSpace(series) ||
+                string.IsNullOrWhiteSpace(seriesNumber))
+            {
+                return title;
+            }
+
+            decimal? establishedNumber =
+                GetSeriesNumberSortValue(seriesNumber);
+
+            if (!establishedNumber.HasValue)
+                return title;
+
+            string pattern =
+                "^\\s*" +
+                Regex.Escape(series.Trim()) +
+                "\\s*#\\s*(?<number>\\d+(?:\\.\\d+)?)" +
+                "\\s*-\\s*(?<title>.+)$";
+
+            Match match = Regex.Match(
+                title.Trim(),
+                pattern,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+            if (!match.Success)
+                return title;
+
+            if (!decimal.TryParse(
+                    match.Groups["number"].Value,
+                    NumberStyles.Number,
+                    CultureInfo.InvariantCulture,
+                    out decimal titleNumber) ||
+                titleNumber != establishedNumber.Value)
+            {
+                return title;
+            }
+
+            string normalizedTitle =
+                match.Groups["title"].Value.Trim();
+
+            return string.IsNullOrWhiteSpace(normalizedTitle)
+                ? title
+                : normalizedTitle;
         }
 
         private static string SanitizeFolderName(string value)

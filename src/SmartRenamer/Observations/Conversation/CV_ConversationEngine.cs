@@ -76,6 +76,17 @@ public sealed class CV_ConversationEngine
     }
 
     /// <summary>
+    /// True when Scout is waiting for the user to supply a free-form value
+    /// for a specific action/context. Background research must not erase this
+    /// state simply because its own result contains no input option.
+    /// </summary>
+    public bool HasPendingUserInput =>
+        _pendingActionOptions.Any(option =>
+            option.AcceptsUserInput &&
+            !string.IsNullOrWhiteSpace(option.ActionId) &&
+            !string.IsNullOrWhiteSpace(option.ContextId));
+
+    /// <summary>
     /// Clears the action options that are waiting for a user selection.
     /// The current selection has been consumed and should not remain active.
     /// </summary>
@@ -270,6 +281,11 @@ public sealed class CV_ConversationEngine
         if (inputOptions.Count == 1)
         {
             CV_ActionOption option = inputOptions[0];
+
+            // The value is now being consumed. Remove the input prompt before
+            // returning the request so a later background result cannot cause
+            // the same typed value to be submitted again.
+            _pendingActionOptions.Remove(option);
 
             return new CV_ActionRequest
             {

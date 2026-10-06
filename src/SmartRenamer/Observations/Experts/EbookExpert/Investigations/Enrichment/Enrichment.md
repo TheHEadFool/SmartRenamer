@@ -1,3 +1,24 @@
+# Enrichment Investigation — Current Implementation (2026-10-04)
+
+> This section is authoritative and supersedes older statements that describe external metadata recovery as future work.
+
+Enrichment identifies information that could improve an ebook collection. Current examples include Series, Description/Book Blurb, Cover, Publisher, and Language.
+
+The implemented external metadata recovery path is currently owned by the Ebook Expert repair/recovery pipeline rather than by this Investigation itself. This preserves the boundary: Enrichment can identify an opportunity, while Repair/Recovery determines whether and how a missing value can be safely restored.
+
+### Current external metadata sources
+
+- Open Library Search API — existing ISBN and metadata evidence source.
+- Google Books Volumes API — public book metadata source used for publisher and synopsis evidence when required.
+
+Goodreads is not currently an automated Scout provider. No Goodreads scraping is implied by this document.
+
+### Current boundary
+
+Enrichment does not directly modify EPUBs. It reports opportunities. The Repair pipeline owns candidate evaluation, authorization, protected working-copy repair, and re-observation.
+
+---
+
 ﻿# Enrichment Investigation
 
 ## Purpose

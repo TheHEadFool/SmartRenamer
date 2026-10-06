@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace SmartRenamer.Observations
 {
@@ -13,7 +13,8 @@ namespace SmartRenamer.Observations
         public ExpertDecisionOption(
             string id,
             string label,
-            ExpertDecisionInputKind inputKind = ExpertDecisionInputKind.None)
+            ExpertDecisionInputKind inputKind = ExpertDecisionInputKind.None,
+            string? description = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(id);
             ArgumentException.ThrowIfNullOrWhiteSpace(label);
@@ -21,6 +22,7 @@ namespace SmartRenamer.Observations
             Id = id;
             Label = label;
             InputKind = inputKind;
+            Description = description ?? string.Empty;
         }
 
         /// <summary>
@@ -32,6 +34,12 @@ namespace SmartRenamer.Observations
         /// Human-readable text presented to the user.
         /// </summary>
         public string Label { get; }
+
+        /// <summary>
+        /// Optional explanation of what selecting this option will do.
+        /// The Guide transports this text without interpreting it.
+        /// </summary>
+        public string Description { get; }
 
         /// <summary>
         /// Describes the generic input, if any, required to complete this

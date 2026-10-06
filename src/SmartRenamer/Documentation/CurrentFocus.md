@@ -1,4 +1,4 @@
-﻿# Current Sprint
+# Current Sprint
 
 Last Updated:
 2026-09-12
@@ -254,3 +254,14 @@ Handoff / Completion
 
 Only after the Ebook Expert proves this pattern should the architecture be
 generalized to additional Experts.
+
+
+## Current UX Focus — 2026-10-04
+
+EbookExpert is in runtime validation and hardening. The current presentation model is intentionally separated into three surfaces:
+
+- **Conversation:** explains Scout's work, findings, and what decision is needed.
+- **Scout Controls:** left-panel buttons for direct/expert operation.
+- **Live Report:** collection dashboard and per-item attention actions.
+
+Organization choices are not conversational-only. When the expedition reaches organization, Scout Controls exposes the destination choice first and the organization-style choice second. Both are required before organization executes.

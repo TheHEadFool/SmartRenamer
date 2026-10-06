@@ -1,4 +1,4 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to SmartRenamer are documented here.
 
@@ -71,3 +71,12 @@ Sprint 1
 - Undo.
 - Multi-step workflows.
 - Multiple capabilities.
+
+## 2026-10-04 — Scout Controls / Organization Choice Surface
+
+- Established the left **Scout Controls** panel as the direct-action surface for expert and transitional users.
+- Kept conversation as the explanatory/narrative surface rather than duplicating action buttons inside the transcript.
+- Discovery choices, Expert decisions, and action options use the same Guide execution path whether selected by button or supplied through conversation.
+- Added generic option descriptions so organization choices can explain their consequences without embedding Ebook-specific logic in the Guide.
+- Organization now presents destination and organization style as separate user decisions.
+- Documented `Author → Series → Title`, including the rule that books without established series evidence remain directly under the author rather than being assigned a fabricated series.

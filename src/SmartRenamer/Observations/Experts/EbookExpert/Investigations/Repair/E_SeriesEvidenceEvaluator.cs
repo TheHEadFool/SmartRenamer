@@ -157,6 +157,35 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 }
             }
 
+            // Some EPUBs encode the series position in dc:title even when
+            // the structured SeriesNumber field is absent. Interpret that
+            // title as position evidence only when its series portion agrees
+            // with the EPUB's own Series observation. This is evidence, not
+            // a rule for manufacturing a number from collection order.
+            if (!string.IsNullOrWhiteSpace(record.Metadata.Title))
+            {
+                Match titleMatch = ExplicitFilenameSeriesPattern.Match(
+                    record.Metadata.Title.Trim());
+
+                if (titleMatch.Success &&
+                    signals.Any(signal =>
+                        string.Equals(
+                            signal.Source,
+                            "EPUB Metadata",
+                            StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(
+                            NormalizeSeriesKey(signal.Value),
+                            NormalizeSeriesKey(
+                                titleMatch.Groups["series"].Value.Trim()),
+                            StringComparison.OrdinalIgnoreCase)))
+                {
+                    numberSignals.Add(
+                        new SeriesNumberSignal(
+                            titleMatch.Groups["number"].Value.Trim(),
+                            "EPUB Metadata Title"));
+                }
+            }
+
             //---------------------------------------------------------
             // If the EPUB already contains one consistent Series value,
             // preserve that observed value. The evaluator does not replace

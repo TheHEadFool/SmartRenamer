@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Conversation;
+using Scout.Observations.Conversation;
 using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Action;
@@ -101,6 +101,22 @@ namespace SmartRenamer.Observations
         public EbookExpert()
         {
             E_RepairWorkspace.CleanupAbandonedWorkspaces();
+
+            // External research is owned by EbookExpert. Forward its opaque
+            // completion through the generic Observation Framework so the
+            // workflow can re-observe the affected branch without knowing
+            // anything about ISBN, Publisher, or Summary research.
+            _actionDispatcher.BackgroundActionCompleted +=
+                ActionDispatcher_BackgroundActionCompleted;
+        }
+
+        private void ActionDispatcher_BackgroundActionCompleted(
+            string contextId,
+            CV_ActionResult result)
+        {
+            ReportBackgroundActionCompleted(
+                contextId,
+                result);
         }
 
         //---------------------------------------------------------
@@ -350,12 +366,15 @@ namespace SmartRenamer.Observations
                         [
                             new ExpertDecisionOption(
                                 "organization-destination-default",
-                                "Use this destination"),
+                                "Use this destination",
+                                ExpertDecisionInputKind.None,
+                                $"Create the organized copy under {destination}. The original ebook collection remains protected."),
 
                             new ExpertDecisionOption(
                                 "organization-destination-browse",
-                                "Choose a different destination",
-                                ExpertDecisionInputKind.Folder)
+                                "Different Destination",
+                                ExpertDecisionInputKind.Folder,
+                                "Choose another folder for the organized copy. Scout will not modify the original collection.")
                         ]
                     };
                 }
@@ -379,7 +398,9 @@ namespace SmartRenamer.Observations
                             .Select(path =>
                                 new ExpertDecisionOption(
                                     path.Id,
-                                    path.Label))
+                                    path.Label,
+                                    ExpertDecisionInputKind.None,
+                                    path.Description))
                             .ToArray()
                 };
             }
@@ -638,6 +659,7 @@ namespace SmartRenamer.Observations
 
             if (newEbookExpedition)
             {
+                _actionDispatcher.ResetAutomaticRecoveryState();
                 _organizationDecisionHistory.Clear();
                 _organizationDestinationConfirmed = false;
                 _organizationPathOptions =
@@ -1168,42 +1190,34 @@ namespace SmartRenamer.Observations
                                 originalPath,
                                 StringComparison.OrdinalIgnoreCase));
 
+                    bool researching =
+                        _actionDispatcher.IsExternalResearching(originalPath);
+
+                    RepairOpportunity? opportunity =
+                        _repairInvestigation.GetRepairOpportunitiesFor(originalPath)
+                            .FirstOrDefault();
+
                     IReadOnlyList<ExecutionProgressAction> actions =
-                        waiting
-                            ? new[]
-                            {
-                                new ExecutionProgressAction
-                                {
-                                    Id = $"EditInformation:{originalPath}",
-                                    Label = "Edit / add information",
-                                    ActionId = "AddRepairInformation",
-                                    ContextId = originalPath
-                                },
-                                new ExecutionProgressAction
-                                {
-                                    Id = $"AcceptAsIs:{originalPath}",
-                                    Label = "Accept as-is and organize",
-                                    ActionId = "AcceptAsIs",
-                                    ContextId = originalPath
-                                },
-                                new ExecutionProgressAction
-                                {
-                                    Id = $"OmitEbook:{originalPath}",
-                                    Label = "Omit",
-                                    ActionId = "OmitEbook",
-                                    ContextId = originalPath
-                                }
-                            }
-                            : Array.Empty<ExecutionProgressAction>();
+                        researching || !waiting || opportunity == null
+                            ? Array.Empty<ExecutionProgressAction>()
+                            : BuildNeedsActions(opportunity, originalPath);
 
                     return new ExecutionProgressItem
                     {
                         Key = originalPath,
                         DisplayName = file.CurrentName,
-                        State = "Unorganized",
-                        Status = waiting
-                            ? "Waiting for repair or decision."
-                            : "Not yet organized.",
+                        IsPinned = string.Equals(
+                            _repairInvestigation.CurrentFile?.OriginalFullPath,
+                            originalPath,
+                            StringComparison.OrdinalIgnoreCase),
+                        State = researching
+                            ? "Researching"
+                            : "Unorganized",
+                        Status = researching
+                            ? "Scout is researching missing metadata in the background."
+                            : waiting
+                                ? "Waiting for repair or decision."
+                                : "Not yet organized.",
                         Completed = 0,
                         Total = 1,
                         Actions = actions
@@ -1219,6 +1233,87 @@ namespace SmartRenamer.Observations
                 .ToList();
         }
 
+        private static IReadOnlyList<ExecutionProgressAction> BuildNeedsActions(
+            RepairOpportunity opportunity,
+            string originalPath)
+        {
+            List<ExecutionProgressAction> actions = new();
+
+            void AddField(string field, bool missing)
+            {
+                if (!missing)
+                    return;
+
+                actions.Add(
+                    new ExecutionProgressAction
+                    {
+                        Id = $"AddRepairInformation:{field}:{originalPath}",
+                        Label = field,
+                        ActionId = "AddRepairInformation",
+                        ContextId = originalPath
+                    });
+            }
+
+            // Keep the order useful to the human: narrative metadata first,
+            // then identifying/technical metadata. Only genuinely unresolved
+            // fields are shown.
+            AddField("Summary", opportunity.MissingDescription);
+            AddField("Publisher", opportunity.MissingPublisher);
+            AddField("ISBN", opportunity.MissingIsbn);
+            AddField("Title", opportunity.MissingTitle);
+            AddField("Author", opportunity.MissingAuthor);
+            AddField("Language", opportunity.MissingLanguage);
+
+            if (opportunity.IdentityEvaluation?.RepairRequired == true)
+            {
+                SeriesEvidenceEvaluation? series =
+                    opportunity.IdentityEvaluation.SeriesEvaluation;
+
+                bool seriesNeedsDecision =
+                    series?.State == SeriesEvidenceState.Resolved &&
+                    !string.IsNullOrWhiteSpace(
+                        opportunity.IdentityEvaluation.Candidate?.Series) &&
+                    !string.Equals(
+                        opportunity.Record.Metadata.Series,
+                        opportunity.IdentityEvaluation.Candidate.Series,
+                        StringComparison.OrdinalIgnoreCase);
+
+                AddField("Series", seriesNeedsDecision);
+
+                bool seriesNumberNeedsDecision =
+                    !string.IsNullOrWhiteSpace(
+                        opportunity.IdentityEvaluation.Candidate?.SeriesNumber) &&
+                    !string.Equals(
+                        opportunity.Record.Metadata.SeriesNumber,
+                        opportunity.IdentityEvaluation.Candidate.SeriesNumber,
+                        StringComparison.OrdinalIgnoreCase);
+
+                AddField("Series Number", seriesNumberNeedsDecision);
+            }
+
+            AddField("Cover", opportunity.MissingCover);
+
+            actions.Add(
+                new ExecutionProgressAction
+                {
+                    Id = $"AcceptAsIs:{originalPath}",
+                    Label = "Accept as-is",
+                    ActionId = "AcceptAsIs",
+                    ContextId = originalPath
+                });
+
+            actions.Add(
+                new ExecutionProgressAction
+                {
+                    Id = $"OmitEbook:{originalPath}",
+                    Label = "Omit",
+                    ActionId = "OmitEbook",
+                    ContextId = originalPath
+                });
+
+            return actions;
+        }
+
         private void ReportProgress(
             IProgress<ExecutionProgress>? progress,
             int stageCompleted,
@@ -1227,26 +1322,6 @@ namespace SmartRenamer.Observations
         {
             if (progress == null)
                 return;
-
-            int collectionTotal =
-                _repairInvestigation.ExpeditionTotal;
-
-            int collectionCompleted =
-                _repairInvestigation.ExpeditionCompleted;
-
-            int collectionProcessing =
-                _repairInvestigation.ExpeditionProcessing;
-
-            int collectionPending =
-                _repairInvestigation.ExpeditionPending;
-
-            int collectionWaiting =
-                _repairInvestigation.UnresolvedRepairPaths.Count;
-
-            int collectionActive =
-                Math.Max(
-                    0,
-                    collectionProcessing - collectionWaiting);
 
             // Before Organization has been committed, the collection
             // progress must come from the repair-aware view. Organization's
@@ -1258,6 +1333,50 @@ namespace SmartRenamer.Observations
                 _organizationInvestigation.ProgressItems.Count > 0
                     ? _organizationInvestigation.ProgressItems
                     : BuildCollectionProgressItems();
+
+            int collectionTotal =
+                _repairInvestigation.ExpeditionTotal;
+
+            int collectionCompleted =
+                _repairInvestigation.ExpeditionCompleted;
+
+            int collectionWaiting =
+                _repairInvestigation.UnresolvedRepairPaths.Count;
+
+            int collectionProcessing =
+                _repairInvestigation.ExpeditionProcessing;
+
+            int collectionPending =
+                _repairInvestigation.ExpeditionPending;
+
+            int collectionActive =
+                Math.Max(
+                    0,
+                        collectionProcessing - collectionWaiting);
+
+            if (!_organizationCommitted && items.Count > 0)
+            {
+                // The repair investigation's legacy processing counter treats
+                // unresolved and externally researched branches alike. That
+                // made a screen showing two actively researched books and one
+                // user decision read "Processing 0 / Waiting 3". The live item
+                // states are more truthful: NEEDS is user attention,
+                // Researching is actual background work, and everything else is
+                // pending.
+                collectionCompleted = items.Count(item => item.IsCompleted);
+                collectionWaiting = items.Count(item => item.NeedsUserAttention);
+                collectionProcessing = items.Count(item =>
+                    string.Equals(
+                        item.State,
+                        "Researching",
+                        StringComparison.OrdinalIgnoreCase));
+                collectionPending = Math.Max(
+                    0,
+                    items.Count -
+                    collectionCompleted -
+                    collectionWaiting -
+                    collectionProcessing);
+            }
 
             progress.Report(
                 new ExecutionProgress
@@ -1403,6 +1522,37 @@ namespace SmartRenamer.Observations
             return opportunity.MissingIsbn
                 ? "ISBN"
                 : null;
+        }
+
+        private static string? TryGetRequestedField(string? optionId)
+        {
+            if (string.IsNullOrWhiteSpace(optionId) ||
+                !optionId.StartsWith(
+                    "AddRepairInformation:",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            string remainder =
+                optionId["AddRepairInformation:".Length..];
+
+            int separator = remainder.IndexOf(':');
+
+            return (separator >= 0 ? remainder[..separator] : remainder).Trim() switch
+            {
+                "Summary" => "Description",
+                "Series Number" => "SeriesNumber",
+                "Title" => "Title",
+                "Author" => "Author",
+                "Publisher" => "Publisher",
+                "ISBN" => "ISBN",
+                "Language" => "Language",
+                "Description" => "Description",
+                "Cover" => "Cover",
+                "Series" => "Series",
+                _ => null
+            };
         }
 
         private static string NormalizeUserProvidedFieldValue(
@@ -1637,6 +1787,46 @@ namespace SmartRenamer.Observations
             // Unresolved repair user decisions
             //---------------------------------------------------------
 
+            if (string.Equals(request.ActionId, "AcceptAllAsIs", StringComparison.OrdinalIgnoreCase))
+            {
+                IReadOnlyList<string> needsDecision =
+                    _repairInvestigation.UnresolvedRepairPaths
+                        .Where(originalPath =>
+                            !_actionDispatcher.IsExternalResearching(originalPath) &&
+                            _repairInvestigation.GetRepairOpportunitiesFor(originalPath).Count > 0)
+                        .ToList();
+
+                int accepted = 0;
+
+                foreach (string originalPath in needsDecision)
+                {
+                    bool resolved =
+                        _repairInvestigation.ResolveUserDecision(
+                            originalPath,
+                            E_RepairHandoffStatus.AcceptedAsIs,
+                            "The user accepted all books currently requiring attention as-is.");
+
+                    if (resolved)
+                    {
+                        accepted++;
+                        _awaitingRepairInformationField.Remove(originalPath);
+                    }
+                }
+
+                if (accepted > 0)
+                    RefreshOrganizationAfterRepairDecision();
+
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = true,
+                    RequiresReobservation = accepted > 0,
+                    Message = accepted == 0
+                        ? "There are no books currently requiring a user decision."
+                        : $"I accepted {accepted} book{(accepted == 1 ? "" : "s")} as-is. I will continue toward Organization."
+                };
+            }
+
             if (string.Equals(request.ActionId, "AcceptAsIs", StringComparison.OrdinalIgnoreCase))
             {
                 bool resolved =
@@ -1775,6 +1965,21 @@ namespace SmartRenamer.Observations
                     };
                 }
 
+                string? requestedFieldFromAction =
+                    TryGetRequestedField(request.OptionId);
+
+                if (!string.IsNullOrWhiteSpace(requestedFieldFromAction) &&
+                    string.IsNullOrWhiteSpace(request.UserInput))
+                {
+                    _awaitingRepairInformationField[request.ContextId] =
+                        requestedFieldFromAction;
+
+                    return BuildUserRepairInformationPrompt(
+                        request,
+                        requestedFieldFromAction,
+                        null);
+                }
+
                 if (!string.IsNullOrWhiteSpace(request.UserInput) &&
                     _awaitingRepairInformationField.TryGetValue(
                         request.ContextId,
@@ -1797,6 +2002,12 @@ namespace SmartRenamer.Observations
                         request.ContextId,
                         requestedField,
                         suppliedValue);
+
+                    // New user evidence makes a previous external-research
+                    // attempt stale. Allow the same recovery capability to
+                    // run again against the richer evidence.
+                    _actionDispatcher.ResetAutomaticRecoveryAttempt(
+                        request.ContextId);
 
                     CV_ActionResult userInformationResult =
                         _actionDispatcher.ApplyUserProvidedMetadata(

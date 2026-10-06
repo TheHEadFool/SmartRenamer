@@ -195,8 +195,9 @@ namespace Scout.Observations.Conversation
                 ?? string.Empty;
 
             string question =
-                recommendation.Question?.Trim()
-                ?? string.Empty;
+                recommendation.RequiresUserDecision
+                    ? recommendation.Question?.Trim() ?? string.Empty
+                    : string.Empty;
 
             string reason =
                 recommendation.Reason?.Trim()
@@ -244,6 +245,11 @@ namespace Scout.Observations.Conversation
             else if (!string.IsNullOrWhiteSpace(reason))
             {
                 parts.Add(reason);
+            }
+            else if (!recommendation.RequiresUserDecision &&
+                     !string.IsNullOrWhiteSpace(title))
+            {
+                parts.Add(title.EndsWith(".") ? title : title + ".");
             }
             else if (!string.IsNullOrWhiteSpace(title))
             {

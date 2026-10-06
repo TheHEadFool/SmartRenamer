@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Experts.EbookExpert.Data;
+using Scout.Observations.Experts.EbookExpert.Data;
 using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
@@ -7,6 +7,7 @@ using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -226,6 +227,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
             List<OrganizationBook> books = new();
 
+            // Organization is collection-aware. A shared-author book should
+            // not split an otherwise coherent series merely because that book
+            // lists its co-author first. Keep series-level author evidence while
+            // the per-book snapshots are being built, then apply one primary
+            // author to the whole series when the evidence supports it.
+            Dictionary<string, Dictionary<string, int>> seriesAuthorScores =
+                new(StringComparer.OrdinalIgnoreCase);
+
             foreach (MetadataRecord record in _metadataReport.Records)
             {
                 if (record == null ||
@@ -259,29 +268,241 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                         handoff.WorkingPath;
                 }
 
+                // Organization consumes the identity that Ebook Expert has
+                // already resolved, not merely the raw metadata snapshot.
+                // This boundary is important because a book can have strong
+                // filename/opening/folder evidence that corrects a malformed
+                // Title while the physical repair handoff is still represented
+                // separately. Organization must not throw that resolved
+                // identity away and fall back to the contaminated raw Title.
+                BookIdentityEvaluation identityEvaluation =
+                    new E_BookIdentityEvaluator().Evaluate(record);
+
+                bool acceptObservedIdentity =
+                    handoff?.Status == E_RepairHandoffStatus.AcceptedAsIs;
+
+                string organizationTitle =
+                    record.Metadata.Title?.Trim() ?? string.Empty;
+
+                string organizationAuthor =
+                    GetPrimaryAuthor(record.Metadata.Author);
+
                 string organizationSeries =
-                    GetOrganizationSeries(
-                        record,
-                        handoff);
+                    record.Metadata.Series?.Trim() ?? string.Empty;
+
+                string organizationSeriesNumber =
+                    record.Metadata.SeriesNumber?.Trim() ?? string.Empty;
+
+                if (!acceptObservedIdentity)
+                {
+                    BookIdentityCandidate? candidate =
+                        identityEvaluation.Candidate;
+
+                    if (candidate != null)
+                    {
+                        if (!string.IsNullOrWhiteSpace(candidate.Title))
+                            organizationTitle = candidate.Title.Trim();
+
+                        if (!string.IsNullOrWhiteSpace(candidate.Authors))
+                        {
+                            organizationAuthor =
+                                GetPrimaryAuthor(candidate.Authors);
+                        }
+                    }
+
+                    if (identityEvaluation.SeriesEvaluation?.State ==
+                        SeriesEvidenceState.Resolved)
+                    {
+                        if (!string.IsNullOrWhiteSpace(
+                                identityEvaluation.SeriesEvaluation.CandidateSeries))
+                        {
+                            organizationSeries =
+                                identityEvaluation.SeriesEvaluation
+                                    .CandidateSeries.Trim();
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(
+                                identityEvaluation.SeriesEvaluation.CandidateSeriesNumber))
+                        {
+                            organizationSeriesNumber =
+                                identityEvaluation.SeriesEvaluation
+                                    .CandidateSeriesNumber.Trim();
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(organizationSeries))
+                {
+                    AddSeriesAuthorEvidence(
+                        seriesAuthorScores,
+                        organizationSeries,
+                        record.Metadata.Author,
+                        originalPath);
+
+                    if (!acceptObservedIdentity &&
+                        !string.IsNullOrWhiteSpace(
+                            identityEvaluation.Candidate?.Authors))
+                    {
+                        AddSeriesAuthorEvidence(
+                            seriesAuthorScores,
+                            organizationSeries,
+                            identityEvaluation.Candidate.Authors,
+                            originalPath,
+                            firstAuthorWeight: 2,
+                            additionalAuthorWeight: 1);
+                    }
+                }
 
                 books.Add(
                     new OrganizationBook
                     {
                         OriginalPath = originalPath,
                         WorkingPath = workingPath,
-                        Title = record.Metadata.Title,
-                        Author = GetPrimaryAuthor(record.Metadata.Author),
+                        Title = organizationTitle,
+                        Author = organizationAuthor,
                         Series = organizationSeries,
-                        SeriesNumber = GetOrganizationSeriesNumber(
-                            record,
-                            handoff),
+                        SeriesNumber = organizationSeriesNumber,
                         Publisher = record.Metadata.Publisher,
                         Isbn = record.Metadata.Isbn,
                         Language = record.Metadata.Language
                     });
             }
 
+            // Apply the collection-level primary author only where the
+            // evidence produces a clear winner. A tie is deliberately left
+            // alone rather than inventing an author assignment.
+            foreach (IGrouping<string, OrganizationBook> group in
+                     books.Where(book => !string.IsNullOrWhiteSpace(book.Series))
+                          .GroupBy(
+                              book => book.Series.Trim(),
+                              StringComparer.OrdinalIgnoreCase))
+            {
+                if (!seriesAuthorScores.TryGetValue(
+                        group.Key,
+                        out Dictionary<string, int>? scores) ||
+                    scores.Count == 0)
+                {
+                    continue;
+                }
+
+                IOrderedEnumerable<KeyValuePair<string, int>> ranked =
+                    scores.OrderByDescending(pair => pair.Value)
+                          .ThenBy(
+                              pair => pair.Key,
+                              StringComparer.OrdinalIgnoreCase);
+
+                KeyValuePair<string, int> winner = ranked.First();
+                int runnerUp = ranked.Skip(1)
+                    .Select(pair => pair.Value)
+                    .FirstOrDefault(int.MinValue);
+
+                if (scores.Count > 1 && winner.Value <= runnerUp)
+                    continue;
+
+                for (int index = 0; index < books.Count; index++)
+                {
+                    OrganizationBook book = books[index];
+
+                    if (!string.Equals(
+                            book.Series,
+                            group.Key,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    books[index] = new OrganizationBook
+                    {
+                        OriginalPath = book.OriginalPath,
+                        WorkingPath = book.WorkingPath,
+                        Title = book.Title,
+                        Author = winner.Key,
+                        Series = book.Series,
+                        SeriesNumber = book.SeriesNumber,
+                        Publisher = book.Publisher,
+                        Isbn = book.Isbn,
+                        Language = book.Language
+                    };
+                }
+            }
+
             return books;
+        }
+
+        private static void AddSeriesAuthorEvidence(
+            Dictionary<string, Dictionary<string, int>> scoresBySeries,
+            string series,
+            string authorValue,
+            string originalPath,
+            int firstAuthorWeight = 3,
+            int additionalAuthorWeight = 1)
+        {
+            string[] authors = SplitAuthors(authorValue);
+
+            if (authors.Length == 0)
+                return;
+
+            if (!scoresBySeries.TryGetValue(
+                    series.Trim(),
+                    out Dictionary<string, int>? scores))
+            {
+                scores = new Dictionary<string, int>(
+                    StringComparer.OrdinalIgnoreCase);
+                scoresBySeries[series.Trim()] = scores;
+            }
+
+            for (int index = 0; index < authors.Length; index++)
+            {
+                string author = authors[index];
+                int weight =
+                    index == 0
+                        ? firstAuthorWeight
+                        : additionalAuthorWeight;
+
+                scores[author] =
+                    scores.TryGetValue(author, out int current)
+                        ? current + weight
+                        : weight;
+            }
+
+            // A collection folder named for an author is strong organization
+            // evidence. Only award that bonus when the folder name actually
+            // matches an author already present in the book's creator list;
+            // this prevents a series folder or arbitrary directory name from
+            // manufacturing a new author.
+            string? parentName =
+                Path.GetDirectoryName(originalPath) is string directory
+                    ? Path.GetFileName(directory)
+                    : null;
+
+            if (!string.IsNullOrWhiteSpace(parentName))
+            {
+                string? matchingAuthor = authors.FirstOrDefault(author =>
+                    string.Equals(
+                        author,
+                        parentName.Trim(),
+                        StringComparison.OrdinalIgnoreCase));
+
+                if (!string.IsNullOrWhiteSpace(matchingAuthor))
+                {
+                    scores[matchingAuthor] =
+                        scores[matchingAuthor] + 3;
+                }
+            }
+        }
+
+        private static string[] SplitAuthors(string authorValue)
+        {
+            if (string.IsNullOrWhiteSpace(authorValue))
+                return Array.Empty<string>();
+
+            return authorValue
+                .Split(
+                    ';',
+                    StringSplitOptions.RemoveEmptyEntries |
+                    StringSplitOptions.TrimEntries)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .ToArray();
         }
 
         /// <summary>

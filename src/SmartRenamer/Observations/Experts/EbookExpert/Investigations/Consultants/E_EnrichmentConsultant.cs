@@ -111,7 +111,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
                     {
                         FoundSomething = true,
                         Summary =
-                            $"{report.MissingSeries} ebooks are missing series information."
+                            $"{EbookGrammar.CountNoun(report.MissingSeries)} {EbookGrammar.IsAre(report.MissingSeries)} missing series information."
                     });
             }
 
@@ -129,7 +129,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
                     {
                         FoundSomething = true,
                         Summary =
-                            $"{report.MissingDescriptions} ebooks are missing descriptions."
+                            $"{EbookGrammar.CountNoun(report.MissingDescriptions)} {EbookGrammar.IsAre(report.MissingDescriptions)} missing descriptions."
                     });
             }
 

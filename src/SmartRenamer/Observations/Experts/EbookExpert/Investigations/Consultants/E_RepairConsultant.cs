@@ -101,7 +101,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
                 {
                     FoundSomething = true,
                     Summary =
-                        $"{report.MissingIsbns} ebooks are missing ISBN information.",
+                        $"{EbookGrammar.CountNoun(report.MissingIsbns)} {EbookGrammar.IsAre(report.MissingIsbns)} missing ISBN information.",
                     Confidence = 1.0
                 };
 

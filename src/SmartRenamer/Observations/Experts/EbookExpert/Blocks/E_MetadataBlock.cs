@@ -435,9 +435,23 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                 sourceFolderPath,
                 "Collection-context evidence; folder name may support or contradict a series candidate and is not interpreted here.");
 
+            // Filename identity evidence must preserve the protected
+            // original source name. CurrentName is mutable: Repair and
+            // other workflow stages may point the FileContext at a working
+            // representation or otherwise change its current presentation.
+            // Losing the original filename here can discard strong local
+            // evidence such as:
+            //
+            //     SERRAted Edge #02 - Wheels of Fire
+            //
+            // The original filename is evidence about the user's source
+            // collection and must remain stable for downstream identity and
+            // Series/SeriesNumber evaluation.
             string fileName =
                 System.IO.Path.GetFileNameWithoutExtension(
-                    file.CurrentName);
+                    string.IsNullOrWhiteSpace(file.OriginalName)
+                        ? file.CurrentName
+                        : file.OriginalName);
 
             AddObservedEvidence(
                 record,
@@ -445,8 +459,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                 "Filename",
                 "Filename",
                 fileName,
-                file.CurrentName,
-                "Candidate identity evidence; not interpreted here.");
+                string.IsNullOrWhiteSpace(file.OriginalName)
+                    ? file.CurrentName
+                    : file.OriginalName,
+                "Candidate identity evidence from the protected original source filename; not interpreted here.");
 
             try
             {

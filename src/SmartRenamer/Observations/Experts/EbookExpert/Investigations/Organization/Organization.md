@@ -1,4 +1,4 @@
-﻿# Organization Investigation
+# Organization Investigation
 
 ## Purpose
 
@@ -23,7 +23,7 @@ OrganizationReport
 
 ---
 
-## Future Consultants
+## Current Consultants / Boundaries
 
 - Series Consultant
 - Author Consultant
@@ -31,7 +31,7 @@ OrganizationReport
 
 ---
 
-## Future Blocks
+## Current Planning / Execution Components
 
 - Series Parser
 - Folder Analyzer
@@ -79,7 +79,7 @@ Organization describes relationships between books.
 
 It never renames files.
 
-state as of September 12, 2026.
+historical note retained; current implementation is documented in Ebook Expert Progress.
 
 Correctly distinguishes Organization Investigation from Organization execution.
 Documents the existing Organization pieces.

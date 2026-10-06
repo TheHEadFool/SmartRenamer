@@ -167,6 +167,14 @@ namespace Scout.Observations.Conversation
         public string ActionText { get; init; } = string.Empty;
 
         /// <summary>
+        /// Indicates that this recommendation represents a decision Scout
+        /// actually needs the user to make now. Informational findings and
+        /// background-research opportunities must not be phrased as a
+        /// question merely because the Expert supplied a follow-up question.
+        /// </summary>
+        public bool RequiresUserDecision { get; init; }
+
+        /// <summary>
         /// Indicates whether this recommendation exposes a next-step action.
         /// </summary>
         public bool HasAction =>

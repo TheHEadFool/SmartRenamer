@@ -20,6 +20,13 @@
         public string WorkingPath { get; init; } = "";
 
         /// <summary>
+        /// True when this book is currently eligible for physical organization.
+        /// An unresolved repair may remain in the organization snapshot for
+        /// tracking while remaining excluded from the final copy plan.
+        /// </summary>
+        public bool EligibleForOrganization { get; init; } = true;
+
+        /// <summary>
         /// Ebook title.
         /// </summary>
         public string Title { get; init; } = "";

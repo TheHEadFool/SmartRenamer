@@ -1,10 +1,12 @@
 using Scout.Observations.Conversation;
+using Scout.Observations.Experts.EbookExpert.Data;
 using Scout.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Observations.Experts.EbookExpert.Resources;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -69,6 +71,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             _researchedIsbnCandidates =
                 new(StringComparer.OrdinalIgnoreCase);
 
+        private readonly HashSet<string> _metadataResearchAttempts =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        private readonly Dictionary<string, List<MetadataResearchCandidate>>
+            _researchedMetadataCandidates =
+                new(StringComparer.OrdinalIgnoreCase);
+
         private readonly object _researchCacheLock = new();
 
         /// <summary>
@@ -90,7 +99,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
             lock (_externalResearchingPaths)
             {
-                return _externalResearchingPaths.Contains(originalPath);
+                return _externalResearchingPaths.Contains(originalPath) ||
+                       _externalResearchingPaths.Contains("metadata:" + originalPath);
             }
         }
 
@@ -123,6 +133,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         public void ResetAutomaticRecoveryState()
         {
             _automaticIsbnResearchAttempts.Clear();
+            _metadataResearchAttempts.Clear();
             _externalResearchCoordinator.Reset();
 
             lock (_externalResearchingPaths)
@@ -141,10 +152,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             if (!string.IsNullOrWhiteSpace(originalPath))
             {
                 _automaticIsbnResearchAttempts.Remove(originalPath);
+                _metadataResearchAttempts.Remove(originalPath);
 
                 lock (_researchCacheLock)
                 {
                     _researchedIsbnCandidates.Remove(originalPath);
+                    _researchedMetadataCandidates.Remove(originalPath);
                 }
             }
         }
@@ -188,10 +201,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             //---------------------------------------------------------
 
             if (!string.IsNullOrWhiteSpace(request.OptionId) &&
-                string.Equals(
+                (string.Equals(
                     request.ActionId,
                     "ResearchMissingIsbn",
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(
+                    request.ActionId,
+                    "BackgroundResearchMissingIsbn",
+                    StringComparison.OrdinalIgnoreCase)))
             {
                 return SelectIsbnCandidate(
                     request,
@@ -209,6 +226,17 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     opportunities);
             }
 
+            if (!string.IsNullOrWhiteSpace(request.OptionId) &&
+                string.Equals(
+                    request.ActionId,
+                    "SelectMetadataCandidate",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return SelectMetadataCandidate(
+                    request,
+                    opportunities);
+            }
+
             return request.ActionId switch
             {
                 "ResearchMissingIsbn" =>
@@ -217,6 +245,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                         opportunities,
                         automaticAuthorization,
                         userEvidence,
+                        automaticAuthorizationProvider,
+                        currentOpportunityResolver),
+
+                "ResearchMissingMetadata" =>
+                    ResearchMissingMetadata(
+                        request,
+                        opportunities,
+                        automaticAuthorization,
                         automaticAuthorizationProvider,
                         currentOpportunityResolver),
 
@@ -650,7 +686,18 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             // If the user has not authorized automatic repairs, this pass
             // must not execute any physical repair.
             if (!automaticAuthorization)
+            {
+                foreach (RepairOpportunity opportunity in opportunities)
+                {
+                    QueueBackgroundRecoveryIfNeeded(
+                        opportunity,
+                        automaticAuthorization,
+                        automaticAuthorizationProvider,
+                        currentOpportunityResolver);
+                }
+
                 return false;
+            }
 
             bool repairApplied = false;
 
@@ -665,6 +712,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
                 if (string.IsNullOrWhiteSpace(originalPath))
                     continue;
+
+                QueueBackgroundRecoveryIfNeeded(
+                    opportunity,
+                    automaticAuthorization,
+                    automaticAuthorizationProvider,
+                    currentOpportunityResolver);
 
                 //---------------------------------------------------------
                 // Existing ISBN vertical slice.
@@ -882,6 +935,441 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             return repairApplied;
         }
 
+        private void QueueBackgroundRecoveryIfNeeded(
+            RepairOpportunity opportunity,
+            bool automaticAuthorization,
+            Func<bool>? automaticAuthorizationProvider,
+            Func<string, RepairOpportunity?>? currentOpportunityResolver)
+        {
+            if (opportunity?.Record?.Metadata == null)
+                return;
+
+            if (opportunity.MissingIsbn &&
+                _automaticIsbnResearchAttempts.Add(
+                    opportunity.Record.File?.OriginalFullPath ?? string.Empty))
+            {
+                QueueAutomaticIsbnResearch(
+                    opportunity,
+                    automaticAuthorization,
+                    automaticAuthorizationProvider,
+                    currentOpportunityResolver);
+            }
+
+            if ((opportunity.MissingPublisher || opportunity.MissingDescription) &&
+                !string.IsNullOrWhiteSpace(opportunity.Record.File?.OriginalFullPath))
+            {
+                string path = opportunity.Record.File!.OriginalFullPath;
+
+                if (_metadataResearchAttempts.Add(path))
+                {
+                    QueueMetadataResearch(
+                        opportunity,
+                        automaticAuthorization,
+                        automaticAuthorizationProvider,
+                        currentOpportunityResolver);
+                }
+            }
+        }
+
+        private void QueueMetadataResearch(
+            RepairOpportunity opportunity,
+            bool automaticAuthorization,
+            Func<bool>? automaticAuthorizationProvider,
+            Func<string, RepairOpportunity?>? currentOpportunityResolver)
+        {
+            string originalPath =
+                opportunity.Record?.File?.OriginalFullPath ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(originalPath))
+                return;
+
+            lock (_externalResearchingPaths)
+            {
+                _externalResearchingPaths.Add("metadata:" + originalPath);
+            }
+
+            bool queued =
+                _externalResearchCoordinator.Enqueue(
+                    "metadata:" + originalPath,
+                    cancellationToken =>
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        RepairOpportunity currentOpportunity =
+                            currentOpportunityResolver?.Invoke(originalPath)
+                            ?? opportunity;
+
+                        MetadataResearchResult research =
+                            new E_MetadataResearchResource().Research(
+                                currentOpportunity.Record.Metadata,
+                                currentOpportunity.Record.Evidence);
+
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        return Task.FromResult(
+                            CompleteMetadataResearch(
+                                currentOpportunity,
+                                research,
+                                automaticAuthorization,
+                                automaticAuthorizationProvider));
+                    },
+                    result =>
+                    {
+                        lock (_externalResearchingPaths)
+                        {
+                            _externalResearchingPaths.Remove("metadata:" + originalPath);
+                        }
+
+                        BackgroundActionCompleted?.Invoke(
+                            originalPath,
+                            result);
+                    });
+
+            if (!queued)
+            {
+                lock (_externalResearchingPaths)
+                {
+                    _externalResearchingPaths.Remove("metadata:" + originalPath);
+                }
+            }
+        }
+
+        private CV_ActionResult CompleteMetadataResearch(
+            RepairOpportunity opportunity,
+            MetadataResearchResult research,
+            bool automaticAuthorization,
+            Func<bool>? automaticAuthorizationProvider)
+        {
+            lock (_repairExecutionLock)
+            {
+                string originalPath =
+                    opportunity.Record.File?.OriginalFullPath ?? string.Empty;
+                string fileName =
+                    opportunity.Record.File?.CurrentName ?? "Unknown ebook";
+                bool authorized =
+                    automaticAuthorizationProvider?.Invoke() ?? automaticAuthorization;
+
+                E_EbookMetadata? currentMetadata = null;
+
+                if (opportunity.Record.File != null)
+                {
+                    currentMetadata =
+                        E_EbookMetadataReader.Read(
+                            opportunity.Record.File);
+                }
+
+                bool workingCopyAlreadyResolvedTarget =
+                    currentMetadata != null &&
+                    ((!opportunity.MissingPublisher &&
+                      !opportunity.MissingDescription) ||
+                     (opportunity.MissingPublisher &&
+                      !string.IsNullOrWhiteSpace(currentMetadata.Publisher)) ||
+                     (opportunity.MissingDescription &&
+                      !string.IsNullOrWhiteSpace(currentMetadata.Description)));
+
+                if (currentMetadata != null)
+                {
+                    opportunity.Record.Metadata.Title = currentMetadata.Title;
+                    opportunity.Record.Metadata.Author = currentMetadata.Author;
+                    opportunity.Record.Metadata.Publisher = currentMetadata.Publisher;
+                    opportunity.Record.Metadata.Language = currentMetadata.Language;
+                    opportunity.Record.Metadata.Isbn = currentMetadata.Isbn;
+                    opportunity.Record.Metadata.Series = currentMetadata.Series;
+                    opportunity.Record.Metadata.SeriesNumber = currentMetadata.SeriesNumber;
+                    opportunity.Record.Metadata.Description = currentMetadata.Description;
+                    opportunity.Record.Metadata.HasCover = currentMetadata.HasCover;
+                    opportunity.Record.Metadata.CoverImage = currentMetadata.CoverImage;
+                }
+
+                if (research.Candidates.Count > 0)
+                {
+                    lock (_researchCacheLock)
+                    {
+                        _researchedMetadataCandidates[originalPath] =
+                            research.Candidates.ToList();
+                    }
+                }
+
+                List<string> resultEvidence = new();
+                List<CV_ActionOption> resultOptions = new();
+                int repairChangesAdded = 0;
+                bool repairExecuted = false;
+
+                string resultMessage =
+                    research.ProviderUnavailable
+                        ? $"Publisher/Summary research for {fileName} could not reach the external sources. Scout will keep the book unresolved rather than treating the connection failure as missing information."
+                        : research.TimedOut
+                            ? $"Publisher/Summary research for {fileName} timed out. Scout will keep the book unresolved rather than treating the timeout as missing information."
+                            : research.Candidates.Count == 0
+                                ? workingCopyAlreadyResolvedTarget
+                                    ? $"Scout re-checked {fileName} and found that its protected working copy already contains the metadata this research was looking for."
+                                    : $"Scout researched {fileName}, but could not establish a safe Publisher or Summary candidate."
+                                : $"Scout found additional Publisher/Summary evidence for {fileName}.";
+
+                foreach (MetadataResearchCandidate candidate in
+                         research.Candidates
+                             .GroupBy(
+                                 item => item.Field,
+                                 StringComparer.OrdinalIgnoreCase)
+                             .Select(group =>
+                                 group.OrderByDescending(
+                                     item => item.Confidence)
+                                     .First()))
+                {
+                    if (currentMetadata != null &&
+                        !string.IsNullOrWhiteSpace(
+                            GetCurrentMetadataValue(
+                                currentMetadata,
+                                candidate.Field)))
+                    {
+                        resultEvidence.Add(
+                            $"{fileName}: Scout ignored the researched {candidate.Field} because the protected working copy already contains a value for that field.");
+                        continue;
+                    }
+
+                    resultEvidence.Add(candidate.Evidence);
+
+                    RepairDecisionCandidate metadataDecisionCandidate = new()
+                    {
+                        Value = candidate.Value,
+                        Source = candidate.Source,
+                        Evidence = candidate.Evidence,
+                        Confidence = candidate.Confidence,
+                        IsPreferred = true
+                    };
+
+                    foreach (string detail in candidate.Details)
+                        metadataDecisionCandidate.Details.Add(detail);
+
+                    RepairDecisionResult decision =
+                        _repairDecisionEngine.Evaluate(
+                            new[] { metadataDecisionCandidate },
+                            E_RepairDecisionEngine.MinimumConfidenceThreshold,
+                            authorized);
+
+                    if (decision.State ==
+                            RepairRecommendation.RepairDecisionState.SafeToApply &&
+                        decision.SelectedCandidate != null)
+                    {
+                        _repairService.AddRepairChange(
+                            originalPath,
+                            new E_RepairChange(
+                                candidate.Field,
+                                GetCurrentMetadataValue(
+                                    opportunity.Record.Metadata,
+                                    candidate.Field),
+                                candidate.Value,
+                                candidate.Source,
+                                candidate.Evidence,
+                                candidate.Confidence,
+                                true));
+
+                        repairChangesAdded++;
+                    }
+                    else if (decision.State ==
+                             RepairRecommendation.RepairDecisionState.UserDecisionRequired)
+                    {
+                        resultOptions.Add(
+                            new CV_ActionOption
+                            {
+                                Id = candidate.Field + "|" + candidate.Value,
+                                ActionId = "SelectMetadataCandidate",
+                                ContextId = originalPath,
+                                Label = $"Use researched {candidate.Field}: {candidate.Value}",
+                                Confidence = candidate.Confidence,
+                                Source = candidate.Source,
+                                Evidence = { candidate.Evidence }
+                            });
+                    }
+                }
+
+                //-------------------------------------------------------------
+                // Execute only if at least one candidate actually produced a
+                // safe repair change. Candidate discovery alone never means
+                // that a repair plan should execute.
+                //-------------------------------------------------------------
+                if (authorized && repairChangesAdded > 0)
+                {
+                    string? repairedPath =
+                        _repairService.ExecuteRepairPlan(opportunity);
+
+                    repairExecuted = !string.IsNullOrWhiteSpace(repairedPath);
+                }
+
+                foreach (string detail in research.Candidates.Count == 0
+                    ? Array.Empty<string>()
+                    : research.Candidates
+                        .SelectMany(candidate => candidate.Details)
+                        .Where(detail => !string.IsNullOrWhiteSpace(detail))
+                        .Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    resultEvidence.Add(detail);
+                }
+
+                CV_ActionResult result = new()
+                {
+                    ActionId = "BackgroundResearchMissingMetadata",
+                    Success = true,
+                    RequiresReobservation =
+                        repairExecuted || workingCopyAlreadyResolvedTarget,
+                    Message = resultMessage
+                };
+
+                result.Evidence.AddRange(resultEvidence);
+                result.Options.AddRange(resultOptions);
+                return result;
+            }
+        }
+
+        private CV_ActionResult ResearchMissingMetadata(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities,
+            bool automaticAuthorization,
+            Func<bool>? automaticAuthorizationProvider,
+            Func<string, RepairOpportunity?>? currentOpportunityResolver)
+        {
+            if (!string.IsNullOrWhiteSpace(request.ContextId))
+            {
+                RepairOpportunity? opportunity =
+                    FindOpportunity(request.ContextId, opportunities);
+
+                if (opportunity != null)
+                {
+                    _metadataResearchAttempts.Remove(request.ContextId);
+                    QueueMetadataResearch(
+                        opportunity,
+                        automaticAuthorization,
+                        automaticAuthorizationProvider,
+                        currentOpportunityResolver);
+                }
+            }
+            else
+            {
+                foreach (RepairOpportunity opportunity in opportunities)
+                {
+                    if (opportunity.MissingPublisher || opportunity.MissingDescription)
+                    {
+                        string path = opportunity.Record?.File?.OriginalFullPath ?? string.Empty;
+                        _metadataResearchAttempts.Remove(path);
+                        QueueMetadataResearch(
+                            opportunity,
+                            automaticAuthorization,
+                            automaticAuthorizationProvider,
+                            currentOpportunityResolver);
+                    }
+                }
+            }
+
+            return new CV_ActionResult
+            {
+                ActionId = request.ActionId,
+                Success = true,
+                Message = "I am researching missing Publisher and Summary information in the background while Scout continues processing the collection."
+            };
+        }
+
+        private CV_ActionResult SelectMetadataCandidate(
+            CV_ActionRequest request,
+            IReadOnlyList<RepairOpportunity> opportunities)
+        {
+            if (string.IsNullOrWhiteSpace(request.ContextId) ||
+                string.IsNullOrWhiteSpace(request.OptionId))
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message = "I could not determine which metadata candidate you selected."
+                };
+            }
+
+            string[] parts = request.OptionId.Split('|', 2);
+            if (parts.Length != 2)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message = "I could not interpret the researched metadata selection."
+                };
+            }
+
+            string field = parts[0];
+            string value = parts[1];
+
+            RepairOpportunity? opportunity =
+                FindOpportunity(request.ContextId, opportunities);
+
+            if (opportunity == null)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = request.ActionId,
+                    Success = false,
+                    Message = "I could not match that metadata selection to the ebook."
+                };
+            }
+
+            lock (_repairExecutionLock)
+            {
+                List<MetadataResearchCandidate> candidates;
+                lock (_researchCacheLock)
+                {
+                    candidates = _researchedMetadataCandidates.TryGetValue(
+                        request.ContextId,
+                        out List<MetadataResearchCandidate>? cached)
+                        ? cached.ToList()
+                        : new List<MetadataResearchCandidate>();
+                }
+
+                MetadataResearchCandidate? selected = candidates.FirstOrDefault(
+                    candidate =>
+                        string.Equals(candidate.Field, field, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(candidate.Value, value, StringComparison.Ordinal));
+
+                if (selected == null)
+                {
+                    return new CV_ActionResult
+                    {
+                        ActionId = request.ActionId,
+                        Success = false,
+                        Message = "I could not verify that metadata candidate against Scout's research results."
+                    };
+                }
+
+                _repairService.AddRepairChange(
+                    request.ContextId,
+                    new E_RepairChange(
+                        field,
+                        GetCurrentMetadataValue(opportunity.Record.Metadata, field),
+                        selected.Value,
+                        selected.Source,
+                        selected.Evidence,
+                        selected.Confidence,
+                        true));
+
+                CV_ActionResult result = new()
+                {
+                    ActionId = request.ActionId,
+                    Success = true,
+                    Message = $"I recorded the researched {field} for this ebook. The original EPUB has not been changed yet."
+                };
+
+                result.Options.Add(
+                    new CV_ActionOption
+                    {
+                        Id = "ApplyRepair",
+                        ActionId = "ExecuteRepairPlan",
+                        ContextId = request.ContextId,
+                        Label = $"Apply this {field} repair",
+                        Confidence = selected.Confidence,
+                        Source = selected.Source
+                    });
+
+                return result;
+            }
+        }
+
         /// <summary>
         /// Queues one ISBN recovery job. External research is deliberately
         /// removed from the synchronous EbookExpert investigation path.
@@ -998,17 +1486,101 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             bool automaticAuthorization,
             Func<bool>? automaticAuthorizationProvider)
         {
+            //-------------------------------------------------------------
+            // Re-read the protected working copy before evaluating external
+            // ISBN evidence. A queued research result can be older than a
+            // local repair or another background completion.
+            //-------------------------------------------------------------
+            if (opportunity is null || opportunity.Record?.Metadata is null)
+            {
+                return new CV_ActionResult
+                {
+                    ActionId = "BackgroundResearchMissingIsbn",
+                    Success = false,
+                    Message =
+                        "Scout could not refresh the ebook metadata because its working record is no longer available."
+                };
+            }
+
+            RepairOpportunity currentOpportunity = opportunity;
+            var record = currentOpportunity.Record;
+
             string originalPath =
-                opportunity.Record?.File?.OriginalFullPath
+                record.File?.OriginalFullPath
                 ?? string.Empty;
 
             string fileName =
-                opportunity.Record?.File?.CurrentName
+                record.File?.CurrentName
                 ?? "Unknown ebook";
 
             bool currentAutomaticAuthorization =
                 automaticAuthorizationProvider?.Invoke()
                 ?? automaticAuthorization;
+
+            Debug.WriteLine(
+                $"[ISBN TRACE] COMPLETE START | {fileName} | " +
+                $"AutomaticAuthorization={currentAutomaticAuthorization} | " +
+                $"ResearchStatus={research.Status} | " +
+                $"ResearchCandidates={research.Candidates.Count}");
+
+            FileContext? workingFile = record.File;
+
+            if (workingFile != null)
+            {
+                E_EbookMetadata? currentMetadata =
+                    E_EbookMetadataReader.Read(workingFile);
+
+                if (currentMetadata != null)
+                {
+                    record.Metadata.Title =
+                        currentMetadata.Title;
+
+                    record.Metadata.Author =
+                        currentMetadata.Author;
+
+                    record.Metadata.Publisher =
+                        currentMetadata.Publisher;
+
+                    record.Metadata.Language =
+                        currentMetadata.Language;
+
+                    record.Metadata.Isbn =
+                        currentMetadata.Isbn;
+
+                    record.Metadata.Series =
+                        currentMetadata.Series;
+
+                    record.Metadata.SeriesNumber =
+                        currentMetadata.SeriesNumber;
+
+                    record.Metadata.Description =
+                        currentMetadata.Description;
+
+                    record.Metadata.HasCover =
+                        currentMetadata.HasCover;
+
+                    record.Metadata.CoverImage =
+                        currentMetadata.CoverImage;
+
+                    if (!string.IsNullOrWhiteSpace(
+                            currentMetadata.Isbn))
+                    {
+                        CV_ActionResult alreadyResolved = new()
+                        {
+                            ActionId = "BackgroundResearchMissingIsbn",
+                            Success = true,
+                            RequiresReobservation = true,
+                            Message =
+                                $"Scout re-checked {fileName} and found that its protected working copy already contains ISBN {currentMetadata.Isbn}. The older research result will not be applied again."
+                        };
+
+                        alreadyResolved.Evidence.Add(
+                            $"Current working EPUB ISBN: {currentMetadata.Isbn}.");
+
+                        return alreadyResolved;
+                    }
+                }
+            }
 
             if (research.Candidates.Count > 0)
             {
@@ -1019,13 +1591,19 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 }
             }
 
+            if (research.Diagnostics.Count > 0)
+            {
+                Debug.WriteLine(
+                    "Scout ISBN completion: " +
+                    string.Join(" | ", research.Diagnostics));
+            }
+
             if (research.Status == IsbnResearchStatus.TimedOut)
             {
                 return CreateBackgroundResearchFailureResult(
                     originalPath,
                     fileName,
-                    "Open Library did not respond within Scout's research time limit. " +
-                    "I have not treated that as evidence that this ebook has no ISBN.");
+                    "The ISBN research sources did not respond within Scout's research time limit. Scout has not treated that as evidence that this ebook has no ISBN.");
             }
 
             if (research.Status == IsbnResearchStatus.ProviderUnavailable)
@@ -1033,8 +1611,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 return CreateBackgroundResearchFailureResult(
                     originalPath,
                     fileName,
-                    "The external ISBN research service was unavailable. " +
-                    "I have not treated that as evidence that this ebook has no ISBN.");
+                    "Scout could not reach the available ISBN research sources. No changes were made and Scout has not treated the connection failure as evidence that this ebook has no ISBN.");
             }
 
             if (research.Candidates.Count == 0)
@@ -1045,8 +1622,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     Success = true,
                     RequiresReobservation = false,
                     Message =
-                        $"External ISBN research finished for {fileName}, but I could not establish a usable ISBN candidate safely."
+                        $"External ISBN research finished for {fileName}, but no safe ISBN candidate was established."
                 };
+
+                foreach (string diagnostic in research.Diagnostics)
+                {
+                    if (!string.IsNullOrWhiteSpace(diagnostic))
+                        result.Evidence.Add(diagnostic);
+                }
 
                 AddTerminalRepairOptions(
                     result,
@@ -1061,11 +1644,24 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     opportunity,
                     research.Candidates);
 
+            foreach (RepairDecisionCandidate candidate in evaluatedCandidates)
+            {
+                Debug.WriteLine(
+                    $"[ISBN TRACE] CANDIDATE | {fileName} | " +
+                    $"ISBN={candidate.Value} | Confidence={candidate.Confidence:0.000} | " +
+                    $"Preferred={candidate.IsPreferred} | Source={candidate.Source}");
+            }
+
             RepairDecisionResult decision =
                 _repairDecisionEngine.Evaluate(
                     evaluatedCandidates,
                     E_RepairDecisionEngine.MinimumConfidenceThreshold,
                     automaticAuthorization: currentAutomaticAuthorization);
+
+            Debug.WriteLine(
+                $"[ISBN TRACE] DECISION | {fileName} | State={decision.State} | " +
+                $"Selected={decision.SelectedCandidate?.Value ?? "<none>"} | " +
+                $"DecisionCandidates={decision.Candidates.Count}");
 
             if (decision.State ==
                     RepairRecommendation.RepairDecisionState.SafeToApply &&
@@ -1080,6 +1676,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
                 if (!string.IsNullOrWhiteSpace(approvedIsbn))
                 {
+                    Debug.WriteLine(
+                        $"[ISBN TRACE] APPLY | {fileName} | ISBN={approvedIsbn} | " +
+                        $"Confidence={selectedCandidate.Confidence:0.000} | Source={selectedCandidate.Source}");
+
                     _repairService.AddRepairChange(
                         originalPath,
                         new E_RepairChange(
@@ -1094,6 +1694,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     string? repairedPath =
                         _repairService.ExecuteRepairPlan(opportunity);
 
+                    Debug.WriteLine(
+                        $"[ISBN TRACE] APPLY RESULT | {fileName} | " +
+                        $"Success={!string.IsNullOrWhiteSpace(repairedPath)} | Path={repairedPath ?? "<none>"}");
+
                     if (!string.IsNullOrWhiteSpace(repairedPath))
                     {
                         CV_ActionResult result = new()
@@ -1102,58 +1706,78 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                             Success = true,
                             RequiresReobservation = true,
                             Message =
-                                $"External ISBN research finished for {fileName}. " +
-                                $"I found and applied ISBN {approvedIsbn}; Scout is re-checking the ebook."
+                                $"External ISBN research found ISBN {approvedIsbn} for {fileName}, and Scout applied it to the protected working copy. Scout is re-checking the ebook."
                         };
 
+                        result.Evidence.Add(selectedCandidate.Evidence);
                         result.Evidence.Add(
-                            selectedCandidate.Evidence);
+                            $"ISBN candidate confidence: {selectedCandidate.Confidence:0.00}.");
+
+                        foreach (string diagnostic in research.Diagnostics)
+                        {
+                            if (!string.IsNullOrWhiteSpace(diagnostic))
+                                result.Evidence.Add(diagnostic);
+                        }
 
                         return result;
                     }
                 }
             }
 
-            CV_ActionResult decisionResult = new()
+            Debug.WriteLine(
+                $"[ISBN TRACE] UNRESOLVED | {fileName} | State={decision.State} | " +
+                $"AutomaticAuthorization={currentAutomaticAuthorization} | " +
+                $"Candidates={evaluatedCandidates.Count}");
+
+            CV_ActionResult unresolved = new()
             {
                 ActionId = "BackgroundResearchMissingIsbn",
                 Success = true,
                 RequiresReobservation = false,
                 Message =
-                    currentAutomaticAuthorization
-                        ? $"External ISBN research finished for {fileName}, but the evidence was not strong enough for Scout to repair it automatically."
-                        : $"External ISBN research finished for {fileName}. I will not apply the repair automatically because automatic repairs are currently off."
+                    $"Scout researched the ISBN for {fileName}, but the available evidence did not justify an automatic repair."
             };
 
-            foreach (RepairDecisionCandidate candidate in decision.Candidates)
+            foreach (RepairDecisionCandidate candidate in evaluatedCandidates)
             {
-                CV_ActionOption option =
-                    new()
-                    {
-                        Id = candidate.Value?.ToString() ?? string.Empty,
-                        ActionId = "ResearchMissingIsbn",
-                        ContextId = originalPath,
-                        Label = "Use this ISBN: " +
-                            (candidate.Value?.ToString() ?? "unknown"),
-                        Confidence = candidate.Confidence,
-                        Source = candidate.Source
-                    };
-
-                if (!string.IsNullOrWhiteSpace(candidate.Evidence))
-                    option.Evidence.Add(candidate.Evidence);
-
-                decisionResult.Options.Add(option);
+                unresolved.Evidence.Add(
+                    $"ISBN candidate {candidate.Value}: confidence {candidate.Confidence:0.00}. {candidate.Evidence}");
             }
 
-            if (decisionResult.Options.Count == 0)
+            foreach (string diagnostic in research.Diagnostics)
+            {
+                if (!string.IsNullOrWhiteSpace(diagnostic))
+                    unresolved.Evidence.Add(diagnostic);
+            }
+
+            if (decision.State ==
+                RepairRecommendation.RepairDecisionState.UserDecisionRequired)
+            {
+                foreach (RepairDecisionCandidate candidate in
+                         decision.Candidates)
+                {
+                    unresolved.Options.Add(
+                        CreateIsbnActionOption(
+                            new CV_ActionRequest
+                            {
+                                ActionId = "BackgroundResearchMissingIsbn",
+                                ContextId = originalPath
+                            },
+                            originalPath,
+                            fileName,
+                            candidate,
+                            "Use this ISBN"));
+                }
+            }
+            else
             {
                 AddTerminalRepairOptions(
-                    decisionResult,
+                    unresolved,
                     originalPath,
-                    "Scout could not establish a safe ISBN repair from the available evidence.");
+                    "Scout found ISBN evidence, but it was not strong enough for a safe automatic repair. You can accept the ebook as-is, omit it, or provide additional identifying information.");
             }
 
-            return decisionResult;
+            return unresolved;
         }
 
         private static CV_ActionResult CreateBackgroundResearchFailureResult(
@@ -1645,31 +2269,49 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 opportunity.IdentityEvaluation?.RepairRequired != true)
                 missingFields.Add("Author");
 
-            if (opportunity.MissingPublisher)
-                missingFields.Add("Publisher");
-
+            // Publisher and Description now have a background research path.
+            // Only fields without a completed external recovery capability
+            // belong in the unsupported bucket.
             if (opportunity.MissingLanguage)
                 missingFields.Add("Language");
 
-            if (opportunity.MissingDescription)
-                missingFields.Add("Description");
-
             if (opportunity.MissingCover)
                 missingFields.Add("Cover");
+
+            bool needsMetadataResearch =
+                opportunity.MissingPublisher || opportunity.MissingDescription;
 
             CV_ActionResult result = new()
             {
                 ActionId = request.ActionId,
                 Success = true,
-                Message = missingFields.Count == 0
-                    ? $"Scout no longer sees an unsupported repair need for {fileName}."
-                    : $"Scout found these missing fields for {fileName}: {string.Join(", ", missingFields)}. For text metadata, I can ask you for the value and send it through the normal repair path; Cover requires an image-selection workflow."
+                Message =
+                    needsMetadataResearch
+                        ? missingFields.Count == 0
+                            ? $"Scout is researching Publisher and Summary information for {fileName} in the background."
+                            : $"Scout can research Publisher and Summary information for {fileName}. The remaining unsupported fields are: {string.Join(", ", missingFields)}."
+                        : missingFields.Count == 0
+                            ? $"Scout no longer sees an unsupported repair need for {fileName}."
+                            : $"Scout found these fields that still need another recovery path for {fileName}: {string.Join(", ", missingFields)}."
             };
 
             foreach (string field in missingFields)
             {
                 result.Evidence.Add(
                     $"Unsupported repair field: {field}.");
+            }
+
+            if (opportunity.MissingPublisher || opportunity.MissingDescription)
+            {
+                result.Options.Add(
+                    new CV_ActionOption
+                    {
+                        Id = "ResearchMissingMetadata",
+                        ActionId = "ResearchMissingMetadata",
+                        ContextId = request.ContextId,
+                        Label = "Research Publisher / Summary",
+                        Source = "Ebook Expert"
+                    });
             }
 
             if (missingFields.Count > 0)
@@ -2216,6 +2858,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     string approvedIsbn =
                         selectedCandidate.Value?.ToString() ?? string.Empty;
 
+                    Debug.WriteLine(
+                        $"[ISBN TRACE] APPLY | {fileName} | ISBN={approvedIsbn} | " +
+                        $"Confidence={selectedCandidate.Confidence:0.000} | Source={selectedCandidate.Source}");
+
                     _repairService.AddRepairChange(
                         originalPath,
                         new E_RepairChange(
@@ -2229,6 +2875,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
                     string? repairedPath =
                         _repairService.ExecuteRepairPlan(opportunity);
+
+                    Debug.WriteLine(
+                        $"[ISBN TRACE] APPLY RESULT | {fileName} | " +
+                        $"Success={!string.IsNullOrWhiteSpace(repairedPath)} | Path={repairedPath ?? "<none>"}");
 
                     if (!string.IsNullOrWhiteSpace(repairedPath))
                     {
@@ -2393,7 +3043,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 evidence.Add(
                     $"{fileName}: found {evaluatedCandidates.Count} ISBN candidate(s) after EPUB evidence evaluation.");
 
-                
+
             }
 
             //---------------------------------------------------------

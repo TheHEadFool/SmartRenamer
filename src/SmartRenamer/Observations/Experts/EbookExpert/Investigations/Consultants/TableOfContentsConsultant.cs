@@ -49,7 +49,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
                     {
                         FoundSomething = true,
                         Summary =
-                            $"{report.BooksWithoutTableOfContents} ebooks are missing a table of contents."
+                            $"{EbookGrammar.CountNoun(report.BooksWithoutTableOfContents)} {EbookGrammar.IsAre(report.BooksWithoutTableOfContents)} missing a table of contents."
                     });
             }
 

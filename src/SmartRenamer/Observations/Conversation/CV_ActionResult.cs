@@ -60,6 +60,19 @@ namespace Scout.Observations.Conversation
         public bool ReobserveCollection { get; init; }
 
         /// <summary>
+        /// When true, a background coordinator may retry this work instead of
+        /// presenting the result as a user decision. This is intentionally
+        /// generic so provider throttling does not become a domain-specific UI
+        /// state.
+        /// </summary>
+        public bool RetrySuggested { get; init; }
+
+        /// <summary>
+        /// Minimum suggested delay before a background retry, in seconds.
+        /// </summary>
+        public int RetryAfterSeconds { get; init; }
+
+        /// <summary>
         /// Human-readable description of the result.
         /// </summary>
         public string Message { get; init; } = string.Empty;

@@ -1,3 +1,59 @@
+﻿# EbookExpert — Current Status (2026-10-04)
+
+> **Authoritative checkpoint.** This section supersedes older milestone notes farther down this document.
+
+## Current state
+
+EbookExpert is in the **runtime validation / hardening** stage, not the original ISBN-only prototype stage. The current vertical slice is:
+
+OBSERVE → local evidence/reasoning → safe repair/research → repair protected working copy → re-observe → verify → organization
+
+The current SERRAted Edge test collection contains 10 EPUBs. Live Report now presents the collection in three user-facing states:
+
+- **NEEDS** — Scout has exhausted safe/applicable automatic avenues and genuinely needs the user.
+- **WORKING** — Scout has legitimate active or queued work.
+- **COMPLETE** — Scout is finished with the item.
+
+Unresolved books are never silently dropped from tracking.
+
+## External metadata recovery
+
+ISBN recovery is implemented through Open Library. Publisher and Book Blurb/Synopsis recovery now uses a background metadata-research path. The metadata resource uses:
+
+1. Open Library Search API.
+2. Google Books public Volumes API when a synopsis is still needed or Open Library did not provide a publisher candidate.
+
+Google Books exposes `volumeInfo.description` as a volume synopsis, making it a materially better description source than relying only on Open Library `first_sentence`. The Google Books lookup now also retries with a broader title/author query when the structured query returns no usable synopsis, and author matching understands multi-author EPUB metadata. Research remains evidence gathering; the Repair Decision Engine still controls automatic application.
+
+Goodreads is **not** currently a Scout provider. Scout does not scrape a consumer website merely because a result appears in a search engine. A future provider can be added behind the same research interface if a stable, permitted integration is selected.
+
+External research is serialized through the existing background coordinator so one slow provider does not block the UI or prevent other local work from continuing.
+
+## Conversation behavior
+
+The Guide conversation remains the human-readable explanation surface while Live Report is the dashboard. Background Scout messages are now presented through a paced presentation queue so a burst of messages does not flash past the user. Narrative messages are separated by about 1.3 seconds, and the conversation moves to each new message with a short ease-out animation instead of jumping to the bottom. This is presentation-only: it does not slow repair, research, or organization.
+
+User messages and decision/action messages are kept responsive; ordinary Scout narrative messages receive a short reading pause.
+
+## Known runtime checks still required
+
+- Verify missing Summary/Book Blurb recovery from Google Books for the remaining SERRAted Edge test books, including multi-author Chrome Circle.
+- Verify automatic repair with Automatic Repairs ON when confidence reaches the 90% safety threshold.
+- Verify re-observation removes the corresponding NEEDS item.
+- Verify Publisher recovery and re-observation.
+- Verify the intermittent ISBN textbox paste/blank-input issue.
+- Verify organization reconciles all terminal rows to COMPLETE.
+- Verify original EPUBs remain unchanged and exactly one organized copy is produced.
+
+## Safety boundaries
+
+- Original EPUBs are never modified directly by repair.
+- Repairs operate on a protected working representation.
+- External research does not itself decide that a value is correct.
+- Organization consumes evaluated/reconciled metadata; it must not fabricate series numbers from collection position.
+
+---
+
 ﻿# Ebook Expert Progress
 
 Last Updated: 2026-08-22

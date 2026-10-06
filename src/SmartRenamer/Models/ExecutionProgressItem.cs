@@ -92,20 +92,35 @@ namespace SmartRenamer.Models
             }
         }
 
+        /// <summary>
+        /// True when Scout cannot safely continue this book without a user
+        /// decision. The explicit action list is the normal signal, but an
+        /// unresolved repair may temporarily have no field-specific action
+        /// while the domain is still waiting. Such a book must never be
+        /// presented as WORKING or READY merely because the action list is
+        /// empty.
+        /// </summary>
         public bool NeedsUserAttention =>
-            Actions.Count > 0;
+            Actions.Count > 0 ||
+            string.Equals(State, "Needs", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(State, "WaitingForUser", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(State, "Unorganized", StringComparison.OrdinalIgnoreCase) &&
+            Status.Contains(
+                "Waiting for repair or decision",
+                StringComparison.OrdinalIgnoreCase);
 
+        // COMPLETE means Scout has finished its work on the book.
+        // Accept-as-is is not itself completion; it merely removes the repair
+        // blocker so the book can continue through Organization.
         public bool IsCompleted =>
             string.Equals(State, "Organized", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(State, "Accepted", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(State, "Omitted", StringComparison.OrdinalIgnoreCase);
 
         public int DisplayPriority =>
-            IsPinned ? 0 :
-            NeedsUserAttention ? 1 :
+            NeedsUserAttention ? 0 :
+            IsPinned ? 1 :
             IsCompleted ? 4 :
-            string.Equals(State, "Processing", StringComparison.OrdinalIgnoreCase) ? 2 :
-            3;
+            2;
 
         public int PercentComplete =>
             Total <= 0 ? 0 : Completed * 100 / Total;
@@ -122,6 +137,7 @@ namespace SmartRenamer.Models
             Status = snapshot.Status;
             Completed = snapshot.Completed;
             Total = snapshot.Total;
+            IsPinned = snapshot.IsPinned;
             Actions = snapshot.Actions;
         }
 

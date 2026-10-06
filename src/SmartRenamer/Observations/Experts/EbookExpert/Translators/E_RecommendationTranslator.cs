@@ -151,7 +151,16 @@ public sealed class E_RecommendationTranslator
                             ? "Review Repair Options"
                             : IsAutomaticRepairAuthorization(finding)
                                 ? "Enable Automatic Repairs"
-                                : string.Empty
+                                : string.Empty,
+
+            // A recommendation question is only a blocking question when
+            // Scout genuinely needs a decision from the user. Missing-field
+            // research and metadata review are actions Scout can continue
+            // handling without stopping the expedition.
+            RequiresUserDecision =
+                IsIdentityReconciliation(finding) ||
+                IsUnsupportedRepair(finding) ||
+                IsAutomaticRepairAuthorization(finding)
         };
 
         //---------------------------------------------------------

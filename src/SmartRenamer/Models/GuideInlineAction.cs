@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace SmartRenamer.Guide.Models
 {
@@ -64,17 +64,25 @@ namespace SmartRenamer.Guide.Models
         public string ContextId { get; init; } = string.Empty;
 
         /// <summary>
+        /// Optional explanation shown beside the control when the action is
+        /// presented in the Scout Controls panel.
+        /// </summary>
+        public string Description { get; init; } = string.Empty;
+
+        /// <summary>
         /// Creates an inline conversation action.
         /// </summary>
         public GuideInlineAction(
             string text,
-            string actionId)
+            string actionId,
+            string? description = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             ArgumentException.ThrowIfNullOrWhiteSpace(actionId);
 
             Text = text;
             ActionId = actionId;
+            Description = description ?? string.Empty;
         }
     }
 }

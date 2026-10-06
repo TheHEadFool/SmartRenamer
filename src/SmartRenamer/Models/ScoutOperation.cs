@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using Scout.Observations.Conversation;
 
 namespace SmartRenamer.Models
 {
@@ -278,6 +279,150 @@ namespace SmartRenamer.Models
         public IReadOnlyList<ExecutionProgressItem> Items =>
             items;
 
+        // The Live Report deliberately exposes only three user-facing states.
+        // Internal/domain states remain in ExecutionProgressItem.State.
+        public IEnumerable<ExecutionProgressItem> NeedsItems =>
+            items.Where(item => item.NeedsUserAttention);
+
+        public IEnumerable<ExecutionProgressItem> WorkingItems =>
+            items.Where(item => !item.NeedsUserAttention && !item.IsCompleted);
+
+        public IEnumerable<ExecutionProgressItem> CompleteItems =>
+            items.Where(item => item.IsCompleted);
+
+        public bool HasNeedsItems =>
+            items.Any(item => item.NeedsUserAttention);
+
+        public bool HasWorkingItems =>
+            items.Any(item => !item.NeedsUserAttention && !item.IsCompleted);
+
+        public bool HasCompleteItems =>
+            items.Any(item => item.IsCompleted);
+
+        /// <summary>
+        /// Applies the terminal result of a background research operation to
+        /// the live report immediately. Background research can finish after
+        /// the synchronous investigation has returned, so waiting for another
+        /// full observation pass would leave a completed research item looking
+        /// like WORKING indefinitely.
+        /// </summary>
+        public void ApplyBackgroundActionResult(
+            string contextId,
+            CV_ActionResult result)
+        {
+            if (string.IsNullOrWhiteSpace(contextId) || result == null)
+                return;
+
+            // A result that changed the protected working copy will be followed
+            // by the normal re-observation path. Do not briefly overwrite that
+            // authoritative snapshot with the older background result.
+            if (result.RequiresReobservation)
+                return;
+
+            ExecutionProgressItem? item =
+                items.FirstOrDefault(candidate =>
+                    string.Equals(
+                        candidate.Key,
+                        contextId,
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (item == null)
+                return;
+
+            List<ExecutionProgressAction> actions =
+                result.Options
+                    .Where(option => option != null)
+                    .Select(option =>
+                        new ExecutionProgressAction
+                        {
+                            Id = option.Id,
+                            Label = option.Label,
+                            ActionId = option.ActionId,
+                            ContextId = option.ContextId
+                        })
+                    .ToList();
+
+            if (actions.Count > 0)
+            {
+                item.State = "Unorganized";
+            }
+            else if (result.Success &&
+                     string.Equals(
+                         item.State,
+                         "Researching",
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                // A background research operation that finishes without a
+                // physical repair is no longer active work. Do not leave the
+                // row in WORKING indefinitely. The next stage/organization
+                // decision can consume the ready item.
+                item.State = "Ready";
+                item.Status = "Research complete; ready for the next step.";
+            }
+            else if (!result.Success)
+            {
+                // A provider/worker failure must not become a dead WORKING row
+                // or fail the entire expedition. Give the user one safe way to
+                // continue when the domain result did not supply a more specific
+                // action.
+                item.State = "Unorganized";
+                actions.Add(
+                    new ExecutionProgressAction
+                    {
+                        Id = $"AcceptAsIs:{contextId}",
+                        Label = "Accept as-is",
+                        ActionId = "AcceptAsIs",
+                        ContextId = contextId
+                    });
+                item.Status = string.IsNullOrWhiteSpace(result.Message)
+                    ? "Background research could not complete. Choose how to continue."
+                    : result.Message + " Choose how to continue.";
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.Message) &&
+                result.Success &&
+                actions.Count > 0)
+            {
+                item.Status = result.Message;
+            }
+
+            item.Completed = item.IsCompleted ? item.Total : 0;
+            item.Total = Math.Max(1, item.Total);
+            item.Actions = actions;
+
+            RecalculateCollectionCountsFromItems();
+
+            OnPropertyChanged(nameof(NeedsItems));
+            OnPropertyChanged(nameof(WorkingItems));
+            OnPropertyChanged(nameof(CompleteItems));
+            OnPropertyChanged(nameof(HasNeedsItems));
+            OnPropertyChanged(nameof(HasWorkingItems));
+            OnPropertyChanged(nameof(HasCompleteItems));
+        }
+
+        private void RecalculateCollectionCountsFromItems()
+        {
+            if (items.Count == 0)
+                return;
+
+            int completed = items.Count(item => item.IsCompleted);
+            int waiting = items.Count(item => item.NeedsUserAttention);
+            int processing = items.Count(item =>
+                string.Equals(
+                    item.State,
+                    "Researching",
+                    StringComparison.OrdinalIgnoreCase));
+
+            CollectionTotal = items.Count;
+            CollectionCompleted = completed;
+            CollectionWaiting = waiting;
+            CollectionProcessing = processing;
+            CollectionPending =
+                Math.Max(
+                    0,
+                    items.Count - completed - waiting - processing);
+        }
+
         /// <summary>
         /// Applies a progress snapshot without replacing the collection bound
         /// to the WPF Collection Progress ListBox. Existing rows are updated
@@ -355,10 +500,77 @@ namespace SmartRenamer.Models
                 existingKeys.Add(snapshot.Key);
             }
 
-            if (wasEmpty != (items.Count == 0))
+            // Row state may have changed without collection membership changing.
+            // Notify the filtered Live Report views before/after repositioning.
+            OnPropertyChanged(nameof(NeedsItems));
+            OnPropertyChanged(nameof(WorkingItems));
+            OnPropertyChanged(nameof(CompleteItems));
+            OnPropertyChanged(nameof(HasNeedsItems));
+            OnPropertyChanged(nameof(HasWorkingItems));
+            OnPropertyChanged(nameof(HasCompleteItems));
+
+            // Do not reorder the live ObservableCollection during progress ticks.
+            // WPF can be in the middle of realizing/virtualizing containers when
+            // a progress callback arrives; moving items here previously caused
+            // VisualTreeChanged failures. The Live Report already separates
+            // NEEDS, WORKING, and COMPLETE through filtered views, so stable
+            // membership is more important than sorting the backing collection.
+
+            OnPropertyChanged(nameof(HasCollectionItems));
+            OnPropertyChanged(nameof(NeedsItems));
+            OnPropertyChanged(nameof(WorkingItems));
+            OnPropertyChanged(nameof(CompleteItems));
+            OnPropertyChanged(nameof(HasNeedsItems));
+            OnPropertyChanged(nameof(HasWorkingItems));
+            OnPropertyChanged(nameof(HasCompleteItems));
+        }
+
+        private static int CompareDisplayItems(
+            ExecutionProgressItem left,
+            ExecutionProgressItem right)
+        {
+            int priority = left.DisplayPriority.CompareTo(right.DisplayPriority);
+            if (priority != 0)
+                return priority;
+
+            int name = StringComparer.OrdinalIgnoreCase.Compare(
+                left.DisplayName,
+                right.DisplayName);
+
+            if (name != 0)
+                return name;
+
+            return StringComparer.OrdinalIgnoreCase.Compare(
+                left.Key,
+                right.Key);
+        }
+
+        /// <summary>
+        /// Marks every item in the collection as terminally organized.
+        /// This is used only after the domain Expert reports that organization
+        /// completed for the entire collection. It reconciles the generic Live
+        /// Report with the domain terminal result without making the generic
+        /// Scout layer understand ebook metadata.
+        /// </summary>
+        public void MarkAllItemsCompleted()
+        {
+            foreach (ExecutionProgressItem item in items)
             {
-                OnPropertyChanged(nameof(HasCollectionItems));
+                if (item.NeedsUserAttention)
+                    continue;
+
+                item.State = "Organized";
+                item.Status = "Complete";
+                item.Completed = Math.Max(item.Completed, item.Total);
             }
+
+            OnPropertyChanged(nameof(NeedsItems));
+            OnPropertyChanged(nameof(WorkingItems));
+            OnPropertyChanged(nameof(CompleteItems));
+            OnPropertyChanged(nameof(HasNeedsItems));
+            OnPropertyChanged(nameof(HasWorkingItems));
+            OnPropertyChanged(nameof(HasCompleteItems));
+            OnPropertyChanged(nameof(PercentComplete));
         }
 
         public bool HasCollectionItems =>

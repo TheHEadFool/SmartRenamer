@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Conversation;
+using Scout.Observations.Conversation;
 using SmartRenamer.Controls.ConversationCards;
 using SmartRenamer.Guide;
 using SmartRenamer.Guide.Models;
@@ -15,6 +15,7 @@ using System.IO;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows;
 
 namespace SmartRenamer.ViewModels.Guide
 {
@@ -101,8 +102,8 @@ namespace SmartRenamer.ViewModels.Guide
             new();
 
         /// <summary>
-        /// The actions currently available to the user.
-        /// These are presented by the Action Button Bar.
+        /// Operational actions currently available to the user.
+        /// These are presented in the single persistent Scout Controls area.
         /// The Guide does not interpret their domain meaning.
         /// </summary>
         public ObservableCollection<CV_ActionOption> ActionOptions { get; } =
@@ -115,6 +116,69 @@ namespace SmartRenamer.ViewModels.Guide
         /// </summary>
         public ObservableCollection<GuideInlineAction> DecisionOptions { get; } =
             new();
+
+        /// <summary>
+        /// Generic Expert discovery choices currently available to the user.
+        /// These are rendered in the same persistent Scout Controls area as
+        /// decisions and action options.
+        /// </summary>
+        public ObservableCollection<GuideInlineAction> DiscoveryOptions { get; } =
+            new();
+
+        /// <summary>
+        /// True when Scout Controls has at least one real user action.
+        /// Conversation explains what Scout is doing; this is the single
+        /// persistent action surface.
+        /// </summary>
+        public bool HasScoutControls =>
+            DecisionOptions.Count > 0 ||
+            DiscoveryOptions.Count > 0 ||
+            ActionOptions.Count > 0;
+
+        /// <summary>
+        /// Show the older observation buttons only when they are actually the
+        /// current navigation surface. Once Scout has a concrete current
+        /// action/decision, those older observations become stale clutter.
+        /// Organization is likewise a decision stage, so the old observation
+        /// buttons are hidden there.
+        /// </summary>
+        public bool ShowWorkspaceObservations =>
+            !HasScoutControls &&
+            !operation.HasNeedsItems &&
+            !operation.HasWorkingItems &&
+            !string.Equals(
+                operation.Stage,
+                "Organization",
+                StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Plain-language direction for a beginner. It deliberately points to
+        /// the persistent Scout Controls area instead of sending the user back
+        /// into the conversation transcript to find an old button.
+        /// </summary>
+        public string ScoutControlsPrompt
+        {
+            get
+            {
+                if (DiscoveryOptions.Count > 0)
+                    return "Choose one of the buttons below to tell Scout how to begin.";
+
+                if (DecisionOptions.Count > 0)
+                    return "Scout needs your choice. Use one of the buttons below to continue.";
+
+                if (ActionOptions.Count > 0)
+                    return "Scout needs your attention. Use one of the buttons below.";
+
+                return string.Empty;
+            }
+        }
+
+        private void NotifyScoutControlsChanged()
+        {
+            OnPropertyChanged(nameof(HasScoutControls));
+            OnPropertyChanged(nameof(ShowWorkspaceObservations));
+            OnPropertyChanged(nameof(ScoutControlsPrompt));
+        }
 
         //---------------------------------------------------------
         // Events
@@ -225,7 +289,9 @@ namespace SmartRenamer.ViewModels.Guide
         public RelayCommand SelectActionOptionCommand { get; }
         public RelayCommand ExecuteRecommendationActionCommand { get; }
         public RelayCommand ExecuteProgressActionCommand { get; }
+        public RelayCommand AcceptAllAsIsCommand { get; }
         public RelayCommand SelectDecisionOptionCommand { get; }
+        public RelayCommand SelectDiscoveryOptionCommand { get; }
         public RelayCommand ToggleAutomaticRepairsCommand { get; }
 
         private bool automaticRepairsEnabled = true;
@@ -270,6 +336,7 @@ namespace SmartRenamer.ViewModels.Guide
                     operation.CurrentFile = p.CurrentFile;
                     operation.Status = p.Status;
                     operation.Stage = p.Stage;
+                    OnPropertyChanged(nameof(ShowWorkspaceObservations));
                     operation.StageCompleted = p.StageCompleted;
                     operation.StageTotal = p.StageTotal;
                     operation.CollectionTotal = p.CollectionTotal;
@@ -278,6 +345,26 @@ namespace SmartRenamer.ViewModels.Guide
                     operation.CollectionWaiting = p.CollectionWaiting;
                     operation.CollectionPending = p.CollectionPending;
                     operation.ApplyItems(p.Items);
+                    OnPropertyChanged(nameof(ShowWorkspaceObservations));
+
+                    if (p.CollectionProcessing > 0 &&
+                        string.Equals(
+                            p.Stage,
+                            "Repair",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        operation.Status =
+                            $"Scout is researching {p.CollectionProcessing:N0} book{(p.CollectionProcessing == 1 ? "" : "s")} in the background. You do not need to wait; if research cannot complete, the book will move to NEEDS.";
+                    }
+                    else if (p.CollectionWaiting > 0 &&
+                             string.Equals(
+                                 p.Stage,
+                                 "Repair",
+                                 StringComparison.OrdinalIgnoreCase))
+                    {
+                        operation.Status =
+                            "Scout is waiting for your decision on one or more books.";
+                    }
 
                     operation.CurrentTask =
                         p.CollectionTotal > 0
@@ -325,11 +412,21 @@ namespace SmartRenamer.ViewModels.Guide
                         ExecuteProgressAction(action);
                 });
 
+            AcceptAllAsIsCommand =
+                new RelayCommand(AcceptAllAsIs);
+
             SelectDecisionOptionCommand =
                 new RelayCommand(parameter =>
                 {
                     if (parameter is GuideInlineAction action)
                         SelectDecisionOption(action);
+                });
+
+            SelectDiscoveryOptionCommand =
+                new RelayCommand(parameter =>
+                {
+                    if (parameter is GuideInlineAction action)
+                        SelectDiscoveryOption(action);
                 });
 
             ToggleAutomaticRepairsCommand =
@@ -782,6 +879,8 @@ namespace SmartRenamer.ViewModels.Guide
             awaitingDiscoveryChoice = false;
             pendingDiscoveryBindings.Clear();
             pendingDiscoveryIndex = 0;
+            DiscoveryOptions.Clear();
+            NotifyScoutControlsChanged();
 
             if (!string.IsNullOrWhiteSpace(selectedFolder))
             {
@@ -907,6 +1006,8 @@ namespace SmartRenamer.ViewModels.Guide
 
             ActionOptions.Clear();
             DecisionOptions.Clear();
+            DiscoveryOptions.Clear();
+            NotifyScoutControlsChanged();
             workspace.ConversationEngine.ClearActionOptions();
 
             expeditionActive = false;
@@ -1161,17 +1262,9 @@ namespace SmartRenamer.ViewModels.Guide
                     new GuideInlineAction(
                         option.Label,
                         option.Id));
-                Conversation.Messages.Add(
-                    new GuideMessage
-                    {
-                        Speaker = GuideSpeaker.Guide,
-                        DisplayName = "Scout",
-                        Text = option.Label,
-                        Payload = new GuideInlineAction(
-                            option.Label,
-                            option.Id)
-                    });
             }
+
+            NotifyScoutControlsChanged();
         }
 
         /// <summary>
@@ -1208,6 +1301,7 @@ namespace SmartRenamer.ViewModels.Guide
             awaitingDecisionChoice = false;
             pendingDecisionIndex = 0;
             DecisionOptions.Clear();
+            NotifyScoutControlsChanged();
             CanGoBack = expeditionActive;
 
             // Organization is a terminal collection-level stage for the
@@ -1223,17 +1317,26 @@ namespace SmartRenamer.ViewModels.Guide
             {
                 workspace.ConversationEngine.ClearActionOptions();
                 ActionOptions.Clear();
+                DecisionOptions.Clear();
+                DiscoveryOptions.Clear();
+                NotifyScoutControlsChanged();
 
                 if (operation.CollectionTotal > 0 &&
                     operation.CollectionCompleted >= operation.CollectionTotal)
                 {
+                    // The Expert has reached the terminal collection outcome.
+                    // Reconcile the generic Live Report rows with that domain
+                    // result instead of leaving previously-processed books in
+                    // WORKING because their last progress snapshot said
+                    // Processing/Waiting.
+                    operation.MarkAllItemsCompleted();
                     operation.State = ScoutOperationState.Completed;
                     operation.Status = "Organization complete.";
                     operation.CurrentTask =
                         $"{operation.CollectionCompleted:N0}/{operation.CollectionTotal:N0} organized";
 
                     Conversation.AddGuideMessage(
-                        $"Organization is complete. Scout processed all {operation.CollectionTotal:N0} ebooks.");
+                        $"Organization is complete. Scout processed all {operation.CollectionTotal:N0} items.");
                 }
                 else
                 {
@@ -1301,23 +1404,21 @@ namespace SmartRenamer.ViewModels.Guide
             ExpertDiscoveryBinding binding =
                 pendingDiscoveryBindings[pendingDiscoveryIndex];
 
+            DiscoveryOptions.Clear();
+
             Conversation.AddGuideMessage(
                 "Before I investigate, I need one choice about how you'd like me to search.");
 
             foreach (ExpertDiscoveryOption option
                 in binding.Request.Options)
             {
-                Conversation.Messages.Add(
-                    new GuideMessage
-                    {
-                        Speaker = GuideSpeaker.Guide,
-                        DisplayName = "Scout",
-                        Text = option.Label,
-                        Payload = new GuideInlineAction(
-                            option.Label,
-                            option.Id)
-                    });
+                DiscoveryOptions.Add(
+                    new GuideInlineAction(
+                        option.Label,
+                        option.Id));
             }
+
+            NotifyScoutControlsChanged();
         }
 
         /// <summary>
@@ -1364,6 +1465,7 @@ namespace SmartRenamer.ViewModels.Guide
             operation.CompletedSteps = 0;
             operation.TotalSteps = 0;
             operation.Stage = "";
+            OnPropertyChanged(nameof(ShowWorkspaceObservations));
             operation.StageCompleted = 0;
             operation.StageTotal = 0;
             operation.CollectionTotal = 0;
@@ -1557,6 +1659,43 @@ namespace SmartRenamer.ViewModels.Guide
         /// Executes a collection-item action through the same CV_ActionRequest
         /// path used by conversation actions and the bottom action bar.
         /// </summary>
+        private async void AcceptAllAsIs()
+        {
+            if (!operation.HasNeedsItems)
+                return;
+
+            MessageBoxResult confirmation =
+                MessageBox.Show(
+                    $"Accept all {operation.NeedsItems.Count():N0} items as-is?\n\n" +
+                    "Scout will stop asking for missing or unresolved information " +
+                    "for these books and continue toward Organization.",
+                    "Accept all items as-is",
+                    MessageBoxButton.OKCancel,
+                    MessageBoxImage.Question);
+
+            if (confirmation != MessageBoxResult.OK)
+                return;
+
+            CV_ActionRequest actionRequest = new()
+            {
+                ActionId = "AcceptAllAsIs",
+                OptionId = "AcceptAllAsIs",
+                ContextId = ""
+            };
+
+            operation.State = ScoutOperationState.Running;
+            operation.Status = "Accepting books as-is...";
+
+            CV_ActionResult actionResult =
+                await ExecuteActionAsync(actionRequest);
+
+            HandleActionResult(actionResult);
+        }
+
+        /// <summary>
+        /// Executes a collection-item action through the same CV_ActionRequest
+        /// path used by conversation actions and the bottom action bar.
+        /// </summary>
         private async void ExecuteProgressAction(
             ExecutionProgressAction action)
         {
@@ -1576,11 +1715,13 @@ namespace SmartRenamer.ViewModels.Guide
 
             workspace.ConversationEngine.ClearActionOptions();
             ActionOptions.Clear();
+            NotifyScoutControlsChanged();
 
             operation.State = ScoutOperationState.Running;
             operation.Status = "Working...";
 
-            Conversation.AddUserMessage(action.Label);
+            // Live Report actions are already visible in the report. Do not
+            // echo every click into the scrolling conversation transcript.
 
             CV_ActionResult actionResult =
                 await ExecuteActionAsync(actionRequest);
@@ -1610,6 +1751,7 @@ namespace SmartRenamer.ViewModels.Guide
             workspace.ConversationEngine.ClearActionOptions();
 
             ActionOptions.Clear();
+            NotifyScoutControlsChanged();
 
             operation.State = ScoutOperationState.Running;
             operation.Status = "Working...";
@@ -1701,7 +1843,18 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
 
             Action applyResult =
-                () => HandleActionResult(e.Result);
+                () =>
+                {
+                    // Background research completes outside the original
+                    // investigation pass. Refresh the affected Live Report
+                    // row before presenting the result so a completed research
+                    // item cannot remain visually stuck in WORKING.
+                    operation.ApplyBackgroundActionResult(
+                        e.ContextId,
+                        e.Result);
+
+                    HandleActionResult(e.Result);
+                };
 
             if (System.Windows.Application.Current?.Dispatcher is
                 System.Windows.Threading.Dispatcher dispatcher)
@@ -1811,13 +1964,25 @@ namespace SmartRenamer.ViewModels.Guide
             // -------------------------------------------------------------
             // Report supporting evidence.
             // -------------------------------------------------------------
+            // Background research is work Scout is doing for the user, not a
+            // request for a running transcript of every research fact. Keep
+            // that detail attached to the action result and only narrate it
+            // when the result actually leaves a user decision.
 
-            foreach (string evidence in actionResult.Evidence)
+            bool isBackgroundResearch =
+                actionResult.ActionId.StartsWith(
+                    "BackgroundResearch",
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (!isBackgroundResearch || actionResult.Options.Count > 0)
             {
-                if (!string.IsNullOrWhiteSpace(evidence))
+                foreach (string evidence in actionResult.Evidence)
                 {
-                    Conversation.AddGuideMessage(
-                        evidence);
+                    if (!string.IsNullOrWhiteSpace(evidence))
+                    {
+                        Conversation.AddGuideMessage(
+                            evidence);
+                    }
                 }
             }
 
@@ -1838,21 +2003,22 @@ namespace SmartRenamer.ViewModels.Guide
             {
                 // An input prompt is a conversation state, not a button.
                 // The Conversation Engine retains it so the next typed
-                // message becomes the supplied value. Rendering it as a
-                // clickable option would cause the option's ActionId to be
-                // mistaken for the user's metadata value.
+                // message becomes the supplied value.
                 if (option.AcceptsUserInput)
                     continue;
 
-                Conversation.Messages.Add(
-                    new GuideMessage
-                    {
-                        Speaker = GuideSpeaker.Guide,
-                        DisplayName = "Scout",
-                        Payload = option
-                    });
-
+                // The persistent Scout Controls area is the sole visual
+                // action surface for structured action options. Do not add
+                // another clickable copy to the conversation transcript.
                 ActionOptions.Add(option);
+            }
+
+            NotifyScoutControlsChanged();
+
+            if (isBackgroundResearch && actionResult.Options.Count > 0)
+            {
+                Conversation.AddGuideMessage(
+                    "I need your decision on this result. The available choices are shown in Scout Controls on the left.");
             }
 
             // -------------------------------------------------------------
@@ -1882,6 +2048,8 @@ namespace SmartRenamer.ViewModels.Guide
                 workspace.ConversationEngine.ClearActionOptions();
                 ActionOptions.Clear();
                 DecisionOptions.Clear();
+                DiscoveryOptions.Clear();
+                NotifyScoutControlsChanged();
 
                 workspace.RefreshAfterReobservation(
                     observations,
@@ -1930,11 +2098,31 @@ namespace SmartRenamer.ViewModels.Guide
             else
             {
                 DecisionOptions.Clear();
+                NotifyScoutControlsChanged();
 
                 workspace.ClearCurrentRecommendation();
 
-                operation.State = ScoutOperationState.Completed;
-                operation.Status = "Action complete.";
+                // A successful action is not necessarily terminal. For
+                // example, accepting an unresolved ebook as-is should return
+                // it to WORKING so organization/re-observation can continue.
+                // Derive the generic operation state from the Live Report
+                // rows instead of assuming every successful action completes
+                // the operation.
+                if (operation.HasNeedsItems)
+                {
+                    operation.State = ScoutOperationState.WaitingForUser;
+                    operation.Status = "Waiting for your decision.";
+                }
+                else if (operation.HasWorkingItems)
+                {
+                    operation.State = ScoutOperationState.Running;
+                    operation.Status = "Working...";
+                }
+                else
+                {
+                    operation.State = ScoutOperationState.Completed;
+                    operation.Status = "Complete.";
+                }
             }
         }
 

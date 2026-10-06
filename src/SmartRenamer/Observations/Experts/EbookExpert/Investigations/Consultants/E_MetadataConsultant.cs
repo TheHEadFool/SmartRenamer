@@ -79,8 +79,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
             {
                 findings.Add(
                     CreateFinding(
-                        $"{EbookCount(report.NeedsAttention)} have very incomplete metadata.",
-                        $"{EbookCount(report.NeedsAttention)} were identified by the metadata analysis as needing significant metadata attention.",
+                        $"{EbookGrammar.CountNoun(report.NeedsAttention)} {EbookGrammar.HasHave(report.NeedsAttention)} very incomplete metadata.",
+                        $"{EbookGrammar.CountNoun(report.NeedsAttention)} {EbookGrammar.WasWere(report.NeedsAttention)} identified by the metadata analysis as needing significant metadata attention.",
                         "Would you like Scout to review the ebooks with the most incomplete metadata first?"));
             }
 
@@ -88,8 +88,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
             {
                 findings.Add(
                     CreateFinding(
-                        $"{EbookCount(report.IncompleteMetadata)} have incomplete metadata.",
-                        $"{EbookCount(report.IncompleteMetadata)} were identified as having incomplete metadata.",
+                        $"{EbookGrammar.CountNoun(report.IncompleteMetadata)} {EbookGrammar.HasHave(report.IncompleteMetadata)} incomplete metadata.",
+                        $"{EbookGrammar.CountNoun(report.IncompleteMetadata)} {EbookGrammar.WasWere(report.IncompleteMetadata)} identified as having incomplete metadata.",
                         "Would you like Scout to review which metadata fields are missing?"));
             }
 
@@ -101,8 +101,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
             {
                 findings.Add(
                     CreateFinding(
-                        $"{EbookCount(report.MissingTitles)} are missing title metadata.",
-                        $"{EbookCount(report.MissingTitles)} were identified as having no title metadata.",
+                        $"{EbookGrammar.CountNoun(report.MissingTitles)} {EbookGrammar.IsAre(report.MissingTitles)} missing title metadata.",
+                        $"{EbookGrammar.CountNoun(report.MissingTitles)} {EbookGrammar.WasWere(report.MissingTitles)} identified as having no title metadata.",
                         "Would you like Scout to help identify the missing titles?"));
             }
 
@@ -110,8 +110,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
             {
                 findings.Add(
                     CreateFinding(
-                        $"{EbookCount(report.MissingAuthors)} are missing author metadata.",
-                        $"{EbookCount(report.MissingAuthors)} were identified as having no author metadata.",
+                        $"{EbookGrammar.CountNoun(report.MissingAuthors)} {EbookGrammar.IsAre(report.MissingAuthors)} missing author metadata.",
+                        $"{EbookGrammar.CountNoun(report.MissingAuthors)} {EbookGrammar.WasWere(report.MissingAuthors)} identified as having no author metadata.",
                         "Would you like Scout to help identify the missing authors?"));
             }
 
@@ -119,8 +119,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
             {
                 findings.Add(
                     CreateFinding(
-                        $"{EbookCount(report.MissingIsbns)} are missing ISBN metadata.",
-                        $"{EbookCount(report.MissingIsbns)} were identified as having no ISBN metadata.",
+                        $"{EbookGrammar.CountNoun(report.MissingIsbns)} {EbookGrammar.IsAre(report.MissingIsbns)} missing ISBN metadata.",
+                        $"{EbookGrammar.CountNoun(report.MissingIsbns)} {EbookGrammar.WasWere(report.MissingIsbns)} identified as having no ISBN metadata.",
                         "Would you like Scout to review the ebooks missing ISBN information?"));
             }
 
@@ -132,8 +132,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
             {
                 findings.Add(
                     CreateFinding(
-                        $"{EbookCount(report.MissingPublishers)} are missing publisher metadata.",
-                        $"{EbookCount(report.MissingPublishers)} were identified as having no publisher metadata.",
+                        $"{EbookGrammar.CountNoun(report.MissingPublishers)} {EbookGrammar.IsAre(report.MissingPublishers)} missing publisher metadata.",
+                        $"{EbookGrammar.CountNoun(report.MissingPublishers)} {EbookGrammar.WasWere(report.MissingPublishers)} identified as having no publisher metadata.",
                         "Would you like Scout to review the missing publisher information?"));
             }
 
@@ -141,8 +141,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
             {
                 findings.Add(
                     CreateFinding(
-                        $"{EbookCount(report.MissingLanguages)} are missing language metadata.",
-                        $"{EbookCount(report.MissingLanguages)} were identified as having no language metadata.",
+                        $"{EbookGrammar.CountNoun(report.MissingLanguages)} {EbookGrammar.IsAre(report.MissingLanguages)} missing language metadata.",
+                        $"{EbookGrammar.CountNoun(report.MissingLanguages)} {EbookGrammar.WasWere(report.MissingLanguages)} identified as having no language metadata.",
                         "Would you like Scout to review the missing language information?"));
             }
 
@@ -150,8 +150,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
             {
                 findings.Add(
                     CreateFinding(
-                        $"{EbookCount(report.MissingDescriptions)} are missing descriptions.",
-                        $"{EbookCount(report.MissingDescriptions)} were identified as having no description metadata.",
+                        $"{EbookGrammar.CountNoun(report.MissingDescriptions)} {EbookGrammar.IsAre(report.MissingDescriptions)} missing descriptions.",
+                        $"{EbookGrammar.CountNoun(report.MissingDescriptions)} {EbookGrammar.WasWere(report.MissingDescriptions)} identified as having no description metadata.",
                         "Would you like Scout to review the ebooks missing descriptions?"));
             }
 
@@ -163,8 +163,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
             {
                 findings.Add(
                     CreateFinding(
-                        $"{EbookCount(report.MissingCovers)} are missing cover images.",
-                        $"{EbookCount(report.MissingCovers)} were identified as having no cover image.",
+                        $"{EbookGrammar.CountNoun(report.MissingCovers)} {EbookGrammar.IsAre(report.MissingCovers)} missing cover images.",
+                        $"{EbookGrammar.CountNoun(report.MissingCovers)} {EbookGrammar.WasWere(report.MissingCovers)} identified as having no cover image.",
                         "Would you like Scout to review the ebooks missing cover images?"));
             }
 
@@ -198,21 +198,15 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
             {
                 findings.Add(
                     CreateFinding(
-                        $"{EbookCount(report.ExcellentMetadata)} have excellent metadata coverage.",
-                        $"{EbookCount(report.ExcellentMetadata)} were identified as having excellent metadata coverage.",
+                        $"{EbookGrammar.CountNoun(report.ExcellentMetadata)} {EbookGrammar.HasHave(report.ExcellentMetadata)} excellent metadata coverage.",
+                        $"{EbookGrammar.CountNoun(report.ExcellentMetadata)} {EbookGrammar.WasWere(report.ExcellentMetadata)} identified as having excellent metadata coverage.",
                         "Would you like Scout to leave these ebooks unchanged and focus on the ones needing attention?"));
             }
 
             return findings;
         }
 
-        private static string EbookCount(int count)
-        {
-            return count == 1
-                ? "1 ebook"
-                : $"{count} ebooks";
-        }
-
+        
         /// <summary>
         /// Creates a complete ExpertFinding from a deterministic metadata
         /// observation.

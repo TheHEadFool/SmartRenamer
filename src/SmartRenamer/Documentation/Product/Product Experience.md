@@ -1576,3 +1576,10 @@ Version 1 Features
 ✓ Undo
 
 This organizer is software that teaches people how to organize digital information while helping them accomplish real projects.
+
+
+## Scout Controls and Organization
+
+Scout should not force users to hunt through a conversation transcript for controls. The conversation is a guided explanation. The left **Scout Controls** panel is the persistent direct-operation surface, while Live Report remains the collection dashboard.
+
+At organization time, Scout asks for two independent configuration choices: **where** the organized copy should be created and **how** the collection should be organized. For `Author → Series → Title`, author is the outer folder, established series is the inner folder, and title controls the file ordering/name. Books with no established series are kept directly under the author.

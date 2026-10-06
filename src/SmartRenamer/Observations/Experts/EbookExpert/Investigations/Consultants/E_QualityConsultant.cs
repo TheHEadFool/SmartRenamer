@@ -17,7 +17,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
                 {
                     FoundSomething = true,
                     Summary =
-                        $"{report.NeedsAttention} ebooks have incomplete metadata."
+                        $"{EbookGrammar.CountNoun(report.NeedsAttention)} {EbookGrammar.HasHave(report.NeedsAttention)} incomplete metadata."
                 });
             }
 
@@ -27,7 +27,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
                 {
                     FoundSomething = true,
                     Summary =
-                        $"{report.MissingCovers} ebooks are missing cover images."
+                        $"{EbookGrammar.CountNoun(report.MissingCovers)} {EbookGrammar.IsAre(report.MissingCovers)} missing cover images."
                 });
             }
 

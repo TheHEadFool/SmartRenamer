@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using SmartRenamer.Models;
+using Scout.Observations.Experts.EbookExpert.Data;
 using SmartRenamer.Observations.BuildingBlocks;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Resources;
@@ -154,7 +156,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         /// </summary>
         public List<IsbnResearchCandidate> ResearchMissingIsbn(
             RepairOpportunity opportunity,
-            string? userEvidence = null)
+            string? userEvidence = null,
+            BookIdentityEvaluation? identityEvaluation = null)
         {
             if (opportunity == null)
                 throw new ArgumentNullException(nameof(opportunity));
@@ -180,8 +183,22 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                     opportunity.Record.Evidence,
                     userEvidence);
 
+            E_EbookMetadata researchMetadata =
+                BuildResearchMetadata(
+                    opportunity.Record.Metadata,
+                    identityEvaluation);
+
+            Debug.WriteLine(
+                $"[IDENTITY TRACE] ISBN RESEARCH IDENTITY | " +
+                $"ObservedTitle='{opportunity.Record.Metadata.Title}' | " +
+                $"ObservedAuthor='{opportunity.Record.Metadata.Author}' | " +
+                $"QueryTitle='{researchMetadata.Title}' | " +
+                $"QueryAuthor='{researchMetadata.Author}' | " +
+                $"Series='{researchMetadata.Series}' | " +
+                $"IdentityRepairRequired={identityEvaluation?.RepairRequired ?? false}");
+
             return _isbnResearchResource.Research(
-                opportunity.Record.Metadata,
+                researchMetadata,
                 combinedUserEvidence,
                 opportunity.Record.Evidence);
         }
@@ -192,7 +209,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         /// </summary>
         public IsbnResearchResult ResearchMissingIsbnWithStatus(
             RepairOpportunity opportunity,
-            string? userEvidence = null)
+            string? userEvidence = null,
+            BookIdentityEvaluation? identityEvaluation = null)
         {
             if (opportunity == null)
                 throw new ArgumentNullException(nameof(opportunity));
@@ -221,10 +239,77 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                     opportunity.Record.Evidence,
                     userEvidence);
 
+            E_EbookMetadata researchMetadata =
+                BuildResearchMetadata(
+                    opportunity.Record.Metadata,
+                    identityEvaluation);
+
+            Debug.WriteLine(
+                $"[IDENTITY TRACE] ISBN RESEARCH IDENTITY | " +
+                $"ObservedTitle='{opportunity.Record.Metadata.Title}' | " +
+                $"ObservedAuthor='{opportunity.Record.Metadata.Author}' | " +
+                $"QueryTitle='{researchMetadata.Title}' | " +
+                $"QueryAuthor='{researchMetadata.Author}' | " +
+                $"Series='{researchMetadata.Series}' | " +
+                $"IdentityRepairRequired={identityEvaluation?.RepairRequired ?? false}");
+
             return _isbnResearchResource.ResearchWithStatus(
-                opportunity.Record.Metadata,
+                researchMetadata,
                 combinedUserEvidence,
                 evidence);
+        }
+
+        /// <summary>
+        /// Creates the identity view used to construct an external research
+        /// query. This is deliberately NOT written back to the EPUB and does
+        /// not become observed metadata. It is the local expert's reconciled
+        /// query identity.
+        /// </summary>
+        private static E_EbookMetadata BuildResearchMetadata(
+            E_EbookMetadata observedMetadata,
+            BookIdentityEvaluation? identityEvaluation)
+        {
+            E_EbookMetadata researchMetadata = new()
+            {
+                Title = observedMetadata.Title,
+                Author = observedMetadata.Author,
+                Publisher = observedMetadata.Publisher,
+                Language = observedMetadata.Language,
+                Isbn = observedMetadata.Isbn,
+                Series = observedMetadata.Series,
+                SeriesNumber = observedMetadata.SeriesNumber,
+                Description = observedMetadata.Description,
+                HasCover = observedMetadata.HasCover,
+                CoverImage = observedMetadata.CoverImage
+            };
+
+            BookIdentityCandidate? candidate = identityEvaluation?.Candidate;
+
+            if (candidate == null)
+                return researchMetadata;
+
+            // Title and Author are the core research identity. Use the local
+            // expert's reconciled values when it has established them. This
+            // does not modify the observed EPUB and is never treated as fresh
+            // evidence; the provider result is still evaluated against the
+            // EPUB evidence before a repair decision is made.
+            if (!string.IsNullOrWhiteSpace(candidate.Title))
+                researchMetadata.Title = candidate.Title;
+
+            if (!string.IsNullOrWhiteSpace(candidate.Authors))
+                researchMetadata.Author = candidate.Authors;
+
+            if (identityEvaluation?.SeriesEvaluation?.State ==
+                SeriesEvidenceState.Resolved)
+            {
+                if (!string.IsNullOrWhiteSpace(candidate.Series))
+                    researchMetadata.Series = candidate.Series;
+
+                if (!string.IsNullOrWhiteSpace(candidate.SeriesNumber))
+                    researchMetadata.SeriesNumber = candidate.SeriesNumber;
+            }
+
+            return researchMetadata;
         }
 
         /// <summary>

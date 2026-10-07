@@ -132,14 +132,8 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
             // as preferred.
             //---------------------------------------------------------
 
-            List<RepairDecisionCandidate> preferredAutomaticCandidates =
-                orderedCandidates
-                    .Where(candidate =>
-                        candidate.Confidence >= AutomaticConfidenceThreshold &&
-                        candidate.IsPreferred)
-                    .ToList();
-
-            if (preferredAutomaticCandidates.Count == 1)
+            if (orderedCandidates[0].Confidence >=
+                    AutomaticConfidenceThreshold)
             {
                 if (automaticAuthorization)
                 {
@@ -150,16 +144,20 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
                                 .SafeToApply,
 
                         SelectedCandidate =
-                            preferredAutomaticCandidates[0],
+                            orderedCandidates[0],
 
                         Candidates =
-                            new[] { preferredAutomaticCandidates[0] }
+                            new[] { orderedCandidates[0] }
                     };
                 }
 
                 //-----------------------------------------------------
                 // The evidence is strong enough for Scout to know the
                 // answer, but automatic repair is currently disabled.
+                //
+                // Preserve the candidate so the user can explicitly
+                // authorize/choose the repair through the normal action
+                // path.
                 //-----------------------------------------------------
 
                 return new RepairDecisionResult
@@ -169,34 +167,7 @@ namespace Scout.Observations.Experts.EbookExpert.Investigations.Repair
                             .UserDecisionRequired,
 
                     Candidates =
-                        new[] { preferredAutomaticCandidates[0] }
-                };
-            }
-
-            if (orderedCandidates[0].Confidence >=
-                AutomaticConfidenceThreshold)
-            {
-                //-----------------------------------------------------
-                // Multiple high-confidence candidates remain, or none of
-                // them has been established as preferred. Confidence alone
-                // is not permission to guess.
-                //-----------------------------------------------------
-
-                List<RepairDecisionCandidate> highConfidenceCandidates =
-                    orderedCandidates
-                        .Where(candidate =>
-                            candidate.Confidence >=
-                            UserDecisionConfidenceThreshold)
-                        .ToList();
-
-                return new RepairDecisionResult
-                {
-                    State =
-                        RepairRecommendation.RepairDecisionState
-                            .UserDecisionRequired,
-
-                    Candidates =
-                        highConfidenceCandidates
+                        new[] { orderedCandidates[0] }
                 };
             }
 

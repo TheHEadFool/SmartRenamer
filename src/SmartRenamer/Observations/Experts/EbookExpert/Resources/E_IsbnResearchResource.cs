@@ -15,12 +15,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
     /// Researches ISBN candidates without deciding or applying a repair.
     ///
     /// Research policy:
-    ///   1. Try Google Books first.
-    ///   2. If Google Books is unavailable or produces no usable ISBNs,
-    ///      try Open Library.
-    ///   3. If Open Library also produces no usable ISBNs, try its
-    ///      edition records for the strongest search hits.
-    ///   4. Merge corroborating ISBNs from independent providers.
+    ///   1. Receive a locally reconciled Title/Author research identity.
+    ///   2. Try Open Library first.
+    ///   3. If Open Library produces no usable ISBNs, use its broader identity
+    ///      and edition recovery paths before another provider.
+    ///   4. Use Google Books only as a fallback when the primary source has not
+    ///      established a strong candidate.
+    ///   5. Merge corroborating ISBNs from independent providers.
     ///
     /// A provider failure is never converted into "no ISBN exists".
     /// </summary>
@@ -66,79 +67,41 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             int retryAfterSeconds = 0;
 
             //-------------------------------------------------------------
-            // Open Library is the primary ISBN source. It already exposes
-            // ISBNs in the search result and is the provider Scout can use
-            // without immediately hitting the Google Books quota. Google
-            // Books is secondary: only query it when Open Library produced
-            // no candidates or only weak candidates that need independent
-            // corroboration.
+            // Open Library is Scout's primary ISBN source.
+            //
+            // The previous order asked Google first. That made a Google 429
+            // visible even when Open Library could have answered the request.
+            // Open Library also has a second, broader search form that is
+            // useful when the structured title+author search returns zero
+            // documents. We use that fallback before asking another provider.
             //-------------------------------------------------------------
-
-            string openLibraryUrl =
-                BuildOpenLibrarySearchUrl(
+            List<IsbnResearchCandidate> openCandidates =
+                ResearchOpenLibrary(
                     searchTitle,
                     searchAuthor,
-                    userEvidence);
+                    metadata.Series,
+                    userEvidence,
+                    metadata,
+                    searchPublisher,
+                    diagnostics,
+                    ref anyProviderSucceeded,
+                    ref anyTimedOut,
+                    ref anyRateLimited,
+                    ref retryAfterSeconds);
 
-            ProviderFetchResult openLibrary =
-                FetchJson(openLibraryUrl, "Open Library");
+            allCandidates.AddRange(openCandidates);
 
-            diagnostics.Add(openLibrary.Diagnostic);
-            anyProviderSucceeded |= openLibrary.Succeeded;
-            anyTimedOut |= openLibrary.TimedOut;
-            anyRateLimited |= openLibrary.RateLimited;
-            retryAfterSeconds = Math.Max(retryAfterSeconds, openLibrary.RetryAfterSeconds);
-
-            List<IsbnResearchCandidate> openCandidates = new();
-
-            if (openLibrary.Responded && !string.IsNullOrWhiteSpace(openLibrary.Json))
-            {
-                try
-                {
-                    openCandidates =
-                        ParseOpenLibraryCandidates(
-                            openLibrary.Json,
-                            metadata,
-                            searchPublisher,
-                            openLibraryUrl);
-
-                    allCandidates.AddRange(openCandidates);
-                    diagnostics.Add(
-                        $"Open Library search returned {openCandidates.Count} usable ISBN candidate(s).");
-
-                    if (openCandidates.Count == 0)
-                    {
-                        List<IsbnResearchCandidate> editionCandidates =
-                            RecoverIsbnsFromTopOpenLibraryEditions(
-                                openLibrary.Json,
-                                metadata,
-                                searchPublisher);
-
-                        allCandidates.AddRange(editionCandidates);
-
-                        if (editionCandidates.Count > 0)
-                        {
-                            diagnostics.Add(
-                                $"Open Library edition records supplied {editionCandidates.Count} additional ISBN candidate(s).");
-                        }
-                    }
-                }
-                catch (JsonException)
-                {
-                    diagnostics.Add("Open Library returned data Scout could not parse as book metadata.");
-                }
-            }
-
-            double strongestOpenLibraryConfidence =
-                allCandidates.Count == 0
-                    ? 0.0
-                    : allCandidates.Max(candidate => candidate.Confidence);
-
-            bool needGoogleBooks =
+            //-------------------------------------------------------------
+            // Only use Google Books when Open Library did not establish a
+            // strong candidate. This keeps provider fallback useful without
+            // turning a temporary Google 429 into the visible explanation for
+            // an ISBN that Open Library can establish.
+            //-------------------------------------------------------------
+            bool needGoogle =
                 allCandidates.Count == 0 ||
-                strongestOpenLibraryConfidence < 0.90;
+                allCandidates.Max(candidate => candidate.Confidence) < 0.90;
 
-            if (needGoogleBooks)
+            if (needGoogle)
             {
                 string googleUrl =
                     BuildGoogleBooksSearchUrl(
@@ -153,7 +116,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 anyProviderSucceeded |= google.Succeeded;
                 anyTimedOut |= google.TimedOut;
                 anyRateLimited |= google.RateLimited;
-                retryAfterSeconds = Math.Max(retryAfterSeconds, google.RetryAfterSeconds);
+                retryAfterSeconds = Math.Max(
+                    retryAfterSeconds,
+                    google.RetryAfterSeconds);
 
                 if (google.Responded && !string.IsNullOrWhiteSpace(google.Json))
                 {
@@ -172,14 +137,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     }
                     catch (JsonException)
                     {
-                        diagnostics.Add("Google Books returned data Scout could not parse as book metadata.");
+                        diagnostics.Add(
+                            "Google Books returned data Scout could not parse as book metadata.");
                     }
                 }
-            }
-            else
-            {
-                diagnostics.Add(
-                    "Google Books was not queried because Open Library already supplied a strong ISBN match.");
             }
 
             List<IsbnResearchCandidate> merged =
@@ -233,6 +194,199 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 RetryAfterSeconds = fetch.RetryAfterSeconds,
                 Diagnostic = fetch.Diagnostic
             };
+        }
+
+        private static List<IsbnResearchCandidate> ResearchOpenLibrary(
+            string title,
+            string author,
+            string series,
+            string? userEvidence,
+            E_EbookMetadata metadata,
+            string knownPublisher,
+            List<string> diagnostics,
+            ref bool anyProviderSucceeded,
+            ref bool anyTimedOut,
+            ref bool anyRateLimited,
+            ref int retryAfterSeconds)
+        {
+            List<IsbnResearchCandidate> allCandidates = new();
+
+            string primaryUrl =
+                BuildOpenLibrarySearchUrl(
+                    title,
+                    author,
+                    userEvidence);
+
+            ProviderFetchResult primary =
+                FetchJson(primaryUrl, "Open Library");
+
+            diagnostics.Add(primary.Diagnostic);
+            anyProviderSucceeded |= primary.Succeeded;
+            anyTimedOut |= primary.TimedOut;
+            anyRateLimited |= primary.RateLimited;
+            retryAfterSeconds = Math.Max(
+                retryAfterSeconds,
+                primary.RetryAfterSeconds);
+
+            bool primaryReturnedDocuments = false;
+
+            if (primary.Responded && !string.IsNullOrWhiteSpace(primary.Json))
+            {
+                primaryReturnedDocuments =
+                    CountOpenLibraryDocuments(primary.Json) > 0;
+
+                List<IsbnResearchCandidate> candidates =
+                    ParseOpenLibraryCandidates(
+                        primary.Json,
+                        metadata,
+                        knownPublisher,
+                        primaryUrl);
+
+                allCandidates.AddRange(candidates);
+                diagnostics.Add(
+                    $"Open Library structured search returned {candidates.Count} usable ISBN candidate(s).");
+
+                if (candidates.Count == 0)
+                {
+                    List<IsbnResearchCandidate> editionCandidates =
+                        RecoverIsbnsFromTopOpenLibraryEditions(
+                            primary.Json,
+                            metadata,
+                            knownPublisher);
+
+                    allCandidates.AddRange(editionCandidates);
+
+                    if (editionCandidates.Count > 0)
+                    {
+                        diagnostics.Add(
+                            $"Open Library edition records supplied {editionCandidates.Count} additional ISBN candidate(s).");
+                    }
+                }
+            }
+
+            //-------------------------------------------------------------
+            // IMPORTANT: zero documents is different from "the book has no
+            // ISBN". Open Library's structured title/author parameters can
+            // be overly restrictive for records with alternate authors,
+            // subtitles, series labels, or catalog normalization differences.
+            //
+            // Give Open Library one broader identity search before falling
+            // back to another provider. This is the missing recovery path
+            // exposed by Chrome Circle: the known book exists externally, but
+            // the first query returned zero documents.
+            //-------------------------------------------------------------
+            if (allCandidates.Count == 0 &&
+                (primaryReturnedDocuments || primary.Succeeded))
+            {
+                string fallbackIdentity = BuildOpenLibraryIdentityQuery(
+                    title,
+                    author,
+                    series,
+                    userEvidence);
+
+                if (!string.IsNullOrWhiteSpace(fallbackIdentity))
+                {
+                    string fallbackUrl =
+                        BuildOpenLibraryQueryUrl(fallbackIdentity);
+
+                    ProviderFetchResult fallback =
+                        FetchJson(fallbackUrl, "Open Library");
+
+                    diagnostics.Add(
+                        "Open Library used a broader identity query after the structured search produced no usable candidates.");
+                    diagnostics.Add(fallback.Diagnostic);
+                    anyProviderSucceeded |= fallback.Succeeded;
+                    anyTimedOut |= fallback.TimedOut;
+                    anyRateLimited |= fallback.RateLimited;
+                    retryAfterSeconds = Math.Max(
+                        retryAfterSeconds,
+                        fallback.RetryAfterSeconds);
+
+                    if (fallback.Responded &&
+                        !string.IsNullOrWhiteSpace(fallback.Json))
+                    {
+                        List<IsbnResearchCandidate> fallbackCandidates =
+                            ParseOpenLibraryCandidates(
+                                fallback.Json,
+                                metadata,
+                                knownPublisher,
+                                fallbackUrl);
+
+                        allCandidates.AddRange(fallbackCandidates);
+                        diagnostics.Add(
+                            $"Open Library broad identity search returned {fallbackCandidates.Count} usable ISBN candidate(s).");
+
+                        if (fallbackCandidates.Count == 0)
+                        {
+                            List<IsbnResearchCandidate> editionCandidates =
+                                RecoverIsbnsFromTopOpenLibraryEditions(
+                                    fallback.Json,
+                                    metadata,
+                                    knownPublisher);
+
+                            allCandidates.AddRange(editionCandidates);
+
+                            if (editionCandidates.Count > 0)
+                            {
+                                diagnostics.Add(
+                                    $"Open Library broad-search edition records supplied {editionCandidates.Count} additional ISBN candidate(s).");
+                            }
+                        }
+                    }
+                }
+            }
+
+            return allCandidates;
+        }
+
+        private static int CountOpenLibraryDocuments(string json)
+        {
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(json);
+
+                return document.RootElement.TryGetProperty("docs", out JsonElement docs) &&
+                       docs.ValueKind == JsonValueKind.Array
+                    ? docs.GetArrayLength()
+                    : 0;
+            }
+            catch (JsonException)
+            {
+                return 0;
+            }
+        }
+
+        private static string BuildOpenLibraryIdentityQuery(
+            string title,
+            string author,
+            string series,
+            string? userEvidence)
+        {
+            List<string> terms = new();
+
+            if (!string.IsNullOrWhiteSpace(title))
+                terms.Add(title.Trim());
+
+            if (!string.IsNullOrWhiteSpace(author))
+                terms.Add(author.Trim());
+
+            if (!string.IsNullOrWhiteSpace(series))
+                terms.Add(series.Trim());
+
+            if (!string.IsNullOrWhiteSpace(userEvidence))
+                terms.Add(userEvidence.Trim());
+
+            return string.Join(" ", terms.Distinct(StringComparer.OrdinalIgnoreCase));
+        }
+
+        private static string BuildOpenLibraryQueryUrl(string query)
+        {
+            return
+                "https://openlibrary.org/search.json?q=" +
+                Uri.EscapeDataString(query) +
+                "&fields=" + Uri.EscapeDataString(
+                    "key,title,author_name,isbn,edition_key,publisher,publish_year") +
+                "&limit=10";
         }
 
         private static string BuildGoogleBooksSearchUrl(
@@ -439,9 +593,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             // by every matching document. That multiplied a single search
             // into a large burst against Open Library.
             //
-            // Verify only the strongest distinct ISBN candidate. The remaining
-            // candidates retain the Search API evidence and can be evaluated
-            // normally without generating another burst of provider traffic.
+            // Verify only the two strongest distinct ISBN candidates. The
+            // remaining candidates still retain the Search API evidence and
+            // can be evaluated normally without generating more provider
+            // traffic.
             //-------------------------------------------------------------
             List<IsbnResearchCandidate> strongest =
                 candidates
@@ -452,7 +607,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         group.OrderByDescending(candidate => candidate.Confidence)
                             .First())
                     .OrderByDescending(candidate => candidate.Confidence)
-                    .Take(1)
+                    .Take(2)
                     .ToList();
 
             foreach (IsbnResearchCandidate candidate in strongest)

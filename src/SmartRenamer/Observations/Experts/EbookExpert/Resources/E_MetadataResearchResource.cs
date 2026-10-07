@@ -222,7 +222,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
             parameters.Add(
                 "fields=" + Uri.EscapeDataString(
-                    "title,author_name,isbn,publisher,description,first_sentence,key"));
+                    "key,title,author_name,isbn,edition_key,publisher,publish_year,description,first_sentence"));
             parameters.Add("limit=10");
 
             return "https://openlibrary.org/search.json?" +

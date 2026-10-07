@@ -228,7 +228,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
                 },
                 Evidence =
                 {
-                    $"{report.Opportunities.Count} ebook repair opportunity(ies) are currently available.",
+                    $"{EbookGrammar.CountPhrase(report.Opportunities.Count, "repair opportunity", "repair opportunities")} " +
+                    $"{EbookGrammar.IsAre(report.Opportunities.Count)} currently available.",
                     "Scout will still ask you when a repair is ambiguous or does not meet the automatic-repair rules."
                 }
             };

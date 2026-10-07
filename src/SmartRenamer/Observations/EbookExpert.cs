@@ -372,7 +372,7 @@ namespace SmartRenamer.Observations
 
                             new ExpertDecisionOption(
                                 "organization-destination-browse",
-                                "Different Destination",
+                                "Choose a different destination",
                                 ExpertDecisionInputKind.Folder,
                                 "Choose another folder for the organized copy. Scout will not modify the original collection.")
                         ]
@@ -1323,25 +1323,8 @@ namespace SmartRenamer.Observations
             if (progress == null)
                 return;
 
-            // Before Organization has been committed, the collection
-            // progress must come from the repair-aware view. Organization's
-            // progress list can be a valid earlier snapshot, but it does not
-            // carry the current repair decision buttons. Reusing that stale
-            // snapshot makes unresolved books appear to have no next action.
-            IReadOnlyList<ExecutionProgressItem> items =
-                _organizationCommitted &&
-                _organizationInvestigation.ProgressItems.Count > 0
-                    ? _organizationInvestigation.ProgressItems
-                    : BuildCollectionProgressItems();
-
             int collectionTotal =
                 _repairInvestigation.ExpeditionTotal;
-
-            int collectionCompleted =
-                _repairInvestigation.ExpeditionCompleted;
-
-            int collectionWaiting =
-                _repairInvestigation.UnresolvedRepairPaths.Count;
 
             int collectionProcessing =
                 _repairInvestigation.ExpeditionProcessing;
@@ -1349,33 +1332,59 @@ namespace SmartRenamer.Observations
             int collectionPending =
                 _repairInvestigation.ExpeditionPending;
 
+            int collectionWaiting =
+                _repairInvestigation.UnresolvedRepairPaths.Count;
+
             int collectionActive =
                 Math.Max(
                     0,
-                        collectionProcessing - collectionWaiting);
+                    collectionProcessing - collectionWaiting);
 
-            if (!_organizationCommitted && items.Count > 0)
+            // Build the collection snapshot before applying Organization's
+            // execution overlay. Its Completed value represents the end of
+            // the repair/review phase: Ready, Accepted, Omitted, and
+            // Organized books have all cleared the review blocker.
+            // Organization must not make a review-complete book look
+            // incomplete merely because its physical copy is Pending or
+            // Processing.
+            IReadOnlyList<ExecutionProgressItem> collectionSnapshot =
+                BuildCollectionProgressItems();
+
+            int collectionCompleted =
+                collectionSnapshot.Count(item =>
+                    item.Total > 0 &&
+                    item.Completed >= item.Total);
+
+            // The UI's collection is always the full ebook expedition.
+            // Organization is deliberately a subset because unresolved repair
+            // branches are not eligible for organization yet. Therefore its
+            // ProgressItems must NEVER replace the collection-wide snapshot.
+            //
+            // Earlier versions did exactly that after Organization was
+            // committed. A six-book organization plan could consequently
+            // replace a ten-book collection snapshot and make Scout appear to
+            // have finished a 6/6 job while four ebooks had disappeared from
+            // the Live Report.
+            //
+            // Build the authoritative collection snapshot first. Then overlay
+            // organization execution state for books that actually belong to
+            // the organization plan. This preserves:                             
+            //   * all discovered ebooks
+            //   * unresolved/NEEDS actions
+            //   * organization Processing/Completed state
+            //   * the collection-wide denominator
+            //
+            // It also keeps the existing stable-item UI architecture intact;
+            // ScoutOperation.ApplyItems() updates the existing rows in place.
+            IReadOnlyList<ExecutionProgressItem> items =
+                collectionSnapshot;
+
+            if (_organizationCommitted &&
+                _organizationInvestigation.ProgressItems.Count > 0)
             {
-                // The repair investigation's legacy processing counter treats
-                // unresolved and externally researched branches alike. That
-                // made a screen showing two actively researched books and one
-                // user decision read "Processing 0 / Waiting 3". The live item
-                // states are more truthful: NEEDS is user attention,
-                // Researching is actual background work, and everything else is
-                // pending.
-                collectionCompleted = items.Count(item => item.IsCompleted);
-                collectionWaiting = items.Count(item => item.NeedsUserAttention);
-                collectionProcessing = items.Count(item =>
-                    string.Equals(
-                        item.State,
-                        "Researching",
-                        StringComparison.OrdinalIgnoreCase));
-                collectionPending = Math.Max(
-                    0,
-                    items.Count -
-                    collectionCompleted -
-                    collectionWaiting -
-                    collectionProcessing);
+                items = MergeOrganizationProgressIntoCollection(
+                    items,
+                    _organizationInvestigation.ProgressItems);
             }
 
             progress.Report(
@@ -1396,6 +1405,74 @@ namespace SmartRenamer.Observations
                     CollectionPending = collectionPending,
                     Items = items
                 });
+        }
+
+        /// <summary>
+        /// Overlays Organization's real-time state onto the authoritative
+        /// collection-wide progress snapshot. Organization is allowed to
+        /// describe a subset of the collection, but it is never allowed to
+        /// remove the other books from the Scout Live Report.
+        /// </summary>
+        private static IReadOnlyList<ExecutionProgressItem> MergeOrganizationProgressIntoCollection(
+            IReadOnlyList<ExecutionProgressItem> collectionItems,
+            IReadOnlyList<ExecutionProgressItem> organizationItems)
+        {
+            if (collectionItems.Count == 0)
+                return organizationItems;
+
+            if (organizationItems.Count == 0)
+                return collectionItems;
+
+            Dictionary<string, ExecutionProgressItem> organizationByKey =
+                organizationItems
+                    .Where(item =>
+                        item != null &&
+                        !string.IsNullOrWhiteSpace(item.Key))
+                    .GroupBy(
+                        item => item.Key,
+                        StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        group => group.Key,
+                        group => group.First(),
+                        StringComparer.OrdinalIgnoreCase);
+
+            List<ExecutionProgressItem> merged =
+                new(collectionItems.Count);
+
+            foreach (ExecutionProgressItem collectionItem in collectionItems)
+            {
+                if (!organizationByKey.TryGetValue(
+                        collectionItem.Key,
+                        out ExecutionProgressItem? organizationItem))
+                {
+                    merged.Add(collectionItem);
+                    continue;
+                }
+
+                // Preserve the collection item's repair/decision actions.
+                // Organization must not erase a NEEDS action merely because
+                // its own plan does not contain that unresolved book.
+                if (collectionItem.NeedsUserAttention)
+                {
+                    merged.Add(collectionItem);
+                    continue;
+                }
+
+                merged.Add(
+                    new ExecutionProgressItem
+                    {
+                        Key = collectionItem.Key,
+                        DisplayName = organizationItem.DisplayName,
+                        State = organizationItem.State,
+                        Status = organizationItem.Status,
+                        Completed = organizationItem.Completed,
+                        Total = organizationItem.Total,
+                        IsPinned = organizationItem.IsPinned,
+                        Actions = collectionItem.Actions
+                    });
+            }
+
+            return merged;
         }
 
         public override List<CV_Recommendation> BuildRecommendations(

@@ -26,6 +26,20 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 @"\bauthor(?:s)?\s*(?:is|=|:)\s*(?<value>[^;\r\n]+)",
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        // Opening-content evidence is internal evidence from the book itself.
+        // These patterns intentionally require an explicit label; ordinary
+        // prose is never treated as a title or author merely because it looks
+        // plausible.
+        private static readonly Regex ExplicitOpeningTitlePattern =
+            new(
+                @"\b(?:book\s+)?title\s*(?:is|=|:)\s*(?<value>.+?)(?=\s+(?:author|authors)\s*(?:is|=|:)|\s+written\s+by\s+|\s+(?:publisher|isbn|series)\s*(?:is|=|:)|$)",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex ExplicitOpeningAuthorPattern =
+            new(
+                @"(?:\b(?:author|authors)\s*(?:is|=|:)\s*|\bwritten\s+by\s+)(?<value>.+?)(?=\s+(?:title|publisher|isbn|series)\s*(?:is|=|:)|$)",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         private static readonly Regex ExplicitSeriesNumberPattern =
             new(
                 @"\b(?:series\s*number|number)\s*(?:is|=|:)\s*(?<value>\d+(?:\.\d+)?)",
@@ -124,6 +138,77 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                     "Conflicting explicit user identity values were supplied; Scout will not automatically choose between them.");
             }
 
+            //---------------------------------------------------------
+            // Internal book evidence comes before filename evidence.
+            //
+            // The filename is mutable and therefore cannot outrank what the
+            // EPUB itself says. When the opening content explicitly identifies
+            // the title or author, that evidence is allowed to establish the
+            // local candidate before the filename is examined. The filename
+            // may corroborate it, but does not silently replace it.
+            //---------------------------------------------------------
+
+            bool internalTitleCorrectionDetected = false;
+            bool internalAuthorCorrectionDetected = false;
+
+            IReadOnlyList<string> openingContentEvidence =
+                record.Evidence
+                    .Where(item =>
+                        string.Equals(
+                            item.Source,
+                            "Opening Content",
+                            StringComparison.OrdinalIgnoreCase))
+                    .Select(item => item.Value)
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .ToList();
+
+            foreach (string openingContent in openingContentEvidence)
+            {
+                if (string.IsNullOrWhiteSpace(explicitUserTitle))
+                {
+                    Match openingTitle =
+                        ExplicitOpeningTitlePattern.Match(openingContent);
+
+                    if (openingTitle.Success)
+                    {
+                        string value =
+                            CleanIdentityValue(openingTitle.Groups["value"].Value);
+
+                        if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            if (!SameValue(metadata.Title, value))
+                                internalTitleCorrectionDetected = true;
+
+                            candidateTitle = value;
+                            evidence.Add(
+                                $"Internal opening-content evidence identifies Title='{value}'.");
+                        }
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(explicitUserAuthor))
+                {
+                    Match openingAuthor =
+                        ExplicitOpeningAuthorPattern.Match(openingContent);
+
+                    if (openingAuthor.Success)
+                    {
+                        string value =
+                            CleanIdentityValue(openingAuthor.Groups["value"].Value);
+
+                        if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            if (!SameValue(metadata.Author, value))
+                                internalAuthorCorrectionDetected = true;
+
+                            candidateAuthor = value;
+                            evidence.Add(
+                                $"Internal opening-content evidence identifies Author='{value}'.");
+                        }
+                    }
+                }
+            }
+
             MetadataEvidence? filenameEvidence =
                 record.Evidence.FirstOrDefault(
                     item => string.Equals(
@@ -166,11 +251,20 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                                 filenameTitle,
                                 StringComparison.OrdinalIgnoreCase))
                         {
-                            candidateTitle = filenameTitle;
-                            filenameTitleCorrectionDetected = true;
+                            if (!internalTitleCorrectionDetected &&
+                                string.IsNullOrWhiteSpace(explicitUserTitle))
+                            {
+                                candidateTitle = filenameTitle;
+                                filenameTitleCorrectionDetected = true;
 
-                            evidence.Add(
-                                $"Explicit filename series structure identifies Title='{filenameTitle}'.");
+                                evidence.Add(
+                                    $"Explicit filename series structure identifies Title='{filenameTitle}'.");
+                            }
+                            else
+                            {
+                                evidence.Add(
+                                    $"Filename Title='{filenameTitle}' differs from the stronger internal Title='{candidateTitle}'; filename retained as corroborating/conflicting evidence.");
+                            }
                         }
                         else
                         {
@@ -214,8 +308,18 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                             titleContainsFilenameAuthor)
                         {
                             identityReversalDetected = true;
-                            candidateTitle = possibleTitle;
-                            candidateAuthor = possibleAuthor;
+
+                            if (!internalTitleCorrectionDetected &&
+                                string.IsNullOrWhiteSpace(explicitUserTitle))
+                            {
+                                candidateTitle = possibleTitle;
+                            }
+
+                            if (!internalAuthorCorrectionDetected &&
+                                string.IsNullOrWhiteSpace(explicitUserAuthor))
+                            {
+                                candidateAuthor = possibleAuthor;
+                            }
 
                             evidence.Add(
                                 $"Filename identity evidence: {filename}");
@@ -224,7 +328,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                                 $"Current metadata: Title='{metadata.Title}', Author='{metadata.Author}'.");
 
                             evidence.Add(
-                                $"Filename suggests Title='{candidateTitle}', Author='{candidateAuthor}'.");
+                                $"Filename identity evidence suggests Title='{possibleTitle}', Author='{possibleAuthor}'.");
+
+                            if (internalTitleCorrectionDetected || internalAuthorCorrectionDetected)
+                            {
+                                evidence.Add(
+                                    $"Internal EPUB identity evidence remains authoritative for any field it explicitly establishes: Title='{candidateTitle}', Author='{candidateAuthor}'.");
+                            }
 
                             IReadOnlyList<string> openingContent =
                                 record.Evidence
@@ -332,6 +442,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                       StringComparison.OrdinalIgnoreCase)));
 
             bool repairRequired =
+                internalTitleCorrectionDetected ||
+                internalAuthorCorrectionDetected ||
                 identityReversalDetected ||
                 filenameTitleCorrectionDetected ||
                 seriesRepairRequired ||
@@ -361,11 +473,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                     ? "Conflicting explicit user identity information requires clarification."
                     : explicitUserIdentityRepairRequired
                         ? "The user supplied explicit identity information that differs from the observed EPUB metadata."
-                        : identityReversalDetected
-                            ? "The EPUB metadata appears to have Title and Author assigned to the wrong identity fields."
-                            : filenameTitleCorrectionDetected
-                                ? "The filename explicitly separates Series, SeriesNumber, and Title, and the filename-derived Title differs from the observed EPUB Title."
-                                : seriesEvaluation.State == SeriesEvidenceState.Resolved
+                        : internalTitleCorrectionDetected || internalAuthorCorrectionDetected
+                            ? "The EPUB's own opening content provides stronger Title/Author identity evidence than the observed metadata."
+                            : identityReversalDetected
+                                ? "The EPUB metadata appears to have Title and Author assigned to the wrong identity fields."
+                                : filenameTitleCorrectionDetected
+                                    ? "The filename explicitly separates Series, SeriesNumber, and Title, and the filename-derived Title differs from the observed EPUB Title."
+                                    : seriesEvaluation.State == SeriesEvidenceState.Resolved
                                 ? "Local evidence establishes a Series or SeriesNumber candidate that differs from the observed EPUB metadata."
                                 : "Local evidence raises a Series question that requires additional evidence before Scout can safely repair it.";
 
@@ -427,6 +541,18 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        private static string CleanIdentityValue(string value)
+        {
+            string cleaned = value.Trim();
+
+            cleaned = cleaned.Trim(" \t\r\n\"'“”‘’.:;,-");
+
+            return Regex.Replace(
+                cleaned,
+                @"\s+",
+                " ").Trim();
         }
 
         private static string RemoveTrailingSeriesPosition(

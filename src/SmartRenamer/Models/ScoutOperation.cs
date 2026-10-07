@@ -3,7 +3,6 @@ using System.ComponentModel;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using Scout.Observations.Conversation;
 
 namespace SmartRenamer.Models
 {
@@ -279,13 +278,30 @@ namespace SmartRenamer.Models
         public IReadOnlyList<ExecutionProgressItem> Items =>
             items;
 
-        // The Live Report deliberately exposes only three user-facing states.
+        // The Live Report deliberately exposes user-facing phase states.
         // Internal/domain states remain in ExecutionProgressItem.State.
         public IEnumerable<ExecutionProgressItem> NeedsItems =>
             items.Where(item => item.NeedsUserAttention);
 
+        // Ready means the repair/review phase is finished, but Organization
+        // has not yet physically placed the ebook. It is intentionally not
+        // part of WORKING because the book is not being actively processed.
+        public IEnumerable<ExecutionProgressItem> ReadyItems =>
+            items.Where(item =>
+                !item.NeedsUserAttention &&
+                string.Equals(
+                    item.State,
+                    "Ready",
+                    StringComparison.OrdinalIgnoreCase));
+
         public IEnumerable<ExecutionProgressItem> WorkingItems =>
-            items.Where(item => !item.NeedsUserAttention && !item.IsCompleted);
+            items.Where(item =>
+                !item.NeedsUserAttention &&
+                !item.IsCompleted &&
+                !string.Equals(
+                    item.State,
+                    "Ready",
+                    StringComparison.OrdinalIgnoreCase));
 
         public IEnumerable<ExecutionProgressItem> CompleteItems =>
             items.Where(item => item.IsCompleted);
@@ -293,135 +309,25 @@ namespace SmartRenamer.Models
         public bool HasNeedsItems =>
             items.Any(item => item.NeedsUserAttention);
 
+        public bool HasReadyItems =>
+            items.Any(item =>
+                !item.NeedsUserAttention &&
+                string.Equals(
+                    item.State,
+                    "Ready",
+                    StringComparison.OrdinalIgnoreCase));
+
         public bool HasWorkingItems =>
-            items.Any(item => !item.NeedsUserAttention && !item.IsCompleted);
+            items.Any(item =>
+                !item.NeedsUserAttention &&
+                !item.IsCompleted &&
+                !string.Equals(
+                    item.State,
+                    "Ready",
+                    StringComparison.OrdinalIgnoreCase));
 
         public bool HasCompleteItems =>
             items.Any(item => item.IsCompleted);
-
-        /// <summary>
-        /// Applies the terminal result of a background research operation to
-        /// the live report immediately. Background research can finish after
-        /// the synchronous investigation has returned, so waiting for another
-        /// full observation pass would leave a completed research item looking
-        /// like WORKING indefinitely.
-        /// </summary>
-        public void ApplyBackgroundActionResult(
-            string contextId,
-            CV_ActionResult result)
-        {
-            if (string.IsNullOrWhiteSpace(contextId) || result == null)
-                return;
-
-            // A result that changed the protected working copy will be followed
-            // by the normal re-observation path. Do not briefly overwrite that
-            // authoritative snapshot with the older background result.
-            if (result.RequiresReobservation)
-                return;
-
-            ExecutionProgressItem? item =
-                items.FirstOrDefault(candidate =>
-                    string.Equals(
-                        candidate.Key,
-                        contextId,
-                        StringComparison.OrdinalIgnoreCase));
-
-            if (item == null)
-                return;
-
-            List<ExecutionProgressAction> actions =
-                result.Options
-                    .Where(option => option != null)
-                    .Select(option =>
-                        new ExecutionProgressAction
-                        {
-                            Id = option.Id,
-                            Label = option.Label,
-                            ActionId = option.ActionId,
-                            ContextId = option.ContextId
-                        })
-                    .ToList();
-
-            if (actions.Count > 0)
-            {
-                item.State = "Unorganized";
-            }
-            else if (result.Success &&
-                     string.Equals(
-                         item.State,
-                         "Researching",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                // A background research operation that finishes without a
-                // physical repair is no longer active work. Do not leave the
-                // row in WORKING indefinitely. The next stage/organization
-                // decision can consume the ready item.
-                item.State = "Ready";
-                item.Status = "Research complete; ready for the next step.";
-            }
-            else if (!result.Success)
-            {
-                // A provider/worker failure must not become a dead WORKING row
-                // or fail the entire expedition. Give the user one safe way to
-                // continue when the domain result did not supply a more specific
-                // action.
-                item.State = "Unorganized";
-                actions.Add(
-                    new ExecutionProgressAction
-                    {
-                        Id = $"AcceptAsIs:{contextId}",
-                        Label = "Accept as-is",
-                        ActionId = "AcceptAsIs",
-                        ContextId = contextId
-                    });
-                item.Status = string.IsNullOrWhiteSpace(result.Message)
-                    ? "Background research could not complete. Choose how to continue."
-                    : result.Message + " Choose how to continue.";
-            }
-
-            if (!string.IsNullOrWhiteSpace(result.Message) &&
-                result.Success &&
-                actions.Count > 0)
-            {
-                item.Status = result.Message;
-            }
-
-            item.Completed = item.IsCompleted ? item.Total : 0;
-            item.Total = Math.Max(1, item.Total);
-            item.Actions = actions;
-
-            RecalculateCollectionCountsFromItems();
-
-            OnPropertyChanged(nameof(NeedsItems));
-            OnPropertyChanged(nameof(WorkingItems));
-            OnPropertyChanged(nameof(CompleteItems));
-            OnPropertyChanged(nameof(HasNeedsItems));
-            OnPropertyChanged(nameof(HasWorkingItems));
-            OnPropertyChanged(nameof(HasCompleteItems));
-        }
-
-        private void RecalculateCollectionCountsFromItems()
-        {
-            if (items.Count == 0)
-                return;
-
-            int completed = items.Count(item => item.IsCompleted);
-            int waiting = items.Count(item => item.NeedsUserAttention);
-            int processing = items.Count(item =>
-                string.Equals(
-                    item.State,
-                    "Researching",
-                    StringComparison.OrdinalIgnoreCase));
-
-            CollectionTotal = items.Count;
-            CollectionCompleted = completed;
-            CollectionWaiting = waiting;
-            CollectionProcessing = processing;
-            CollectionPending =
-                Math.Max(
-                    0,
-                    items.Count - completed - waiting - processing);
-        }
 
         /// <summary>
         /// Applies a progress snapshot without replacing the collection bound
@@ -503,9 +409,11 @@ namespace SmartRenamer.Models
             // Row state may have changed without collection membership changing.
             // Notify the filtered Live Report views before/after repositioning.
             OnPropertyChanged(nameof(NeedsItems));
+            OnPropertyChanged(nameof(ReadyItems));
             OnPropertyChanged(nameof(WorkingItems));
             OnPropertyChanged(nameof(CompleteItems));
             OnPropertyChanged(nameof(HasNeedsItems));
+            OnPropertyChanged(nameof(HasReadyItems));
             OnPropertyChanged(nameof(HasWorkingItems));
             OnPropertyChanged(nameof(HasCompleteItems));
 
@@ -518,9 +426,11 @@ namespace SmartRenamer.Models
 
             OnPropertyChanged(nameof(HasCollectionItems));
             OnPropertyChanged(nameof(NeedsItems));
+            OnPropertyChanged(nameof(ReadyItems));
             OnPropertyChanged(nameof(WorkingItems));
             OnPropertyChanged(nameof(CompleteItems));
             OnPropertyChanged(nameof(HasNeedsItems));
+            OnPropertyChanged(nameof(HasReadyItems));
             OnPropertyChanged(nameof(HasWorkingItems));
             OnPropertyChanged(nameof(HasCompleteItems));
         }
@@ -565,9 +475,11 @@ namespace SmartRenamer.Models
             }
 
             OnPropertyChanged(nameof(NeedsItems));
+            OnPropertyChanged(nameof(ReadyItems));
             OnPropertyChanged(nameof(WorkingItems));
             OnPropertyChanged(nameof(CompleteItems));
             OnPropertyChanged(nameof(HasNeedsItems));
+            OnPropertyChanged(nameof(HasReadyItems));
             OnPropertyChanged(nameof(HasWorkingItems));
             OnPropertyChanged(nameof(HasCompleteItems));
             OnPropertyChanged(nameof(PercentComplete));

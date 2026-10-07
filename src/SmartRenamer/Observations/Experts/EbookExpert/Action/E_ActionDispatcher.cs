@@ -681,24 +681,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
         {
             ArgumentNullException.ThrowIfNull(opportunities);
 
-            // Automatic repair is a delegated capability, not an implicit
-            // consequence of finding a high-confidence repair opportunity.
-            // If the user has not authorized automatic repairs, this pass
-            // must not execute any physical repair.
-            if (!automaticAuthorization)
-            {
-                foreach (RepairOpportunity opportunity in opportunities)
-                {
-                    QueueBackgroundRecoveryIfNeeded(
-                        opportunity,
-                        automaticAuthorization,
-                        automaticAuthorizationProvider,
-                        currentOpportunityResolver);
-                }
-
-                return false;
-            }
-
             bool repairApplied = false;
 
             foreach (RepairOpportunity opportunity in opportunities)
@@ -713,25 +695,82 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 if (string.IsNullOrWhiteSpace(originalPath))
                     continue;
 
-                QueueBackgroundRecoveryIfNeeded(
-                    opportunity,
-                    automaticAuthorization,
-                    automaticAuthorizationProvider,
-                    currentOpportunityResolver);
+                //---------------------------------------------------------
+                // FIRST: establish the strongest local identity Scout can
+                // establish from the EPUB and its collected evidence.
+                //
+                // This must happen before any external research decision.
+                // A mutable filename is supporting evidence; it is never
+                // allowed to cause external research to consume an identity
+                // that Scout has already determined needs reconciliation.
+                //---------------------------------------------------------
+                E_BookIdentityEvaluator identityEvaluator = new();
+
+                BookIdentityEvaluation evaluation =
+                    identityEvaluator.Evaluate(opportunity.Record);
+
+                opportunity.IdentityEvaluation = evaluation;
+
+                if (opportunity.MissingIsbn || evaluation.RepairRequired)
+                {
+                    Debug.WriteLine(
+                        $"[IDENTITY TRACE] LOCAL | " +
+                        $"{opportunity.Record.File?.CurrentName ?? "Unknown ebook"} | " +
+                        $"ObservedTitle='{opportunity.Record.Metadata.Title}' | " +
+                        $"ObservedAuthor='{opportunity.Record.Metadata.Author}' | " +
+                        $"CandidateTitle='{evaluation.Candidate?.Title ?? ""}' | " +
+                        $"CandidateAuthor='{evaluation.Candidate?.Authors ?? ""}' | " +
+                        $"CandidateSeries='{evaluation.Candidate?.Series ?? ""}' | " +
+                        $"CandidateSeriesNumber='{evaluation.Candidate?.SeriesNumber ?? ""}' | " +
+                        $"RepairRequired={evaluation.RepairRequired} | " +
+                        $"Reason='{evaluation.Reason}'");
+                }
 
                 //---------------------------------------------------------
-                // Existing ISBN vertical slice.
-                //
-                // First use information Scout already found in the EPUB.
-                // A single valid ISBN explicitly printed in the opening
-                // content is direct evidence and does not require an
-                // external lookup.
-                //
-                // If local content produces no ISBN, or produces more than
-                // one ISBN, preserve the existing external-research path.
-                // Multiple local ISBNs are deliberately not auto-selected.
+                // If automatic physical repair is not authorized, do not
+                // send ISBN research to an external provider while Title or
+                // Author still needs local reconciliation. Research can wait
+                // until the identity is established or the user supplies the
+                // missing decision.
                 //---------------------------------------------------------
+                if (!automaticAuthorization)
+                {
+                    QueueBackgroundRecoveryIfNeeded(
+                        opportunity,
+                        automaticAuthorization,
+                        automaticAuthorizationProvider,
+                        currentOpportunityResolver,
+                        evaluation);
 
+                    continue;
+                }
+
+                //---------------------------------------------------------
+                // SECOND: apply deterministic local identity repairs before
+                // researching anything outside the EPUB. The next automatic
+                // pass will re-observe the working copy, so external research
+                // never has to treat a repair conclusion as new EPUB evidence.
+                //---------------------------------------------------------
+                bool identityRepairApplied =
+                    ApplySafeIdentityRepair(
+                        opportunity,
+                        evaluation,
+                        originalPath);
+
+                if (identityRepairApplied)
+                {
+                    repairApplied = true;
+
+                    // Do NOT queue external research against the stale
+                    // MetadataRecord. EbookExpert will re-observe the working
+                    // EPUB and run the complete investigation again.
+                    continue;
+                }
+
+                //---------------------------------------------------------
+                // THIRD: use ISBN evidence already found inside the EPUB.
+                // A single valid local ISBN is stronger than external data.
+                //---------------------------------------------------------
                 if (opportunity.MissingIsbn)
                 {
                     bool localIsbnRepairApplied = false;
@@ -785,7 +824,26 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                         }
                     }
 
+                    //---------------------------------------------------------
+                    // FOURTH: external research is allowed only after the
+                    // local identity is ready. The research resource receives
+                    // the reconciled identity as query input, without treating
+                    // that conclusion as newly observed EPUB metadata.
+                    //---------------------------------------------------------
+                    bool identityReadyForExternalResearch =
+                        IsIdentityReadyForExternalResearch(
+                            opportunity,
+                            evaluation);
+
+                    Debug.WriteLine(
+                        $"[IDENTITY TRACE] ISBN GATE | " +
+                        $"{opportunity.Record.File?.CurrentName ?? "Unknown ebook"} | " +
+                        $"Ready={identityReadyForExternalResearch} | " +
+                        $"Title='{evaluation.Candidate?.Title ?? opportunity.Record.Metadata.Title}' | " +
+                        $"Author='{evaluation.Candidate?.Authors ?? opportunity.Record.Metadata.Author}'");
+
                     if (!localIsbnRepairApplied &&
+                        identityReadyForExternalResearch &&
                         _automaticIsbnResearchAttempts.Add(originalPath))
                     {
                         QueueAutomaticIsbnResearch(
@@ -797,165 +855,192 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 }
 
                 //---------------------------------------------------------
-                // Existing local identity repair.
-                //
-                // Title/Author reversal is deterministic when the identity
-                // evaluator establishes the candidate. If Series evidence
-                // is resolved, Series and SeriesNumber can be repaired too.
-                // If Series remains unresolved/conflicting, do not block a
-                // safe Title/Author correction; leave only the unresolved
-                // Series question for later evidence/user decision.
+                // Other external metadata research follows the same identity
+                // gate. It must not query a provider with a known-bad
+                // Title/Author identity.
                 //---------------------------------------------------------
-
-                E_BookIdentityEvaluator identityEvaluator =
-                    new();
-
-                BookIdentityEvaluation evaluation =
-                    identityEvaluator.Evaluate(
-                        opportunity.Record);
-
-                opportunity.IdentityEvaluation = evaluation;
-
-                if (!evaluation.RepairRequired ||
-                    evaluation.Candidate == null)
-                {
-                    continue;
-                }
-
-                BookIdentityCandidate candidate =
-                    evaluation.Candidate;
-
-                string evidence = string.Join(
-                    Environment.NewLine,
-                    evaluation.Evidence.Where(
-                        item => !string.IsNullOrWhiteSpace(item)));
-
-                if (string.IsNullOrWhiteSpace(evidence))
-                    evidence = evaluation.Reason;
-
-                const string source = "LocalIdentityEvidence";
-                const double establishedConfidence = 1.0;
-
-                int changesAdded = 0;
-
-                if (!string.IsNullOrWhiteSpace(candidate.Title) &&
-                    !string.Equals(
-                        opportunity.Record.Metadata.Title,
-                        candidate.Title,
-                        StringComparison.Ordinal))
-                {
-                    _repairService.AddRepairChange(
-                        originalPath,
-                        new E_RepairChange(
-                            "Title",
-                            opportunity.Record.Metadata.Title,
-                            candidate.Title,
-                            source,
-                            evidence,
-                            establishedConfidence,
-                            true));
-
-                    changesAdded++;
-                }
-
-                if (!string.IsNullOrWhiteSpace(candidate.Authors) &&
-                    !string.Equals(
-                        opportunity.Record.Metadata.Author,
-                        candidate.Authors,
-                        StringComparison.Ordinal))
-                {
-                    _repairService.AddRepairChange(
-                        originalPath,
-                        new E_RepairChange(
-                            "Author",
-                            opportunity.Record.Metadata.Author,
-                            candidate.Authors,
-                            source,
-                            evidence,
-                            establishedConfidence,
-                            true));
-
-                    changesAdded++;
-                }
-
-                bool seriesResolved =
-                    evaluation.SeriesEvaluation?.State ==
-                    SeriesEvidenceState.Resolved;
-
-                if (seriesResolved &&
-                    !string.IsNullOrWhiteSpace(candidate.Series) &&
-                    !string.Equals(
-                        opportunity.Record.Metadata.Series,
-                        candidate.Series,
-                        StringComparison.Ordinal))
-                {
-                    _repairService.AddRepairChange(
-                        originalPath,
-                        new E_RepairChange(
-                            "Series",
-                            opportunity.Record.Metadata.Series,
-                            candidate.Series,
-                            source,
-                            evidence,
-                            establishedConfidence,
-                            true));
-
-                    changesAdded++;
-                }
-
-                if (seriesResolved &&
-                    !string.IsNullOrWhiteSpace(candidate.SeriesNumber) &&
-                    !string.Equals(
-                        opportunity.Record.Metadata.SeriesNumber,
-                        candidate.SeriesNumber,
-                        StringComparison.Ordinal))
-                {
-                    _repairService.AddRepairChange(
-                        originalPath,
-                        new E_RepairChange(
-                            "SeriesNumber",
-                            opportunity.Record.Metadata.SeriesNumber,
-                            candidate.SeriesNumber,
-                            source,
-                            evidence,
-                            establishedConfidence,
-                            true));
-
-                    changesAdded++;
-                }
-
-                if (changesAdded > 0 &&
-                    !string.IsNullOrWhiteSpace(
-                        _repairService.ExecuteRepairPlan(opportunity)))
-                {
-                    repairApplied = true;
-                }
+                QueueBackgroundRecoveryIfNeeded(
+                    opportunity,
+                    automaticAuthorization,
+                    automaticAuthorizationProvider,
+                    currentOpportunityResolver,
+                    evaluation);
             }
 
             return repairApplied;
+        }
+
+        private bool ApplySafeIdentityRepair(
+            RepairOpportunity opportunity,
+            BookIdentityEvaluation evaluation,
+            string originalPath)
+        {
+            if (!evaluation.RepairRequired ||
+                evaluation.Candidate == null)
+            {
+                return false;
+            }
+
+            BookIdentityCandidate candidate = evaluation.Candidate;
+
+            string evidence = string.Join(
+                Environment.NewLine,
+                evaluation.Evidence.Where(
+                    item => !string.IsNullOrWhiteSpace(item)));
+
+            if (string.IsNullOrWhiteSpace(evidence))
+                evidence = evaluation.Reason;
+
+            const string source = "LocalIdentityEvidence";
+            const double establishedConfidence = 1.0;
+
+            int changesAdded = 0;
+
+            if (!string.IsNullOrWhiteSpace(candidate.Title) &&
+                !string.Equals(
+                    opportunity.Record.Metadata.Title,
+                    candidate.Title,
+                    StringComparison.Ordinal))
+            {
+                _repairService.AddRepairChange(
+                    originalPath,
+                    new E_RepairChange(
+                        "Title",
+                        opportunity.Record.Metadata.Title,
+                        candidate.Title,
+                        source,
+                        evidence,
+                        establishedConfidence,
+                        true));
+
+                changesAdded++;
+            }
+
+            if (!string.IsNullOrWhiteSpace(candidate.Authors) &&
+                !string.Equals(
+                    opportunity.Record.Metadata.Author,
+                    candidate.Authors,
+                    StringComparison.Ordinal))
+            {
+                _repairService.AddRepairChange(
+                    originalPath,
+                    new E_RepairChange(
+                        "Author",
+                        opportunity.Record.Metadata.Author,
+                        candidate.Authors,
+                        source,
+                        evidence,
+                        establishedConfidence,
+                        true));
+
+                changesAdded++;
+            }
+
+            bool seriesResolved =
+                evaluation.SeriesEvaluation?.State ==
+                SeriesEvidenceState.Resolved;
+
+            if (seriesResolved &&
+                !string.IsNullOrWhiteSpace(candidate.Series) &&
+                !string.Equals(
+                    opportunity.Record.Metadata.Series,
+                    candidate.Series,
+                    StringComparison.Ordinal))
+            {
+                _repairService.AddRepairChange(
+                    originalPath,
+                    new E_RepairChange(
+                        "Series",
+                        opportunity.Record.Metadata.Series,
+                        candidate.Series,
+                        source,
+                        evidence,
+                        establishedConfidence,
+                        true));
+
+                changesAdded++;
+            }
+
+            if (seriesResolved &&
+                !string.IsNullOrWhiteSpace(candidate.SeriesNumber) &&
+                !string.Equals(
+                    opportunity.Record.Metadata.SeriesNumber,
+                    candidate.SeriesNumber,
+                    StringComparison.Ordinal))
+            {
+                _repairService.AddRepairChange(
+                    originalPath,
+                    new E_RepairChange(
+                        "SeriesNumber",
+                        opportunity.Record.Metadata.SeriesNumber,
+                        candidate.SeriesNumber,
+                        source,
+                        evidence,
+                        establishedConfidence,
+                        true));
+
+                changesAdded++;
+            }
+
+            if (changesAdded == 0)
+                return false;
+
+            return !string.IsNullOrWhiteSpace(
+                _repairService.ExecuteRepairPlan(opportunity));
+        }
+
+        private static bool IsIdentityReadyForExternalResearch(
+            RepairOpportunity opportunity,
+            BookIdentityEvaluation evaluation)
+        {
+            if (opportunity.Record?.Metadata == null)
+                return false;
+
+            string title = opportunity.Record.Metadata.Title?.Trim() ?? string.Empty;
+            string author = opportunity.Record.Metadata.Author?.Trim() ?? string.Empty;
+
+            //-------------------------------------------------------------
+            // If the local evaluator has a Title/Author correction pending,
+            // the observed metadata is not yet a safe external-research
+            // identity. Automatic repair must happen first and the EPUB must
+            // be re-observed. A resolved Series is helpful but not required
+            // to research an ISBN.
+            //-------------------------------------------------------------
+            if (evaluation.RepairRequired && evaluation.Candidate != null)
+            {
+                string candidateTitle = evaluation.Candidate.Title?.Trim() ?? string.Empty;
+                string candidateAuthor = evaluation.Candidate.Authors?.Trim() ?? string.Empty;
+
+                bool titleNeedsRepair =
+                    !string.IsNullOrWhiteSpace(candidateTitle) &&
+                    !string.Equals(title, candidateTitle, StringComparison.OrdinalIgnoreCase);
+
+                bool authorNeedsRepair =
+                    !string.IsNullOrWhiteSpace(candidateAuthor) &&
+                    !string.Equals(author, candidateAuthor, StringComparison.OrdinalIgnoreCase);
+
+                if (titleNeedsRepair || authorNeedsRepair)
+                    return false;
+            }
+
+            return !string.IsNullOrWhiteSpace(title) &&
+                   !string.IsNullOrWhiteSpace(author);
         }
 
         private void QueueBackgroundRecoveryIfNeeded(
             RepairOpportunity opportunity,
             bool automaticAuthorization,
             Func<bool>? automaticAuthorizationProvider,
-            Func<string, RepairOpportunity?>? currentOpportunityResolver)
+            Func<string, RepairOpportunity?>? currentOpportunityResolver,
+            BookIdentityEvaluation evaluation)
         {
             if (opportunity?.Record?.Metadata == null)
                 return;
 
-            if (opportunity.MissingIsbn &&
-                _automaticIsbnResearchAttempts.Add(
-                    opportunity.Record.File?.OriginalFullPath ?? string.Empty))
-            {
-                QueueAutomaticIsbnResearch(
-                    opportunity,
-                    automaticAuthorization,
-                    automaticAuthorizationProvider,
-                    currentOpportunityResolver);
-            }
-
             if ((opportunity.MissingPublisher || opportunity.MissingDescription) &&
+                IsIdentityReadyForExternalResearch(
+                    opportunity,
+                    evaluation) &&
                 !string.IsNullOrWhiteSpace(opportunity.Record.File?.OriginalFullPath))
             {
                 string path = opportunity.Record.File!.OriginalFullPath;
@@ -1425,9 +1510,36 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                                 });
                         }
 
+                        E_BookIdentityEvaluator currentIdentityEvaluator =
+                            new();
+
+                        BookIdentityEvaluation currentIdentityEvaluation =
+                            currentIdentityEvaluator.Evaluate(
+                                currentOpportunity.Record);
+
+                        currentOpportunity.IdentityEvaluation =
+                            currentIdentityEvaluation;
+
+                        if (!IsIdentityReadyForExternalResearch(
+                                currentOpportunity,
+                                currentIdentityEvaluation))
+                        {
+                            return Task.FromResult(
+                                new CV_ActionResult
+                                {
+                                    ActionId = "BackgroundResearchMissingIsbn",
+                                    Success = true,
+                                    RequiresReobservation = false,
+                                    Message =
+                                        "Scout did not perform external ISBN research because the ebook's local Title/Author identity still needs reconciliation."
+                                });
+                        }
+
                         IsbnResearchResult research =
                             _repairService.ResearchMissingIsbnWithStatus(
-                                currentOpportunity);
+                                currentOpportunity,
+                                null,
+                                currentIdentityEvaluation);
 
                         cancellationToken.ThrowIfCancellationRequested();
 
@@ -2457,9 +2569,30 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             // existing validation fallback.
             if (candidates.Count == 0)
             {
+                E_BookIdentityEvaluator identityEvaluator = new();
+                BookIdentityEvaluation identityEvaluation =
+                    identityEvaluator.Evaluate(selectedOpportunity.Record);
+
+                selectedOpportunity.IdentityEvaluation = identityEvaluation;
+
+                if (!IsIdentityReadyForExternalResearch(
+                        selectedOpportunity,
+                        identityEvaluation))
+                {
+                    return new CV_ActionResult
+                    {
+                        ActionId = request.ActionId,
+                        Success = false,
+                        Message =
+                            "Scout could not validate an ISBN selection because the ebook's local Title/Author identity still needs reconciliation."
+                    };
+                }
+
                 candidates =
                     _repairService.ResearchMissingIsbn(
-                        selectedOpportunity);
+                        selectedOpportunity,
+                        null,
+                        identityEvaluation);
             }
 
             IsbnResearchCandidate? selectedCandidate = null;
@@ -2601,6 +2734,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             Func<string, RepairOpportunity?>? currentOpportunityResolver)
         {
             int queued = 0;
+            int blocked = 0;
 
             foreach (RepairOpportunity opportunity in opportunities)
             {
@@ -2620,6 +2754,20 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                         request.ContextId,
                         StringComparison.OrdinalIgnoreCase))
                 {
+                    continue;
+                }
+
+                E_BookIdentityEvaluator identityEvaluator = new();
+                BookIdentityEvaluation identityEvaluation =
+                    identityEvaluator.Evaluate(opportunity.Record);
+
+                opportunity.IdentityEvaluation = identityEvaluation;
+
+                if (!IsIdentityReadyForExternalResearch(
+                        opportunity,
+                        identityEvaluation))
+                {
+                    blocked++;
                     continue;
                 }
 
@@ -2654,10 +2802,36 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                                     });
                             }
 
+                            E_BookIdentityEvaluator currentIdentityEvaluator =
+                                new();
+
+                            BookIdentityEvaluation currentIdentityEvaluation =
+                                currentIdentityEvaluator.Evaluate(
+                                    currentOpportunity.Record);
+
+                            currentOpportunity.IdentityEvaluation =
+                                currentIdentityEvaluation;
+
+                            if (!IsIdentityReadyForExternalResearch(
+                                    currentOpportunity,
+                                    currentIdentityEvaluation))
+                            {
+                                return Task.FromResult(
+                                    new CV_ActionResult
+                                    {
+                                        ActionId = "BackgroundResearchMissingIsbn",
+                                        Success = true,
+                                        RequiresReobservation = false,
+                                        Message =
+                                            "Scout did not perform external ISBN research because the ebook's local Title/Author identity still needs reconciliation."
+                                    });
+                            }
+
                             IsbnResearchResult research =
                                 _repairService.ResearchMissingIsbnWithStatus(
                                     currentOpportunity,
-                                    userEvidence);
+                                    userEvidence,
+                                    currentIdentityEvaluation);
 
                             cancellationToken.ThrowIfCancellationRequested();
 
@@ -2696,9 +2870,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 return new CV_ActionResult
                 {
                     ActionId = request.ActionId,
-                    Success = false,
-                    Message =
-                        "I couldn't find an active ebook that needs ISBN research."
+                    Success = blocked > 0,
+                    RequiresReobservation = false,
+                    Message = blocked > 0
+                        ? $"Scout did not perform external ISBN research for {blocked:N0} ebook(s) because their local Title/Author identity still needs reconciliation. I will research the ISBN after that identity is established."
+                        : "I couldn't find an active ebook that needs ISBN research."
                 };
             }
 
@@ -2707,8 +2883,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 ActionId = request.ActionId,
                 Success = true,
                 RequiresReobservation = false,
-                Message =
-                    queued == 1
+                Message = blocked > 0
+                    ? $"I'm researching ISBNs for {queued:N0} ebook(s) whose local identity is established. I held back {blocked:N0} ebook(s) until their Title/Author identity is reconciled."
+                    : queued == 1
                         ? "I'm researching the ISBN in the background while Scout continues processing the collection."
                         : $"I'm researching ISBNs for {queued:N0} ebooks in the background while Scout continues processing the collection."
             };
@@ -2774,12 +2951,28 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     continue;
                 }
 
+                E_BookIdentityEvaluator identityEvaluator = new();
+                BookIdentityEvaluation identityEvaluation =
+                    identityEvaluator.Evaluate(opportunity.Record);
+
+                opportunity.IdentityEvaluation = identityEvaluation;
+
+                if (!IsIdentityReadyForExternalResearch(
+                        opportunity,
+                        identityEvaluation))
+                {
+                    evidence.Add(
+                        $"{opportunity.Record?.File?.CurrentName ?? "Unknown ebook"}: Scout will not research an ISBN externally until the local Title/Author identity is reconciled.");
+                    continue;
+                }
+
                 researchedBooks++;
 
                 List<IsbnResearchCandidate> candidates =
                     _repairService.ResearchMissingIsbn(
                         opportunity,
-                        request.UserInput);
+                        request.UserInput,
+                        identityEvaluation);
 
                 string fileName =
                     opportunity.Record?.File?.CurrentName

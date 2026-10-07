@@ -3,7 +3,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
     internal static class EbookGrammar
     {
         public static string CountNoun(int count) =>
-            $"{count:N0} {(count == 1 ? "ebook" : "ebooks")}";
+            CountPhrase(count, "ebook", "ebooks");
+
+        public static string CountPhrase(
+            int count,
+            string singular,
+            string plural) =>
+            $"{count:N0} {(count == 1 ? singular : plural)}";
 
         public static string IsAre(int count) =>
             count == 1 ? "is" : "are";

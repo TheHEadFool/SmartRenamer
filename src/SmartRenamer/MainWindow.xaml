@@ -164,262 +164,210 @@
             <Border Grid.Column="0"
         Style="{StaticResource CardBorder}">
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <!--
+                    The left pane has two different jobs:
 
-                    <StackPanel Margin="15">
+                    1. Observations are a browseable list and may need to scroll.
+                    2. Scout Controls are the current actions and must remain
+                       visible without requiring the user to discover a second
+                       scrollbar.
 
-                        <Grid Margin="0,0,0,20">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-
-                            <!-- Scout title and description -->
-                            <StackPanel Grid.Column="0"
-                VerticalAlignment="Center">
-
-                                <TextBlock
-            FontSize="22"
-            FontWeight="Bold"
-            Text="Scout"/>
-
-                                <TextBlock
-            Margin="0,6,8,0"
-            Foreground="{StaticResource SecondaryTextBrush}"
-            Text="Choose an observation to explore."
-            TextWrapping="Wrap"/>
-                            </StackPanel>
-
-                            <!-- Review All -->
-                            <!-- Review All -->
-                            <Button
-    Grid.Column="1"
-    Width="96"
-    Height="96"
-    Margin="8,0,0,0"
-    Padding="0"
-    BorderThickness="0"
-    Background="Transparent"
-    ToolTip="Review All"
-    Cursor="Hand"                           
-    Command="{Binding DataContext.Workspace.ReviewAllCommand,
-                      RelativeSource={RelativeSource AncestorType=Window}}">
-
-                                <Image
-        Source="/Expeditions/Safari/Assets/images/ReviewAll.png"
-        Stretch="Uniform"/>
-                            </Button>
-                        </Grid>
-
-                        <!-- ================================================= -->
-                        <!-- Scout Controls                                     -->
-                        <!-- ================================================= -->
-                        <!-- All user actions belong here.                    -->
-                        <!-- Conversation explains; Scout Controls acts.      -->
-                        <!-- ================================================= -->
-
-                        <Border
-                            Margin="0,20,0,0"
-                            Padding="12"
-                            CornerRadius="10"
-                            Background="White"
-                            BorderBrush="{StaticResource BorderBrush}"
-                            BorderThickness="1">
-                            <Border.Style>
-                                <Style TargetType="Border">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Guide.HasScoutControls}" Value="False">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Border.Style>
-
-                            <StackPanel>
-                                <TextBlock
-                                    Text="Scout Controls"
-                                    FontWeight="SemiBold"
-                                    Margin="0,0,0,4"/>
-
-                                <TextBlock
-                                    Text="{Binding Guide.ScoutControlsPrompt}"
-                                    TextWrapping="Wrap"
-                                    Foreground="{StaticResource ConversationSubtitleBrush}"
-                                    Margin="0,0,0,10"/>
-
-                                <ItemsControl ItemsSource="{Binding Guide.DiscoveryOptions}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button
-                                                Content="{Binding Text}"
-                                                Margin="0,0,0,8"
-                                                Padding="10,8"
-                                                HorizontalContentAlignment="Left"
-                                                Background="{StaticResource ConversationSendBrush}"
-                                                Foreground="White"
-                                                BorderBrush="{StaticResource ConversationSendBorderBrush}"
-                                                BorderThickness="1"
-                                                FontWeight="SemiBold"
-                                                Cursor="Hand"
-                                                Command="{Binding DataContext.Guide.SelectDiscoveryOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding}"/>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <ItemsControl ItemsSource="{Binding Guide.DecisionOptions}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button
-                                                Content="{Binding Text}"
-                                                Margin="0,0,0,8"
-                                                Padding="10,8"
-                                                HorizontalContentAlignment="Left"
-                                                Background="{StaticResource ConversationSendBrush}"
-                                                Foreground="White"
-                                                BorderBrush="{StaticResource ConversationSendBorderBrush}"
-                                                BorderThickness="1"
-                                                FontWeight="SemiBold"
-                                                Cursor="Hand"
-                                                Command="{Binding DataContext.Guide.SelectDecisionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding}"/>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <ItemsControl ItemsSource="{Binding Guide.ActionOptions}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button
-                                                Content="{Binding Label}"
-                                                Margin="0,0,0,8"
-                                                Padding="10,8"
-                                                HorizontalContentAlignment="Left"
-                                                Background="{StaticResource ConversationSendBrush}"
-                                                Foreground="White"
-                                                BorderBrush="{StaticResource ConversationSendBorderBrush}"
-                                                BorderThickness="1"
-                                                FontWeight="SemiBold"
-                                                Cursor="Hand"
-                                                Command="{Binding DataContext.Guide.SelectActionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding}"/>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </Border>
-
-                        <Border
-                Padding="16"
-                CornerRadius="12"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1"
-                Background="#F8FAFD">
-                            <Border.Style>
-                                <Style TargetType="Border">
-                                    <Setter Property="Visibility" Value="Visible"/>
-
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Guide.ShowWorkspaceObservations}" Value="False">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Border.Style>
-
-                            <StackPanel>
-
-                                <!--
-    ================================================================
-    BUTTON PRESENTATION PATH
-    ================================================================
-
-    These buttons are driven by ProjectObservation.
-
-    The same ExpertFinding also feeds the Conversation Framework.
-
-    ExpertFinding
-        |
-        + ProjectObservation = Button Path
-        |
-        + CV_Recommendation = Conversation Path
-
-    The two presentation paths intentionally remain independent.
-
-    The button path lets the user choose an observation.
-    The conversation path lets Scout discuss its recommendation.
-    ================================================================
+                    Keep those surfaces in separate Grid rows.  The old layout
+                    put both inside one ScrollViewer, which allowed a long
+                    observation list to push the actual decision buttons below
+                    the visible window.
                 -->
+                <Grid Margin="15">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-                                <ItemsControl ItemsSource="{Binding Workspace.Observations}">
+                    <!-- Header / Review All -->
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
 
-                                    <ItemsControl.ItemTemplate>
+                        <StackPanel Grid.Column="0"
+                                    VerticalAlignment="Center">
+                            <TextBlock
+                                FontSize="22"
+                                FontWeight="Bold"
+                                Text="Scout"/>
 
-                                        <DataTemplate>
+                            <TextBlock
+                                Margin="0,6,8,0"
+                                Foreground="{StaticResource SecondaryTextBrush}"
+                                Text="Choose an observation to explore."
+                                TextWrapping="Wrap"/>
+                        </StackPanel>
 
+                        <Button
+                            Grid.Column="1"
+                            Width="96"
+                            Height="96"
+                            Margin="8,0,0,0"
+                            Padding="0"
+                            BorderThickness="0"
+                            Background="Transparent"
+                            ToolTip="Review All"
+                            Cursor="Hand"
+                            Command="{Binding DataContext.Workspace.ReviewAllCommand,
+                                      RelativeSource={RelativeSource AncestorType=Window}}">
+                            <Image
+                                Source="/Expeditions/Safari/Assets/images/ReviewAll.png"
+                                Stretch="Uniform"/>
+                        </Button>
+                    </Grid>
+
+                    <!-- Observation list: this is the only scrollable part. -->
+                    <ScrollViewer
+                        Grid.Row="1"
+                        VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled">
+                        <Border
+                            Padding="16"
+                            CornerRadius="12"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            Background="#F8FAFD">
+
+                            <ItemsControl ItemsSource="{Binding Workspace.Observations}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border
+                                            Margin="0,0,0,10"
+                                            Padding="8"
+                                            CornerRadius="8"
+                                            Background="{StaticResource ObservationSurfaceBrush}">
                                             <Border
-                Margin="0,0,0,10"
-                Padding="8"
-                CornerRadius="8"
-                Background="{StaticResource ObservationSurfaceBrush}">
-
-                                                <StackPanel>
-
-
-
-                                                    <Border
-    Margin="0,0,0,0"
-    Padding="8"
-    Background="{StaticResource ObservationCardBrush}"
-    BorderBrush="{StaticResource ObservationBorderBrush}"
-    BorderThickness="1"
-    CornerRadius="10">
-
-                                                        <Button
-            Style="{StaticResource ObservationButtonStyle}"
-            Padding="10,8"
-            MinHeight="48"
-            HorizontalAlignment="Stretch"
-            HorizontalContentAlignment="Stretch"
-            Command="{Binding DataContext.Workspace.SelectObservationCommand,
-                RelativeSource={RelativeSource AncestorType=Window}}"
-            CommandParameter="{Binding}">
-
-                                                            <TextBlock
-                Text="{Binding ActionTitle}"
-                TextWrapping="Wrap"
-                TextAlignment="Left"
-                FontSize="12"
-                HorizontalAlignment="Stretch"/>
-
-                                                        </Button>
-
-                                                    </Border>
-
-
-                                                </StackPanel>
-
+                                                Padding="8"
+                                                Background="{StaticResource ObservationCardBrush}"
+                                                BorderBrush="{StaticResource ObservationBorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="10">
+                                                <Button
+                                                    Style="{StaticResource ObservationButtonStyle}"
+                                                    Padding="10,8"
+                                                    MinHeight="48"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Stretch"
+                                                    Command="{Binding DataContext.Workspace.SelectObservationCommand,
+                                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}">
+                                                    <TextBlock
+                                                        Text="{Binding ActionTitle}"
+                                                        TextWrapping="Wrap"
+                                                        TextAlignment="Left"
+                                                        FontSize="12"
+                                                        HorizontalAlignment="Stretch"/>
+                                                </Button>
                                             </Border>
-
-                                        </DataTemplate>
-
-                                    </ItemsControl.ItemTemplate>
-
-                                </ItemsControl>
-
-
-                            </StackPanel>
-
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </Border>
+                    </ScrollViewer>
 
+                    <!--
+                        Current decision/action surface.  This stays pinned to
+                        the bottom of the left pane.  It is deliberately not
+                        inside the observation ScrollViewer.
+                    -->
+                    <Border
+                        Grid.Row="2"
+                        Margin="0,12,0,0"
+                        Padding="12"
+                        CornerRadius="10"
+                        Background="White"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Guide.HasScoutControls}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
 
+                        <StackPanel>
+                            <TextBlock
+                                Text="Scout Controls"
+                                FontWeight="SemiBold"
+                                Margin="0,0,0,10"/>
 
-                    </StackPanel>
+                            <ItemsControl ItemsSource="{Binding Guide.DiscoveryOptions}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button
+                                            Content="{Binding Text}"
+                                            Margin="0,0,0,8"
+                                            Padding="10,8"
+                                            HorizontalContentAlignment="Left"
+                                            Background="{StaticResource ConversationSendBrush}"
+                                            Foreground="White"
+                                            BorderBrush="{StaticResource ConversationSendBorderBrush}"
+                                            BorderThickness="1"
+                                            FontWeight="SemiBold"
+                                            Cursor="Hand"
+                                            Command="{Binding DataContext.Guide.SelectDiscoveryOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
 
-                </ScrollViewer>
+                            <ItemsControl ItemsSource="{Binding Guide.DecisionOptions}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button
+                                            Content="{Binding Text}"
+                                            Margin="0,0,0,8"
+                                            Padding="10,8"
+                                            HorizontalContentAlignment="Left"
+                                            Background="{StaticResource ConversationSendBrush}"
+                                            Foreground="White"
+                                            BorderBrush="{StaticResource ConversationSendBorderBrush}"
+                                            BorderThickness="1"
+                                            FontWeight="SemiBold"
+                                            Cursor="Hand"
+                                            Command="{Binding DataContext.Guide.SelectDecisionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <ItemsControl ItemsSource="{Binding Guide.ActionOptions}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button
+                                            Content="{Binding Label}"
+                                            Margin="0,0,0,8"
+                                            Padding="10,8"
+                                            HorizontalContentAlignment="Left"
+                                            Background="{StaticResource ConversationSendBrush}"
+                                            Foreground="White"
+                                            BorderBrush="{StaticResource ConversationSendBorderBrush}"
+                                            BorderThickness="1"
+                                            FontWeight="SemiBold"
+                                            Cursor="Hand"
+                                            Command="{Binding DataContext.Guide.SelectActionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </Grid>
 
             </Border>
+
             <!-- ================================================= -->
             <!-- Workspace -->
             <!-- ================================================= -->
@@ -604,6 +552,76 @@
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <!-- READY FOR ORGANIZATION -->
+                                <TextBlock
+                                    FontSize="17"
+                                    FontWeight="Bold"
+                                    Text="READY FOR ORGANIZATION"
+                                    Margin="0,4,0,4">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Operation.HasReadyItems}" Value="False">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <ListBox
+                                    ItemsSource="{Binding Operation.ReadyItems}"
+                                    MaxHeight="190"
+                                    BorderThickness="0"
+                                    Background="Transparent"
+                                    Margin="0,0,0,12"
+                                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                    VirtualizingPanel.IsVirtualizing="True"
+                                    VirtualizingPanel.VirtualizationMode="Recycling">
+                                    <ListBox.Style>
+                                        <Style TargetType="ListBox">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Operation.HasReadyItems}" Value="False">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ListBox.Style>
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Margin" Value="0"/>
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Focusable" Value="False"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Height="30">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="○" VerticalAlignment="Center"/>
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    Margin="4,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Text="{Binding DisplayName}"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    ToolTip="{Binding Status}"/>
                                             </Grid>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>

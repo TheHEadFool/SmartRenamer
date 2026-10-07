@@ -135,49 +135,9 @@ namespace SmartRenamer.ViewModels.Guide
             DiscoveryOptions.Count > 0 ||
             ActionOptions.Count > 0;
 
-        /// <summary>
-        /// Show the older observation buttons only when they are actually the
-        /// current navigation surface. Once Scout has a concrete current
-        /// action/decision, those older observations become stale clutter.
-        /// Organization is likewise a decision stage, so the old observation
-        /// buttons are hidden there.
-        /// </summary>
-        public bool ShowWorkspaceObservations =>
-            !HasScoutControls &&
-            !operation.HasNeedsItems &&
-            !operation.HasWorkingItems &&
-            !string.Equals(
-                operation.Stage,
-                "Organization",
-                StringComparison.OrdinalIgnoreCase);
-
-        /// <summary>
-        /// Plain-language direction for a beginner. It deliberately points to
-        /// the persistent Scout Controls area instead of sending the user back
-        /// into the conversation transcript to find an old button.
-        /// </summary>
-        public string ScoutControlsPrompt
-        {
-            get
-            {
-                if (DiscoveryOptions.Count > 0)
-                    return "Choose one of the buttons below to tell Scout how to begin.";
-
-                if (DecisionOptions.Count > 0)
-                    return "Scout needs your choice. Use one of the buttons below to continue.";
-
-                if (ActionOptions.Count > 0)
-                    return "Scout needs your attention. Use one of the buttons below.";
-
-                return string.Empty;
-            }
-        }
-
         private void NotifyScoutControlsChanged()
         {
             OnPropertyChanged(nameof(HasScoutControls));
-            OnPropertyChanged(nameof(ShowWorkspaceObservations));
-            OnPropertyChanged(nameof(ScoutControlsPrompt));
         }
 
         //---------------------------------------------------------
@@ -336,7 +296,6 @@ namespace SmartRenamer.ViewModels.Guide
                     operation.CurrentFile = p.CurrentFile;
                     operation.Status = p.Status;
                     operation.Stage = p.Stage;
-                    OnPropertyChanged(nameof(ShowWorkspaceObservations));
                     operation.StageCompleted = p.StageCompleted;
                     operation.StageTotal = p.StageTotal;
                     operation.CollectionTotal = p.CollectionTotal;
@@ -345,26 +304,6 @@ namespace SmartRenamer.ViewModels.Guide
                     operation.CollectionWaiting = p.CollectionWaiting;
                     operation.CollectionPending = p.CollectionPending;
                     operation.ApplyItems(p.Items);
-                    OnPropertyChanged(nameof(ShowWorkspaceObservations));
-
-                    if (p.CollectionProcessing > 0 &&
-                        string.Equals(
-                            p.Stage,
-                            "Repair",
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        operation.Status =
-                            $"Scout is researching {p.CollectionProcessing:N0} book{(p.CollectionProcessing == 1 ? "" : "s")} in the background. You do not need to wait; if research cannot complete, the book will move to NEEDS.";
-                    }
-                    else if (p.CollectionWaiting > 0 &&
-                             string.Equals(
-                                 p.Stage,
-                                 "Repair",
-                                 StringComparison.OrdinalIgnoreCase))
-                    {
-                        operation.Status =
-                            "Scout is waiting for your decision on one or more books.";
-                    }
 
                     operation.CurrentTask =
                         p.CollectionTotal > 0
@@ -1465,7 +1404,6 @@ namespace SmartRenamer.ViewModels.Guide
             operation.CompletedSteps = 0;
             operation.TotalSteps = 0;
             operation.Stage = "";
-            OnPropertyChanged(nameof(ShowWorkspaceObservations));
             operation.StageCompleted = 0;
             operation.StageTotal = 0;
             operation.CollectionTotal = 0;
@@ -1795,6 +1733,12 @@ namespace SmartRenamer.ViewModels.Guide
             Conversation.AddUserMessage(
                 recommendation.ActionText);
 
+            // The clicked recommendation is no longer actionable once the
+            // request has been created. Clear it before starting the async
+            // domain action so the UI cannot briefly present the same action
+            // again while background research is running.
+            workspace.ClearCurrentRecommendation();
+
             operation.State = ScoutOperationState.Running;
             operation.Status = "Working...";
 
@@ -1843,18 +1787,7 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
 
             Action applyResult =
-                () =>
-                {
-                    // Background research completes outside the original
-                    // investigation pass. Refresh the affected Live Report
-                    // row before presenting the result so a completed research
-                    // item cannot remain visually stuck in WORKING.
-                    operation.ApplyBackgroundActionResult(
-                        e.ContextId,
-                        e.Result);
-
-                    HandleActionResult(e.Result);
-                };
+                () => HandleActionResult(e.Result);
 
             if (System.Windows.Application.Current?.Dispatcher is
                 System.Windows.Threading.Dispatcher dispatcher)

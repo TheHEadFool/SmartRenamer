@@ -385,7 +385,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 "https://openlibrary.org/search.json?q=" +
                 Uri.EscapeDataString(query) +
                 "&fields=" + Uri.EscapeDataString(
-                    "key,title,author_name,isbn,edition_key,publisher,publish_year") +
+                    "key,title,author_name,isbn,edition_key,publisher,publish_year,description,first_sentence") +
                 "&limit=10";
         }
 
@@ -434,7 +434,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
             parameters.Add(
                 "fields=" + Uri.EscapeDataString(
-                    "key,title,author_name,isbn,edition_key,publisher,publish_year"));
+                    "key,title,author_name,isbn,edition_key,publisher,publish_year,description,first_sentence"));
             parameters.Add("limit=10");
 
             return

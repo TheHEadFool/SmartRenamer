@@ -189,6 +189,35 @@ namespace SmartRenamer.ViewModels.Guide
 
         private bool awaitingDecisionChoice;
 
+        // -------------------------------------------------------------
+        // Ebook action-decision queue
+        // -------------------------------------------------------------
+        // Background EbookExpert work can finish in any order. The Guide keeps
+        // those decisions separate from the one decision currently shown in
+        // Scout Controls. One entry represents one ebook/context and may hold
+        // several choices, such as several ISBN candidates.
+        // -------------------------------------------------------------
+
+        private sealed class PendingActionDecision
+        {
+            public string ContextId { get; init; } = string.Empty;
+            public string DisplayName { get; init; } = string.Empty;
+            public string Message { get; set; } = string.Empty;
+            public bool IsBackgroundResearch { get; set; }
+            public List<string> Evidence { get; } = new();
+            public List<CV_ActionOption> Options { get; } = new();
+        }
+
+        private readonly List<PendingActionDecision> pendingActionDecisions =
+            new();
+
+        private PendingActionDecision? currentActionDecision;
+
+        // True while a foreground user action is executing. Background research
+        // that finishes during that interval must join the queue rather than
+        // stealing the current presentation slot.
+        private bool foregroundActionInProgress;
+
         // ---------------------------------------------------------
         // Reversible decision history
         // ---------------------------------------------------------
@@ -531,6 +560,15 @@ namespace SmartRenamer.ViewModels.Guide
 
                 if (actionRequest != null)
                 {
+                    // A typed value is the answer to the currently active
+                    // action decision. Hold the decision while the domain action
+                    // runs so a failure can safely restore it.
+                    PendingActionDecision? consumedDecision =
+                        currentActionDecision;
+
+                    currentActionDecision = null;
+                    ClearCurrentActionPresentation();
+
                     Conversation.AddGuideMessage("");
 
                     //---------------------------------------------------------
@@ -546,6 +584,14 @@ namespace SmartRenamer.ViewModels.Guide
                     CV_ActionResult actionResult =
                         await ExecuteActionAsync(
                             actionRequest);
+
+                    if (!actionResult.Success &&
+                        consumedDecision != null &&
+                        currentActionDecision == null)
+                    {
+                        currentActionDecision = consumedDecision;
+                        PresentCurrentActionDecision(false);
+                    }
 
                     //---------------------------------------------------------
                     // Report a failed action.
@@ -942,6 +988,9 @@ namespace SmartRenamer.ViewModels.Guide
             pendingDecisionIndex = 0;
             awaitingDecisionChoice = false;
             decisionHistory.Clear();
+
+            pendingActionDecisions.Clear();
+            currentActionDecision = null;
 
             ActionOptions.Clear();
             DecisionOptions.Clear();
@@ -1412,7 +1461,7 @@ namespace SmartRenamer.ViewModels.Guide
             operation.CollectionWaiting = 0;
             operation.CollectionPending = 0;
             operation.ApplyItems(Array.Empty<ExecutionProgressItem>());
-            
+
             operation.State = ScoutOperationState.Running;
 
             try
@@ -1621,6 +1670,11 @@ namespace SmartRenamer.ViewModels.Guide
                 ContextId = ""
             };
 
+            ParkCurrentActionDecision();
+            workspace.ConversationEngine.ClearActionOptions();
+            ActionOptions.Clear();
+            NotifyScoutControlsChanged();
+
             operation.State = ScoutOperationState.Running;
             operation.Status = "Accepting books as-is...";
 
@@ -1651,9 +1705,22 @@ namespace SmartRenamer.ViewModels.Guide
                 ContextId = action.ContextId
             };
 
-            workspace.ConversationEngine.ClearActionOptions();
-            ActionOptions.Clear();
-            NotifyScoutControlsChanged();
+            if (currentActionDecision != null &&
+                string.Equals(
+                    currentActionDecision.ContextId,
+                    action.ContextId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                ConsumeCurrentActionDecision();
+            }
+            else
+            {
+                ParkCurrentActionDecision();
+                RemovePendingActionDecision(action.ContextId);
+                workspace.ConversationEngine.ClearActionOptions();
+                ActionOptions.Clear();
+                NotifyScoutControlsChanged();
+            }
 
             operation.State = ScoutOperationState.Running;
             operation.Status = "Working...";
@@ -1686,10 +1753,11 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
             }
 
-            workspace.ConversationEngine.ClearActionOptions();
+            PendingActionDecision? consumedDecision =
+                currentActionDecision;
 
-            ActionOptions.Clear();
-            NotifyScoutControlsChanged();
+            currentActionDecision = null;
+            ClearCurrentActionPresentation();
 
             operation.State = ScoutOperationState.Running;
             operation.Status = "Working...";
@@ -1700,6 +1768,14 @@ namespace SmartRenamer.ViewModels.Guide
             CV_ActionResult actionResult =
                 await ExecuteActionAsync(
                     actionRequest);
+
+            if (!actionResult.Success &&
+                consumedDecision != null &&
+                currentActionDecision == null)
+            {
+                currentActionDecision = consumedDecision;
+                PresentCurrentActionDecision(false);
+            }
 
             HandleActionResult(actionResult);
         }
@@ -1728,6 +1804,19 @@ namespace SmartRenamer.ViewModels.Guide
                     "I couldn't process that action.");
 
                 return;
+            }
+
+            if (currentActionDecision != null)
+            {
+                ParkCurrentActionDecision();
+                workspace.ConversationEngine.ClearActionOptions();
+                ActionOptions.Clear();
+                NotifyScoutControlsChanged();
+            }
+
+            if (!string.IsNullOrWhiteSpace(actionRequest.ContextId))
+            {
+                RemovePendingActionDecision(actionRequest.ContextId);
             }
 
             Conversation.AddUserMessage(
@@ -1767,6 +1856,11 @@ namespace SmartRenamer.ViewModels.Guide
                 IsStandaloneAction = true
             };
 
+            ParkCurrentActionDecision();
+            workspace.ConversationEngine.ClearActionOptions();
+            ActionOptions.Clear();
+            NotifyScoutControlsChanged();
+
             operation.State = ScoutOperationState.Running;
             operation.Status =
                 AutomaticRepairsEnabled
@@ -1801,6 +1895,426 @@ namespace SmartRenamer.ViewModels.Guide
         }
 
         // =====================================================================
+        // Ebook action-decision queue
+        // =====================================================================
+
+        private int GetActionDecisionOrder(string contextId)
+        {
+            if (string.IsNullOrWhiteSpace(contextId))
+                return int.MaxValue;
+
+            for (int index = 0; index < operation.Items.Count; index++)
+            {
+                if (string.Equals(
+                        operation.Items[index].Key,
+                        contextId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return index;
+                }
+            }
+
+            return int.MaxValue;
+        }
+
+        private string GetActionDecisionDisplayName(string contextId)
+        {
+            ExecutionProgressItem? item =
+                operation.Items.FirstOrDefault(candidate =>
+                    string.Equals(
+                        candidate.Key,
+                        contextId,
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (item != null &&
+                !string.IsNullOrWhiteSpace(item.DisplayName))
+            {
+                return item.DisplayName;
+            }
+
+            try
+            {
+                string fileName = Path.GetFileName(contextId);
+
+                if (!string.IsNullOrWhiteSpace(fileName))
+                    return fileName;
+            }
+            catch
+            {
+                // ContextId is opaque to the Guide.
+            }
+
+            return string.IsNullOrWhiteSpace(contextId)
+                ? "Scout decision"
+                : contextId;
+        }
+
+        private static string GetActionDecisionContextId(
+            IReadOnlyList<CV_ActionOption> options)
+        {
+            return options
+                .Select(option => option.ContextId)
+                .FirstOrDefault(contextId =>
+                    !string.IsNullOrWhiteSpace(contextId))
+                ?? string.Empty;
+        }
+
+        private PendingActionDecision CreatePendingActionDecision(
+            CV_ActionResult actionResult)
+        {
+            string contextId =
+                GetActionDecisionContextId(actionResult.Options);
+
+            PendingActionDecision decision = new()
+            {
+                ContextId = contextId,
+                DisplayName = GetActionDecisionDisplayName(contextId),
+                Message = actionResult.Message,
+                IsBackgroundResearch = actionResult.ActionId.StartsWith(
+                    "BackgroundResearch",
+                    StringComparison.OrdinalIgnoreCase)
+            };
+
+            foreach (string evidence in actionResult.Evidence)
+            {
+                if (!string.IsNullOrWhiteSpace(evidence) &&
+                    !decision.Evidence.Contains(evidence))
+                {
+                    decision.Evidence.Add(evidence);
+                }
+            }
+
+            foreach (CV_ActionOption option in actionResult.Options)
+            {
+                if (!string.IsNullOrWhiteSpace(option.Id))
+                    decision.Options.Add(option);
+            }
+
+            return decision;
+        }
+
+        private void MergeActionDecisionResult(
+            PendingActionDecision target,
+            CV_ActionResult actionResult)
+        {
+            if (string.IsNullOrWhiteSpace(target.Message) &&
+                !string.IsNullOrWhiteSpace(actionResult.Message))
+            {
+                target.Message = actionResult.Message;
+            }
+
+            target.IsBackgroundResearch =
+                target.IsBackgroundResearch ||
+                actionResult.ActionId.StartsWith(
+                    "BackgroundResearch",
+                    StringComparison.OrdinalIgnoreCase);
+
+            foreach (string evidence in actionResult.Evidence)
+            {
+                if (!string.IsNullOrWhiteSpace(evidence) &&
+                    !target.Evidence.Contains(evidence))
+                {
+                    target.Evidence.Add(evidence);
+                }
+            }
+
+            foreach (CV_ActionOption option in actionResult.Options)
+            {
+                if (string.IsNullOrWhiteSpace(option.Id))
+                    continue;
+
+                if (target.Options.Any(existing =>
+                        string.Equals(
+                            existing.Id,
+                            option.Id,
+                            StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                target.Options.Add(option);
+            }
+        }
+
+        private void SortPendingActionDecisions()
+        {
+            pendingActionDecisions.Sort((left, right) =>
+            {
+                int order =
+                    GetActionDecisionOrder(left.ContextId)
+                        .CompareTo(
+                            GetActionDecisionOrder(right.ContextId));
+
+                if (order != 0)
+                    return order;
+
+                return StringComparer.OrdinalIgnoreCase.Compare(
+                    left.DisplayName,
+                    right.DisplayName);
+            });
+        }
+
+        private PendingActionDecision? FindPendingActionDecision(
+            string contextId)
+        {
+            return pendingActionDecisions.FirstOrDefault(decision =>
+                string.Equals(
+                    decision.ContextId,
+                    contextId,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
+        private void RemovePendingActionDecision(string contextId)
+        {
+            if (string.IsNullOrWhiteSpace(contextId))
+                return;
+
+            pendingActionDecisions.RemoveAll(decision =>
+                string.Equals(
+                    decision.ContextId,
+                    contextId,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
+        private void ParkCurrentActionDecision()
+        {
+            if (currentActionDecision == null)
+                return;
+
+            PendingActionDecision parked = currentActionDecision;
+            currentActionDecision = null;
+
+            if (!string.IsNullOrWhiteSpace(parked.ContextId))
+            {
+                RemovePendingActionDecision(parked.ContextId);
+                pendingActionDecisions.Add(parked);
+                SortPendingActionDecisions();
+            }
+        }
+
+        private void ClearCurrentActionPresentation()
+        {
+            workspace.ConversationEngine.ClearActionOptions();
+            ActionOptions.Clear();
+            NotifyScoutControlsChanged();
+        }
+
+        private void ConsumeCurrentActionDecision()
+        {
+            currentActionDecision = null;
+            ClearCurrentActionPresentation();
+        }
+
+        private void PresentCurrentActionDecision(
+            bool includeNarrative)
+        {
+            if (currentActionDecision == null)
+            {
+                workspace.ConversationEngine.ClearActionOptions();
+                ActionOptions.Clear();
+                NotifyScoutControlsChanged();
+                return;
+            }
+
+            workspace.ConversationEngine.RememberActionOptions(
+                currentActionDecision.Options);
+
+            ActionOptions.Clear();
+
+            foreach (CV_ActionOption option
+                in currentActionDecision.Options)
+            {
+                if (!option.AcceptsUserInput)
+                    ActionOptions.Add(option);
+            }
+
+            NotifyScoutControlsChanged();
+
+            if (!includeNarrative)
+                return;
+
+            if (!string.IsNullOrWhiteSpace(
+                    currentActionDecision.Message))
+            {
+                Conversation.AddGuideMessage(
+                    currentActionDecision.Message);
+            }
+
+            foreach (string evidence in currentActionDecision.Evidence)
+            {
+                if (!string.IsNullOrWhiteSpace(evidence))
+                    Conversation.AddGuideMessage(evidence);
+            }
+
+            if (currentActionDecision.IsBackgroundResearch &&
+                currentActionDecision.Options.Count > 0)
+            {
+                Conversation.AddGuideMessage(
+                    "I need your decision on this result. The available choices are shown in Scout Controls on the left.");
+            }
+
+            System.Diagnostics.Debug.WriteLine(
+                $"[ACTION QUEUE] CURRENT {currentActionDecision.DisplayName} " +
+                $"| Context={currentActionDecision.ContextId} " +
+                $"| Options={currentActionDecision.Options.Count}");
+        }
+
+        private void ActivateNextActionDecision()
+        {
+            if (currentActionDecision != null)
+                return;
+
+            SortPendingActionDecisions();
+
+            while (pendingActionDecisions.Count > 0)
+            {
+                PendingActionDecision next = pendingActionDecisions[0];
+                pendingActionDecisions.RemoveAt(0);
+
+                // Once research has produced a concrete user decision, that
+                // decision is authoritative until the next re-observation.
+                // Do not reject it because a progress snapshot is briefly
+                // behind the background result. Reconciliation after
+                // re-observation is the point where stale decisions are removed.
+                currentActionDecision = next;
+                PresentCurrentActionDecision(true);
+                return;
+            }
+
+            PresentCurrentActionDecision(false);
+        }
+
+        private void QueueBackgroundActionDecision(
+            CV_ActionResult actionResult)
+        {
+            if (actionResult.Options.Count == 0)
+                return;
+
+            string contextId =
+                GetActionDecisionContextId(actionResult.Options);
+
+            if (string.IsNullOrWhiteSpace(contextId))
+            {
+                // Never invent an identity for a background result.
+                if (!string.IsNullOrWhiteSpace(actionResult.Message))
+                    Conversation.AddGuideMessage(actionResult.Message);
+
+                foreach (string evidence in actionResult.Evidence)
+                {
+                    if (!string.IsNullOrWhiteSpace(evidence))
+                        Conversation.AddGuideMessage(evidence);
+                }
+
+                return;
+            }
+
+            if (currentActionDecision != null &&
+                string.Equals(
+                    currentActionDecision.ContextId,
+                    contextId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                MergeActionDecisionResult(
+                    currentActionDecision,
+                    actionResult);
+                PresentCurrentActionDecision(false);
+                return;
+            }
+
+            PendingActionDecision? existing =
+                FindPendingActionDecision(contextId);
+
+            if (existing == null)
+            {
+                existing = CreatePendingActionDecision(actionResult);
+                pendingActionDecisions.Add(existing);
+            }
+            else
+            {
+                MergeActionDecisionResult(existing, actionResult);
+            }
+
+            SortPendingActionDecisions();
+
+            System.Diagnostics.Debug.WriteLine(
+                $"[ACTION QUEUE] QUEUED {existing.DisplayName} " +
+                $"| Context={existing.ContextId} " +
+                $"| Options={existing.Options.Count} " +
+                $"| Pending={pendingActionDecisions.Count}");
+
+            if (currentActionDecision == null &&
+                !foregroundActionInProgress)
+            {
+                ActivateNextActionDecision();
+            }
+        }
+
+        private void SetForegroundActionDecision(
+            CV_ActionResult actionResult)
+        {
+            if (actionResult.Options.Count == 0)
+            {
+                currentActionDecision = null;
+                workspace.ConversationEngine.ClearActionOptions();
+                ActionOptions.Clear();
+                NotifyScoutControlsChanged();
+                return;
+            }
+
+            currentActionDecision =
+                CreatePendingActionDecision(actionResult);
+
+            PresentCurrentActionDecision(true);
+        }
+
+        private void ReconcileActionDecisionQueue()
+        {
+            pendingActionDecisions.RemoveAll(decision =>
+            {
+                ExecutionProgressItem? item =
+                    operation.Items.FirstOrDefault(candidate =>
+                        string.Equals(
+                            candidate.Key,
+                            decision.ContextId,
+                            StringComparison.OrdinalIgnoreCase));
+
+                return item != null && !item.NeedsUserAttention;
+            });
+
+            if (currentActionDecision != null)
+            {
+                ExecutionProgressItem? currentItem =
+                    operation.Items.FirstOrDefault(candidate =>
+                        string.Equals(
+                            candidate.Key,
+                            currentActionDecision.ContextId,
+                            StringComparison.OrdinalIgnoreCase));
+
+                if (currentItem != null &&
+                    !currentItem.NeedsUserAttention)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[ACTION QUEUE] RESOLVED {currentActionDecision.DisplayName}");
+
+                    currentActionDecision = null;
+                    workspace.ConversationEngine.ClearActionOptions();
+                    ActionOptions.Clear();
+                    NotifyScoutControlsChanged();
+                }
+            }
+
+            SortPendingActionDecisions();
+        }
+
+        private void AdvanceActionDecision()
+        {
+            if (currentActionDecision != null)
+                return;
+
+            ActivateNextActionDecision();
+        }
+
+        // =====================================================================
         // Action Execution
         // =====================================================================
 
@@ -1817,8 +2331,17 @@ namespace SmartRenamer.ViewModels.Guide
         {
             ArgumentNullException.ThrowIfNull(request);
 
-            return await Task.Run(
-                () => guideInvestigator.ExecuteAction(request));
+            foregroundActionInProgress = true;
+
+            try
+            {
+                return await Task.Run(
+                    () => guideInvestigator.ExecuteAction(request));
+            }
+            finally
+            {
+                foregroundActionInProgress = false;
+            }
         }
 
         // =====================================================================
@@ -1853,9 +2376,10 @@ namespace SmartRenamer.ViewModels.Guide
                 AutomaticRepairsEnabled = false;
             }
 
-            // -------------------------------------------------------------
-            // Report a failed action.
-            // -------------------------------------------------------------
+            bool isBackgroundResearch =
+                actionResult.ActionId.StartsWith(
+                    "BackgroundResearch",
+                    StringComparison.OrdinalIgnoreCase);
 
             if (!actionResult.Success)
             {
@@ -1881,105 +2405,50 @@ namespace SmartRenamer.ViewModels.Guide
                         ? "I wasn't able to complete that action."
                         : actionResult.Message);
 
+                if (currentActionDecision == null &&
+                    !foregroundActionInProgress)
+                {
+                    ActivateNextActionDecision();
+                }
+
                 return;
             }
 
-            // -------------------------------------------------------------
-            // Report the result returned by the domain Expert.
-            // -------------------------------------------------------------
-
-            if (!string.IsNullOrWhiteSpace(actionResult.Message))
+            if (isBackgroundResearch &&
+                actionResult.Options.Count > 0)
             {
-                Conversation.AddGuideMessage(
-                    actionResult.Message);
+                // Background research is queued by ebook/context. Its narrative
+                // is shown only when that decision becomes current, so a large
+                // expedition does not flood the conversation.
+                QueueBackgroundActionDecision(actionResult);
             }
-
-            // -------------------------------------------------------------
-            // Report supporting evidence.
-            // -------------------------------------------------------------
-            // Background research is work Scout is doing for the user, not a
-            // request for a running transcript of every research fact. Keep
-            // that detail attached to the action result and only narrate it
-            // when the result actually leaves a user decision.
-
-            bool isBackgroundResearch =
-                actionResult.ActionId.StartsWith(
-                    "BackgroundResearch",
-                    StringComparison.OrdinalIgnoreCase);
-
-            if (!isBackgroundResearch || actionResult.Options.Count > 0)
+            else
             {
+                if (!string.IsNullOrWhiteSpace(actionResult.Message))
+                    Conversation.AddGuideMessage(actionResult.Message);
+
                 foreach (string evidence in actionResult.Evidence)
                 {
                     if (!string.IsNullOrWhiteSpace(evidence))
-                    {
-                        Conversation.AddGuideMessage(
-                            evidence);
-                    }
+                        Conversation.AddGuideMessage(evidence);
+                }
+
+                if (actionResult.Options.Count > 0)
+                {
+                    // This is the continuation of the foreground action the
+                    // user just initiated. It becomes the one active decision.
+                    SetForegroundActionDecision(actionResult);
                 }
             }
 
-            // -------------------------------------------------------------
-            // Present structured options.
-            //
-            // These may be ISBN candidates, cover choices, or other
-            // domain-specific choices supplied by the Expert.
-            // -------------------------------------------------------------
-
-            workspace.ConversationEngine.RememberActionOptions(
-    actionResult.Options);
-
-            ActionOptions.Clear();
-
-            foreach (CV_ActionOption option
-                in actionResult.Options)
-            {
-                // An input prompt is a conversation state, not a button.
-                // The Conversation Engine retains it so the next typed
-                // message becomes the supplied value.
-                if (option.AcceptsUserInput)
-                    continue;
-
-                // The persistent Scout Controls area is the sole visual
-                // action surface for structured action options. Do not add
-                // another clickable copy to the conversation transcript.
-                ActionOptions.Add(option);
-            }
-
-            NotifyScoutControlsChanged();
-
-            if (isBackgroundResearch && actionResult.Options.Count > 0)
-            {
-                Conversation.AddGuideMessage(
-                    "I need your decision on this result. The available choices are shown in Scout Controls on the left.");
-            }
-
-            // -------------------------------------------------------------
-            // Continue the investigation after an action that requires
-            // re-observation.
-            //
-            // ProjectWorkflow performs the re-observation and retains the
-            // resulting recommendations. GuideInvestigator exposes those
-            // recommendations without interpreting their domain meaning.
-            // The Workspace Conversation Engine then becomes the normal
-            // presentation path for the next recommendation.
-            // -------------------------------------------------------------
-
             if (actionResult.RequiresReobservation)
             {
-                operation.State =
-                    operation.CollectionWaiting > 0
-                        ? ScoutOperationState.WaitingForUser
-                        : ScoutOperationState.Completed;
-
                 IReadOnlyList<CV_Recommendation> recommendations =
                     guideInvestigator.ReobservationRecommendations;
 
                 IReadOnlyList<ProjectObservation> observations =
                     guideInvestigator.ReobservationObservations;
 
-                workspace.ConversationEngine.ClearActionOptions();
-                ActionOptions.Clear();
                 DecisionOptions.Clear();
                 DiscoveryOptions.Clear();
                 NotifyScoutControlsChanged();
@@ -1995,67 +2464,77 @@ namespace SmartRenamer.ViewModels.Guide
 
                     CV_ConversationMessage? message =
                         workspace.ConversationEngine
-                            .DiscussRecommendation(
-                                firstRecommendation);
+                            .DiscussRecommendation(firstRecommendation);
 
                     if (message != null &&
                         !string.IsNullOrWhiteSpace(message.Text))
                     {
-                        Conversation.AddGuideMessage(
-                            message.Text);
+                        Conversation.AddGuideMessage(message.Text);
                     }
                 }
 
-                // A terminal repair decision may have removed the final
-                // collection-wide repair blocker. Refresh the generic Expert
-                // decision bindings now so Organization can become the next
-                // explicit step instead of leaving the user at an apparently
-                // complete 100% screen with no way forward.
-                pendingDecisionBindings.Clear();
-                pendingDecisionBindings.AddRange(
-                    guideInvestigator.DecisionBindings
-                        .Where(binding =>
-                            binding.Request.Options.Count > 0));
+                ReconcileActionDecisionQueue();
 
-                if (pendingDecisionBindings.Count > 0)
-                {
-                    pendingDecisionIndex = 0;
-                    awaitingDecisionChoice = true;
-                    operation.State =
-                        ScoutOperationState.WaitingForUser;
-                    operation.Status =
-                        "Investigation complete; ready for the next collection decision.";
-                    PresentDecisionQuestion();
-                }
+                if (currentActionDecision == null)
+                    ActivateNextActionDecision();
+            }
+            else if (!isBackgroundResearch &&
+                     actionResult.Options.Count == 0)
+            {
+                // The foreground action produced no further decision. Move to
+                // the next queued ebook decision, if one exists.
+                AdvanceActionDecision();
+            }
+            else if (isBackgroundResearch &&
+                     actionResult.Options.Count == 0 &&
+                     currentActionDecision == null &&
+                     !foregroundActionInProgress)
+            {
+                ActivateNextActionDecision();
+            }
+            else if (currentActionDecision == null)
+            {
+                ActivateNextActionDecision();
+            }
+
+            // Generic collection-level Expert decisions remain separate from
+            // the EbookExpert action queue. Do not present both decision types
+            // at the same time.
+            pendingDecisionBindings.Clear();
+            pendingDecisionBindings.AddRange(
+                guideInvestigator.DecisionBindings
+                    .Where(binding =>
+                        binding.Request.Options.Count > 0));
+
+            if (pendingDecisionBindings.Count > 0 &&
+                currentActionDecision == null &&
+                pendingActionDecisions.Count == 0 &&
+                !operation.HasWorkingItems &&
+                !operation.HasNeedsItems)
+            {
+                pendingDecisionIndex = 0;
+                awaitingDecisionChoice = true;
+                operation.State = ScoutOperationState.WaitingForUser;
+                operation.Status =
+                    "Investigation complete; ready for the next collection decision.";
+                PresentDecisionQuestion();
+            }
+            else if (operation.HasWorkingItems)
+            {
+                operation.State = ScoutOperationState.Running;
+                operation.Status = "Working...";
+            }
+            else if (currentActionDecision != null ||
+                     pendingActionDecisions.Count > 0 ||
+                     operation.HasNeedsItems)
+            {
+                operation.State = ScoutOperationState.WaitingForUser;
+                operation.Status = "Waiting for your decision.";
             }
             else
             {
-                DecisionOptions.Clear();
-                NotifyScoutControlsChanged();
-
-                workspace.ClearCurrentRecommendation();
-
-                // A successful action is not necessarily terminal. For
-                // example, accepting an unresolved ebook as-is should return
-                // it to WORKING so organization/re-observation can continue.
-                // Derive the generic operation state from the Live Report
-                // rows instead of assuming every successful action completes
-                // the operation.
-                if (operation.HasNeedsItems)
-                {
-                    operation.State = ScoutOperationState.WaitingForUser;
-                    operation.Status = "Waiting for your decision.";
-                }
-                else if (operation.HasWorkingItems)
-                {
-                    operation.State = ScoutOperationState.Running;
-                    operation.Status = "Working...";
-                }
-                else
-                {
-                    operation.State = ScoutOperationState.Completed;
-                    operation.Status = "Complete.";
-                }
+                operation.State = ScoutOperationState.Completed;
+                operation.Status = "Complete.";
             }
         }
 

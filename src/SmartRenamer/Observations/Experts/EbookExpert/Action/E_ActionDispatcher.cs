@@ -321,7 +321,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             foreach (RepairOpportunity opportunity in opportunities)
             {
                 string originalPath =
-                    opportunity.Record?.File?.OriginalFullPath
+                    opportunity.Record.File.OriginalFullPath
                     ?? string.Empty;
 
                 if (string.Equals(
@@ -996,6 +996,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             if (opportunity.Record?.Metadata == null)
                 return false;
 
+            // A local identity conflict is not a missing-data problem that an
+            // external provider is allowed to solve. If Scout already has
+            // conflicting explicit identity evidence, the expert must keep the
+            // decision local and obtain clarification rather than exporting an
+            // ambiguous identity to an external source.
+            if (evaluation.RequiresClarification)
+                return false;
+
             string title = opportunity.Record.Metadata.Title?.Trim() ?? string.Empty;
             string author = opportunity.Record.Metadata.Author?.Trim() ?? string.Empty;
 
@@ -1063,10 +1071,44 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             Func<string, RepairOpportunity?>? currentOpportunityResolver)
         {
             string originalPath =
-                opportunity.Record?.File?.OriginalFullPath ?? string.Empty;
+                opportunity.Record.File.OriginalFullPath ?? string.Empty;
 
             if (string.IsNullOrWhiteSpace(originalPath))
                 return;
+
+            //-------------------------------------------------------------
+            // This is the final metadata-research boundary. Every caller,
+            // including future/manual callers, must pass the same local
+            // identity gate before an external request can be queued.
+            // The earlier callers also check the gate for user feedback,
+            // but this boundary is the safety net that prevents a new call
+            // path from accidentally bypassing the rule.
+            //-------------------------------------------------------------
+            MetadataRecord record = opportunity.Record;
+            ArgumentNullException.ThrowIfNull(record);
+
+            E_BookIdentityEvaluator identityEvaluator = new();
+            BookIdentityEvaluation identityEvaluation =
+                identityEvaluator.Evaluate(record);
+
+            opportunity.IdentityEvaluation = identityEvaluation;
+
+            if (!IsIdentityReadyForExternalResearch(
+                    opportunity,
+                    identityEvaluation))
+            {
+                Debug.WriteLine(
+                    $"[EXTERNAL GATE] BLOCKED metadata queue | " +
+                    $"{opportunity.Record.File.CurrentName ?? "Unknown ebook"} | " +
+                    "Reason=Local Title/Author identity is not yet established.");
+                return;
+            }
+
+            Debug.WriteLine(
+                $"[EXTERNAL GATE] ALLOWED metadata queue | " +
+                $"{opportunity.Record.File.CurrentName ?? "Unknown ebook"} | " +
+                $"Title='{identityEvaluation.Candidate?.Title ?? opportunity.Record.Metadata.Title}' | " +
+                $"Author='{identityEvaluation.Candidate?.Authors ?? opportunity.Record.Metadata.Author}'");
 
             lock (_externalResearchingPaths)
             {
@@ -1083,6 +1125,54 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                         RepairOpportunity currentOpportunity =
                             currentOpportunityResolver?.Invoke(originalPath)
                             ?? opportunity;
+
+                        //-------------------------------------------------
+                        // Re-establish local identity at the point where
+                        // the external request is actually about to be
+                        // made. A queued operation may outlive a local
+                        // repair/re-observation that happened after it was
+                        // created. Never send the stale identity.
+                        //-------------------------------------------------
+                        E_BookIdentityEvaluator currentIdentityEvaluator =
+                            new();
+
+                        BookIdentityEvaluation currentIdentityEvaluation =
+                            currentIdentityEvaluator.Evaluate(
+                                currentOpportunity.Record);
+
+                        currentOpportunity.IdentityEvaluation =
+                            currentIdentityEvaluation;
+
+                        if (!IsIdentityReadyForExternalResearch(
+                                currentOpportunity,
+                                currentIdentityEvaluation))
+                        {
+                            Debug.WriteLine(
+                                $"[EXTERNAL GATE] BLOCKED metadata execution | " +
+                                $"{currentOpportunity.Record?.File?.CurrentName ?? "Unknown ebook"} | " +
+                                "Reason=Local Title/Author identity changed or still requires reconciliation.");
+
+                            return Task.FromResult(
+                                new CV_ActionResult
+                                {
+                                    ActionId = "BackgroundResearchMissingMetadata",
+                                    Success = true,
+                                    RequiresReobservation = false,
+                                    Message =
+                                        "Scout did not perform external metadata research because the ebook's local Title/Author identity still needs reconciliation."
+                                });
+                        }
+
+                        //-------------------------------------------------
+                        // The resolver/re-observation is authoritative for
+                        // the current metadata values. External research is
+                        // therefore performed only against the current
+                        // record, never the stale opportunity from queue time.
+                        //-------------------------------------------------
+                        Debug.WriteLine(
+                            $"[EXTERNAL QUERY GATE] metadata | " +
+                            $"Title='{currentIdentityEvaluation.Candidate?.Title ?? currentOpportunity.Record.Metadata.Title}' | " +
+                            $"Author='{currentIdentityEvaluation.Candidate?.Authors ?? currentOpportunity.Record.Metadata.Author}'");
 
                         MetadataResearchResult research =
                             new E_MetadataResearchResource().Research(
@@ -1232,6 +1322,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                             E_RepairDecisionEngine.MinimumConfidenceThreshold,
                             authorized);
 
+                    Debug.WriteLine(
+                        $"[METADATA DECISION TRACE] " +
+                        $"Book='{fileName}' | Field={candidate.Field} | " +
+                        $"Confidence={candidate.Confidence:P0} | " +
+                        $"State={decision.State} | Authorized={authorized}");
+
                     if (decision.State ==
                             RepairRecommendation.RepairDecisionState.SafeToApply &&
                         decision.SelectedCandidate != null)
@@ -1254,6 +1350,15 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     else if (decision.State ==
                              RepairRecommendation.RepairDecisionState.UserDecisionRequired)
                     {
+                        // The user must be able to see the researched value
+                        // before choosing what Scout should do with it. Guide
+                        // already presents action-result evidence when choices
+                        // are present, so keep this as result evidence rather
+                        // than creating a second UI path.
+                        resultEvidence.Add(
+                            $"{fileName}: Researched {candidate.Field}: " +
+                            $"{candidate.Value} ({candidate.Confidence:P0} confidence).");
+
                         resultOptions.Add(
                             new CV_ActionOption
                             {
@@ -1265,6 +1370,22 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                                 Source = candidate.Source,
                                 Evidence = { candidate.Evidence }
                             });
+
+                        resultOptions.Add(
+                            new CV_ActionOption
+                            {
+                                Id = $"AddRepairInformation:{candidate.Field}:{originalPath}",
+                                ActionId = "AddRepairInformation",
+                                ContextId = originalPath,
+                                Label = $"Edit researched {candidate.Field}",
+                                Confidence = 1.0,
+                                Source = "Ebook Expert"
+                            });
+
+                        Debug.WriteLine(
+                            $"[METADATA OPTION TRACE] " +
+                            $"Book='{fileName}' | Field={candidate.Field} | " +
+                            $"Created=True | Confidence={candidate.Confidence:P0}");
                     }
                 }
 
@@ -1291,6 +1412,15 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     resultEvidence.Add(detail);
                 }
 
+                Debug.WriteLine(
+                    $"[METADATA RESULT TRACE] " +
+                    $"Book='{fileName}' | Candidates={research.Candidates.Count} | " +
+                    $"Options={resultOptions.Count} | RepairChanges={repairChangesAdded} | " +
+                    $"RepairExecuted={repairExecuted} | " +
+                    $"RequiresReobservation={repairExecuted || workingCopyAlreadyResolvedTarget} | " +
+                    $"ProviderUnavailable={research.ProviderUnavailable} | " +
+                    $"TimedOut={research.TimedOut}");
+
                 CV_ActionResult result = new()
                 {
                     ActionId = "BackgroundResearchMissingMetadata",
@@ -1313,6 +1443,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             Func<bool>? automaticAuthorizationProvider,
             Func<string, RepairOpportunity?>? currentOpportunityResolver)
         {
+            int queued = 0;
+            int blocked = 0;
+
             if (!string.IsNullOrWhiteSpace(request.ContextId))
             {
                 RepairOpportunity? opportunity =
@@ -1320,36 +1453,86 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
                 if (opportunity != null)
                 {
-                    _metadataResearchAttempts.Remove(request.ContextId);
-                    QueueMetadataResearch(
-                        opportunity,
-                        automaticAuthorization,
-                        automaticAuthorizationProvider,
-                        currentOpportunityResolver);
+                    MetadataRecord record = opportunity.Record;
+                    ArgumentNullException.ThrowIfNull(record);
+
+                    E_BookIdentityEvaluator identityEvaluator = new();
+                    BookIdentityEvaluation identityEvaluation =
+                        identityEvaluator.Evaluate(record);
+
+                    opportunity.IdentityEvaluation = identityEvaluation;
+
+                    if (IsIdentityReadyForExternalResearch(
+                            opportunity,
+                            identityEvaluation))
+                    {
+                        _metadataResearchAttempts.Remove(request.ContextId);
+                        QueueMetadataResearch(
+                            opportunity,
+                            automaticAuthorization,
+                            automaticAuthorizationProvider,
+                            currentOpportunityResolver);
+                        queued++;
+                    }
+                    else
+                    {
+                        blocked++;
+                    }
                 }
             }
             else
             {
                 foreach (RepairOpportunity opportunity in opportunities)
                 {
-                    if (opportunity.MissingPublisher || opportunity.MissingDescription)
+                    if (!opportunity.MissingPublisher &&
+                        !opportunity.MissingDescription)
                     {
-                        string path = opportunity.Record?.File?.OriginalFullPath ?? string.Empty;
-                        _metadataResearchAttempts.Remove(path);
-                        QueueMetadataResearch(
-                            opportunity,
-                            automaticAuthorization,
-                            automaticAuthorizationProvider,
-                            currentOpportunityResolver);
+                        continue;
                     }
+
+                    MetadataRecord record = opportunity.Record;
+                    ArgumentNullException.ThrowIfNull(record);
+
+                    E_BookIdentityEvaluator identityEvaluator = new();
+                    BookIdentityEvaluation identityEvaluation =
+                        identityEvaluator.Evaluate(record);
+
+                    opportunity.IdentityEvaluation = identityEvaluation;
+
+                    if (!IsIdentityReadyForExternalResearch(
+                            opportunity,
+                            identityEvaluation))
+                    {
+                        blocked++;
+                        continue;
+                    }
+
+                    string path =
+                        opportunity.Record.File.OriginalFullPath ?? string.Empty;
+
+                    _metadataResearchAttempts.Remove(path);
+                    QueueMetadataResearch(
+                        opportunity,
+                        automaticAuthorization,
+                        automaticAuthorizationProvider,
+                        currentOpportunityResolver);
+                    queued++;
                 }
             }
+
+            string message = blocked > 0
+                ? queued > 0
+                    ? $"I am researching missing Publisher and Summary information for {queued:N0} ebook(s). I held back {blocked:N0} until Scout finishes reconciling their local Title/Author identity."
+                    : $"Scout did not access external metadata sources yet. {blocked:N0} ebook(s) still need local Title/Author identity reconciliation first."
+                : queued == 1
+                    ? "I am researching missing Publisher and Summary information in the background while Scout continues processing the collection."
+                    : $"I am researching missing Publisher and Summary information for {queued:N0} ebooks in the background while Scout continues processing the collection.";
 
             return new CV_ActionResult
             {
                 ActionId = request.ActionId,
                 Success = true,
-                Message = "I am researching missing Publisher and Summary information in the background while Scout continues processing the collection."
+                Message = message
             };
         }
 
@@ -1468,7 +1651,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             Func<string, RepairOpportunity?>? currentOpportunityResolver)
         {
             string originalPath =
-                opportunity.Record?.File?.OriginalFullPath
+                opportunity.Record.File.OriginalFullPath
                 ?? string.Empty;
 
             if (string.IsNullOrWhiteSpace(originalPath))
@@ -2522,7 +2705,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             foreach (RepairOpportunity opportunity in opportunities)
             {
                 string originalPath =
-                    opportunity.Record?.File?.OriginalFullPath
+                    opportunity.Record.File.OriginalFullPath
                     ?? string.Empty;
 
                 if (string.Equals(
@@ -2545,6 +2728,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                         "I couldn't match that ISBN selection to an ebook in the current investigation."
                 };
             }
+
+            RepairOpportunity selected = selectedOpportunity;
 
             //---------------------------------------------------------
             // Research the candidates for this specific ebook.
@@ -2571,12 +2756,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             {
                 E_BookIdentityEvaluator identityEvaluator = new();
                 BookIdentityEvaluation identityEvaluation =
-                    identityEvaluator.Evaluate(selectedOpportunity.Record);
+                    identityEvaluator.Evaluate(selected.Record);
 
-                selectedOpportunity.IdentityEvaluation = identityEvaluation;
+                selected.IdentityEvaluation = identityEvaluation;
 
                 if (!IsIdentityReadyForExternalResearch(
-                        selectedOpportunity,
+                        selected,
                         identityEvaluation))
                 {
                     return new CV_ActionResult
@@ -2590,7 +2775,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
                 candidates =
                     _repairService.ResearchMissingIsbn(
-                        selectedOpportunity,
+                        selected,
                         null,
                         identityEvaluation);
             }
@@ -2742,7 +2927,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     continue;
 
                 string originalPath =
-                    opportunity.Record?.File?.OriginalFullPath
+                    opportunity.Record.File.OriginalFullPath
                     ?? string.Empty;
 
                 if (string.IsNullOrWhiteSpace(originalPath))
@@ -2757,9 +2942,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     continue;
                 }
 
+                MetadataRecord record = opportunity.Record;
+                ArgumentNullException.ThrowIfNull(record);
+
                 E_BookIdentityEvaluator identityEvaluator = new();
                 BookIdentityEvaluation identityEvaluation =
-                    identityEvaluator.Evaluate(opportunity.Record);
+                    identityEvaluator.Evaluate(record);
 
                 opportunity.IdentityEvaluation = identityEvaluation;
 
@@ -2930,8 +3118,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 if (!opportunity.MissingIsbn)
                     continue;
 
+                MetadataRecord record = opportunity.Record;
+                ArgumentNullException.ThrowIfNull(record);
+
                 string originalPath =
-                    opportunity.Record?.File?.OriginalFullPath
+                    record.File.OriginalFullPath
                     ?? string.Empty;
 
                 //---------------------------------------------------------
@@ -2953,7 +3144,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
                 E_BookIdentityEvaluator identityEvaluator = new();
                 BookIdentityEvaluation identityEvaluation =
-                    identityEvaluator.Evaluate(opportunity.Record);
+                    identityEvaluator.Evaluate(record);
 
                 opportunity.IdentityEvaluation = identityEvaluation;
 

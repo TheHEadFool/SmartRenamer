@@ -486,6 +486,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             BookIdentityEvaluation evaluation = new()
             {
                 RepairRequired = true,
+                RequiresClarification = explicitUserIdentityConflict,
                 Candidate = candidate,
                 SeriesEvaluation = seriesEvaluation,
                 Reason = reason
@@ -547,7 +548,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
         {
             string cleaned = value.Trim();
 
-            cleaned = cleaned.Trim(" \t\r\n\"'“”‘’.:;,-");
+            cleaned = cleaned.Trim(new[] { ' ', '\t', '\r', '\n', '"', '\'', '“', '”', '‘', '’', '.', ':', ';', ',', '-' });
 
             return Regex.Replace(
                 cleaned,

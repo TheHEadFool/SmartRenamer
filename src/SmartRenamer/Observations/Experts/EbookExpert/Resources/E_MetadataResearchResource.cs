@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Net;
+using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
@@ -48,27 +49,93 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 List<string> diagnostics = new();
 
                 // Open Library remains the first source because Scout already
-                // uses it for ISBN research. The shared provider gateway keeps
-                // this request on a provider-specific cadence and prevents
-                // repeated requests from becoming a burst.
-                string openLibraryUrl = BuildOpenLibrarySearchUrl(title, author, isbn);
-                E_ExternalProviderFetchResult openLibrary =
-                    TryFetchJson(openLibraryUrl, "Open Library");
+                // uses it for ISBN research. Before making a new provider call,
+                // consume the canonical Title/Author response if an earlier
+                // ISBN research operation already collected it. This is a cache-
+                // only probe: it never waits, retries, or contacts the provider.
+                string identityOpenLibraryUrl =
+                    BuildOpenLibraryIdentitySearchUrl(title, author);
 
-                providerResponded |= openLibrary.Responded;
-                providerSucceeded |= openLibrary.Succeeded;
-                anyRateLimited |= openLibrary.RateLimited;
-                anyTimedOut |= openLibrary.TimedOut;
-                retryAfterSeconds = Math.Max(retryAfterSeconds, openLibrary.RetryAfterSeconds);
-                AddDiagnostic(diagnostics, openLibrary.Diagnostic);
+                bool openLibraryEvidenceSatisfiesRequest = false;
 
-                if (openLibrary.Succeeded && !string.IsNullOrWhiteSpace(openLibrary.Json))
+                if (E_ExternalProviderGateway.TryGetCachedJson(
+                        identityOpenLibraryUrl,
+                        out string? cachedOpenLibraryJson) &&
+                    !string.IsNullOrWhiteSpace(cachedOpenLibraryJson))
                 {
-                    candidates.AddRange(
+                    List<MetadataResearchCandidate> cachedOpenLibraryCandidates =
                         ParseOpenLibraryCandidates(
-                            openLibrary.Json!,
+                            cachedOpenLibraryJson!,
                             metadata,
-                            openLibraryUrl));
+                            identityOpenLibraryUrl);
+
+                    candidates.AddRange(cachedOpenLibraryCandidates);
+
+                    // Cached provider evidence is still successful external
+                    // evidence. It must not be reported as ProviderUnavailable
+                    // merely because no new HTTP request was necessary.
+                    providerResponded = true;
+                    providerSucceeded = true;
+
+                    Debug.WriteLine(
+                        $"[METADATA CACHE TRACE] Open Library cache hit | " +
+                        $"Title='{title}' | Author='{author}' | " +
+                        $"Candidates={cachedOpenLibraryCandidates.Count} | " +
+                        $"Description={cachedOpenLibraryCandidates.Any(c => string.Equals(c.Field, "Description", StringComparison.OrdinalIgnoreCase))} | " +
+                        $"Publisher={cachedOpenLibraryCandidates.Any(c => string.Equals(c.Field, "Publisher", StringComparison.OrdinalIgnoreCase))}");
+
+                    openLibraryEvidenceSatisfiesRequest =
+                        (!string.IsNullOrWhiteSpace(metadata.Publisher) ||
+                         candidates.Any(candidate =>
+                             string.Equals(
+                                 candidate.Field,
+                                 "Publisher",
+                                 StringComparison.OrdinalIgnoreCase))) &&
+                        (!string.IsNullOrWhiteSpace(metadata.Description) ||
+                         candidates.Any(candidate =>
+                             string.Equals(
+                                 candidate.Field,
+                                 "Description",
+                                 StringComparison.OrdinalIgnoreCase)));
+
+                    diagnostics.Add(
+                        openLibraryEvidenceSatisfiesRequest
+                            ? "Open Library identity response reused from Scout's research cache; no new Open Library request was made for this evidence."
+                            : "Open Library identity response was reused from Scout's research cache, but it did not contain all requested metadata; Scout will continue with the edition-aware lookup.");
+                }
+
+                if (!openLibraryEvidenceSatisfiesRequest)
+                {
+                    string openLibraryUrl =
+                        BuildOpenLibrarySearchUrl(title, author, isbn);
+
+                    E_ExternalProviderFetchResult openLibrary =
+                        TryFetchJson(openLibraryUrl, "Open Library");
+
+                    providerResponded |= openLibrary.Responded;
+                    providerSucceeded |= openLibrary.Succeeded;
+                    anyRateLimited |= openLibrary.RateLimited;
+                    anyTimedOut |= openLibrary.TimedOut;
+                    retryAfterSeconds = Math.Max(
+                        retryAfterSeconds,
+                        openLibrary.RetryAfterSeconds);
+                    AddDiagnostic(diagnostics, openLibrary.Diagnostic);
+
+                    if (openLibrary.Succeeded &&
+                        !string.IsNullOrWhiteSpace(openLibrary.Json))
+                    {
+                        List<MetadataResearchCandidate> fetchedOpenLibraryCandidates =
+                            ParseOpenLibraryCandidates(
+                                openLibrary.Json!,
+                                metadata,
+                                openLibraryUrl);
+
+                        candidates.AddRange(fetchedOpenLibraryCandidates);
+
+                        Debug.WriteLine(
+                            $"[METADATA CANDIDATE TRACE] Open Library | " +
+                            $"Title='{title}' | Candidates={fetchedOpenLibraryCandidates.Count}");
+                    }
                 }
 
                 // Google Books is a second, independent provider. It is used
@@ -85,24 +152,93 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
                 if (needGoogle)
                 {
-                    string googleUrl = BuildGoogleBooksSearchUrl(title, author, isbn);
-                    E_ExternalProviderFetchResult google =
-                        TryFetchJson(googleUrl, "Google Books");
+                    // Google Books uses the same canonical Title/Author query
+                    // for ISBN recovery. Reuse that response first when it is
+                    // already cached; only fall back to the current ISBN-aware
+                    // query when the needed evidence is not already present.
+                    string identityGoogleUrl =
+                        BuildGoogleBooksIdentitySearchUrl(title, author);
 
-                    providerResponded |= google.Responded;
-                    providerSucceeded |= google.Succeeded;
-                    anyRateLimited |= google.RateLimited;
-                    anyTimedOut |= google.TimedOut;
-                    retryAfterSeconds = Math.Max(retryAfterSeconds, google.RetryAfterSeconds);
-                    AddDiagnostic(diagnostics, google.Diagnostic);
+                    bool googleCacheSatisfiedRequest = false;
 
-                    if (google.Succeeded && !string.IsNullOrWhiteSpace(google.Json))
+                    if (E_ExternalProviderGateway.TryGetCachedJson(
+                            identityGoogleUrl,
+                            out string? cachedGoogleJson) &&
+                        !string.IsNullOrWhiteSpace(cachedGoogleJson))
                     {
-                        candidates.AddRange(
+                        List<MetadataResearchCandidate> cachedGoogleCandidates =
                             ParseGoogleBooksCandidates(
-                                google.Json!,
+                                cachedGoogleJson!,
                                 metadata,
-                                googleUrl));
+                                identityGoogleUrl);
+
+                        candidates.AddRange(cachedGoogleCandidates);
+
+                        // Cached Google Books evidence is valid external
+                        // evidence and must count as a successful research
+                        // response for the overall result state.
+                        providerResponded = true;
+                        providerSucceeded = true;
+
+                        Debug.WriteLine(
+                            $"[METADATA CACHE TRACE] Google Books cache hit | " +
+                            $"Title='{title}' | Author='{author}' | " +
+                            $"Candidates={cachedGoogleCandidates.Count} | " +
+                            $"Description={cachedGoogleCandidates.Any(c => string.Equals(c.Field, "Description", StringComparison.OrdinalIgnoreCase))} | " +
+                            $"Publisher={cachedGoogleCandidates.Any(c => string.Equals(c.Field, "Publisher", StringComparison.OrdinalIgnoreCase))}");
+
+                        googleCacheSatisfiedRequest =
+                            (!string.IsNullOrWhiteSpace(metadata.Description) ||
+                             candidates.Any(candidate =>
+                                 string.Equals(
+                                     candidate.Field,
+                                     "Description",
+                                     StringComparison.OrdinalIgnoreCase))) &&
+                            (!string.IsNullOrWhiteSpace(metadata.Publisher) ||
+                             candidates.Any(candidate =>
+                                 string.Equals(
+                                     candidate.Field,
+                                     "Publisher",
+                                     StringComparison.OrdinalIgnoreCase)));
+
+                        diagnostics.Add(
+                            googleCacheSatisfiedRequest
+                                ? "Google Books identity response reused from Scout's research cache; no new Google Books request was made for this evidence."
+                                : "Google Books identity response was reused from Scout's research cache, but it did not contain all requested metadata; Scout will continue with the current lookup.");
+                    }
+
+                    if (!googleCacheSatisfiedRequest)
+                    {
+                        string googleUrl =
+                            BuildGoogleBooksSearchUrl(title, author, isbn);
+
+                        E_ExternalProviderFetchResult google =
+                            TryFetchJson(googleUrl, "Google Books");
+
+                        providerResponded |= google.Responded;
+                        providerSucceeded |= google.Succeeded;
+                        anyRateLimited |= google.RateLimited;
+                        anyTimedOut |= google.TimedOut;
+                        retryAfterSeconds = Math.Max(
+                            retryAfterSeconds,
+                            google.RetryAfterSeconds);
+                        AddDiagnostic(diagnostics, google.Diagnostic);
+
+                        if (google.Succeeded &&
+                            !string.IsNullOrWhiteSpace(google.Json))
+                        {
+                            List<MetadataResearchCandidate> fetchedGoogleCandidates =
+                                ParseGoogleBooksCandidates(
+                                    google.Json!,
+                                    metadata,
+                                    googleUrl);
+
+                            candidates.AddRange(fetchedGoogleCandidates);
+
+                            Debug.WriteLine(
+                                $"[METADATA CANDIDATE TRACE] Google Books | " +
+                                $"Title='{title}' | Candidates={fetchedGoogleCandidates.Count}");
+                        }
                     }
 
                     // Do not immediately issue a second Google request just
@@ -126,6 +262,23 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                                 .First())
                         .OrderByDescending(candidate => candidate.Confidence)
                         .ToList();
+
+                Debug.WriteLine(
+                    $"[METADATA RESULT TRACE] Title='{title}' | Author='{author}' | " +
+                    $"RawCandidates={candidates.Count} | MergedCandidates={merged.Count} | " +
+                    $"DescriptionCandidates={merged.Count(c => string.Equals(c.Field, "Description", StringComparison.OrdinalIgnoreCase))} | " +
+                    $"PublisherCandidates={merged.Count(c => string.Equals(c.Field, "Publisher", StringComparison.OrdinalIgnoreCase))} | " +
+                    $"ProviderResponded={providerResponded} | ProviderSucceeded={providerSucceeded} | " +
+                    $"RateLimited={anyRateLimited} | TimedOut={anyTimedOut}");
+
+                foreach (MetadataResearchCandidate traceCandidate in merged)
+                {
+                    Debug.WriteLine(
+                        $"[METADATA CANDIDATE TRACE] Merged | " +
+                        $"Title='{title}' | Field={traceCandidate.Field} | " +
+                        $"Confidence={traceCandidate.Confidence:P0} | " +
+                        $"Value='{traceCandidate.Value}' | Source='{traceCandidate.Source}'");
+                }
 
                 bool requestedMetadataStillMissing =
                     (string.IsNullOrWhiteSpace(metadata.Description) &&
@@ -197,6 +350,56 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             {
                 return MetadataResearchResult.CreateProviderUnavailable();
             }
+        }
+
+        private static string BuildOpenLibraryIdentitySearchUrl(
+            string title,
+            string author)
+        {
+            List<string> parameters = new();
+
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                parameters.Add(
+                    "title=" + Uri.EscapeDataString(title.Trim()));
+            }
+
+            if (!string.IsNullOrWhiteSpace(author))
+            {
+                parameters.Add(
+                    "author=" + Uri.EscapeDataString(author.Trim()));
+            }
+
+            parameters.Add(
+                "fields=" + Uri.EscapeDataString(
+                    "key,title,author_name,isbn,edition_key,publisher,publish_year,description,first_sentence"));
+            parameters.Add("limit=10");
+
+            return "https://openlibrary.org/search.json?" +
+                   string.Join("&", parameters);
+        }
+
+        private static string BuildGoogleBooksIdentitySearchUrl(
+            string title,
+            string author)
+        {
+            List<string> terms = new();
+
+            if (!string.IsNullOrWhiteSpace(title))
+                terms.Add("intitle:" + title.Trim());
+
+            if (!string.IsNullOrWhiteSpace(author))
+            {
+                foreach (string authorPart in SplitAuthors(author))
+                    terms.Add("inauthor:" + authorPart);
+            }
+
+            string query = string.Join(" ", terms);
+
+            return
+                "https://www.googleapis.com/books/v1/volumes?q=" +
+                Uri.EscapeDataString(query) +
+                "&maxResults=10&printType=books";
         }
 
         private static string BuildOpenLibrarySearchUrl(

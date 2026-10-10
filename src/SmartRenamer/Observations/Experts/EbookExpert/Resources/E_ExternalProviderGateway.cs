@@ -59,6 +59,26 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
         private const int FinalRateLimitCooldownMilliseconds = 15000;
 
+        /// <summary>
+        /// Looks only in Scout's existing provider-response cache.
+        ///
+        /// This never waits, throttles, retries, or contacts a provider. It is
+        /// used when another research operation may already have collected the
+        /// same evidence under a canonical identity query.
+        /// </summary>
+        public static bool TryGetCachedJson(
+            string url,
+            out string? json)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                json = null;
+                return false;
+            }
+
+            return TryGetCached(url, out json);
+        }
+
         public static E_ExternalProviderFetchResult FetchJson(
             string provider,
             string url)

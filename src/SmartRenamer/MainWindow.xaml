@@ -346,19 +346,37 @@
                             <ItemsControl ItemsSource="{Binding Guide.ActionOptions}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Button
-                                            Content="{Binding Label}"
-                                            Margin="0,0,0,8"
-                                            Padding="10,8"
-                                            HorizontalContentAlignment="Left"
-                                            Background="{StaticResource ConversationSendBrush}"
-                                            Foreground="White"
-                                            BorderBrush="{StaticResource ConversationSendBorderBrush}"
-                                            BorderThickness="1"
-                                            FontWeight="SemiBold"
-                                            Cursor="Hand"
-                                            Command="{Binding DataContext.Guide.SelectActionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                            CommandParameter="{Binding}"/>
+                                        <StackPanel Margin="0,0,0,8">
+                                            <Button
+                                                Padding="10,8"
+                                                HorizontalContentAlignment="Left"
+                                                Background="{StaticResource ConversationSendBrush}"
+                                                Foreground="White"
+                                                BorderBrush="{StaticResource ConversationSendBorderBrush}"
+                                                BorderThickness="1"
+                                                FontWeight="SemiBold"
+                                                Cursor="Hand"
+                                                Command="{Binding DataContext.Guide.SelectActionOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}">
+                                                <TextBlock
+                                                    Text="{Binding Label}"
+                                                    TextWrapping="Wrap" />
+                                            </Button>
+
+                                            <ItemsControl
+                                                Margin="10,4,10,0"
+                                                ItemsSource="{Binding Evidence}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock
+                                                            Margin="0,1,0,0"
+                                                            FontSize="12"
+                                                            Text="{Binding}"
+                                                            TextWrapping="Wrap" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -500,7 +518,9 @@
                                         </Style>
                                     </ListBox.ItemContainerStyle>
                                     <ListBox.ItemsPanel>
-                                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                                        <ItemsPanelTemplate>
+                                            <VirtualizingStackPanel/>
+                                        </ItemsPanelTemplate>
                                     </ListBox.ItemsPanel>
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
@@ -605,7 +625,9 @@
                                         </Style>
                                     </ListBox.ItemContainerStyle>
                                     <ListBox.ItemsPanel>
-                                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                                        <ItemsPanelTemplate>
+                                            <VirtualizingStackPanel/>
+                                        </ItemsPanelTemplate>
                                     </ListBox.ItemsPanel>
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
@@ -675,7 +697,9 @@
                                         </Style>
                                     </ListBox.ItemContainerStyle>
                                     <ListBox.ItemsPanel>
-                                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                                        <ItemsPanelTemplate>
+                                            <VirtualizingStackPanel/>
+                                        </ItemsPanelTemplate>
                                     </ListBox.ItemsPanel>
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
@@ -744,7 +768,9 @@
                                         </Style>
                                     </ListBox.ItemContainerStyle>
                                     <ListBox.ItemsPanel>
-                                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                                        <ItemsPanelTemplate>
+                                            <VirtualizingStackPanel/>
+                                        </ItemsPanelTemplate>
                                     </ListBox.ItemsPanel>
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>

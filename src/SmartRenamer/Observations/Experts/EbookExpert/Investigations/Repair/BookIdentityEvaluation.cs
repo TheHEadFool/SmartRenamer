@@ -11,6 +11,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
     {
         public bool RepairRequired { get; init; }
 
+        /// <summary>
+        /// True when local identity evidence contains an explicit conflict
+        /// that Scout must not resolve automatically. External research must
+        /// not be used to choose between conflicting user-supplied identities.
+        /// </summary>
+        public bool RequiresClarification { get; init; }
+
         public BookIdentityCandidate? Candidate { get; init; }
 
         public SeriesEvidenceEvaluation? SeriesEvaluation { get; init; }

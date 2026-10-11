@@ -228,6 +228,20 @@
                         Grid.Row="1"
                         VerticalScrollBarVisibility="Auto"
                         HorizontalScrollBarVisibility="Disabled">
+                        <ScrollViewer.Style>
+                            <Style TargetType="ScrollViewer">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <!-- While Scout is waiting for a specific user decision,
+                                     show only that decision's usable controls. Hide the
+                                     general observation-action buttons temporarily so
+                                     they do not compete with or bury the active choices. -->
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Guide.HasScoutControls}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ScrollViewer.Style>
                         <Border
                             Padding="16"
                             CornerRadius="12"
@@ -524,7 +538,7 @@
                                     </ListBox.ItemsPanel>
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid Height="32">
+                                            <Grid MinHeight="40" Margin="0,2,0,4">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="16"/>
                                                     <ColumnDefinition Width="*"/>
@@ -535,15 +549,22 @@
                                                     Grid.Column="0"
                                                     Text="!"
                                                     FontWeight="Bold"
-                                                    VerticalAlignment="Center"/>
+                                                    VerticalAlignment="Top"
+                                                    Margin="0,5,0,0"/>
 
-                                                <TextBlock
-                                                    Grid.Column="1"
-                                                    Margin="4,0,10,0"
-                                                    VerticalAlignment="Center"
-                                                    Text="{Binding DisplayName}"
-                                                    TextTrimming="CharacterEllipsis"
-                                                    ToolTip="{Binding DisplayName}"/>
+                                                <StackPanel Grid.Column="1" Margin="4,2,10,2" VerticalAlignment="Center">
+                                                    <TextBlock
+                                                        Text="{Binding DisplayName}"
+                                                        TextTrimming="CharacterEllipsis"
+                                                        ToolTip="{Binding DisplayName}"
+                                                        FontWeight="SemiBold"/>
+                                                    <TextBlock
+                                                        Text="{Binding Status}"
+                                                        TextWrapping="Wrap"
+                                                        Foreground="{StaticResource SecondaryTextBrush}"
+                                                        FontSize="11"
+                                                        Margin="0,2,0,0"/>
+                                                </StackPanel>
 
                                                 <ItemsControl
                                                     Grid.Column="2"
@@ -842,6 +863,9 @@
                                         <DataTrigger Binding="{Binding Workspace.SelectedRecommendation}" Value="{x:Null}">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                         </DataTrigger>
+                                        <DataTrigger Binding="{Binding Operation.HasCollectionItems}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </TextBlock.Style>
@@ -855,6 +879,9 @@
                                         <DataTrigger Binding="{Binding Workspace.SelectedRecommendation}" Value="{x:Null}">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                         </DataTrigger>
+                                        <DataTrigger Binding="{Binding Operation.HasCollectionItems}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </StackPanel.Style>
@@ -865,12 +892,15 @@
         Margin="0,0,0,6"
         Text="Supporting Evidence"/>
 
+                            <!-- Keep supporting evidence bounded so it cannot push
+                                 the recommendation action and lower sections off-screen. -->
                             <Border
         Padding="12"
         Background="#EEF5FF"
         CornerRadius="10">
 
                                 <ScrollViewer
+            MaxHeight="170"
             VerticalScrollBarVisibility="Auto"
             HorizontalScrollBarVisibility="Disabled">
 
@@ -888,29 +918,31 @@
                     FontSize="13"
                     Margin="0,0,0,12"/>
 
-                                        <Button
-                    Command="{Binding Guide.ExecuteRecommendationActionCommand}"
-                    CommandParameter="{Binding Workspace.SelectedRecommendation}"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Padding="0"
-                    HorizontalAlignment="Left"
-                    Cursor="Hand">
-
-                                            <TextBlock
-                        Text="{Binding Workspace.SelectedRecommendation.ActionText}"
-                        FontWeight="SemiBold"
-                        FontSize="14"
-                        Foreground="#245A35"
-                        TextWrapping="Wrap"/>
-
-                                        </Button>
-
                                     </StackPanel>
 
                                 </ScrollViewer>
 
                             </Border>
+
+                            <!-- Keep the action visible even when evidence is long. -->
+                            <Button
+        Margin="0,8,0,0"
+        Command="{Binding Guide.ExecuteRecommendationActionCommand}"
+        CommandParameter="{Binding Workspace.SelectedRecommendation}"
+        Background="Transparent"
+        BorderThickness="0"
+        Padding="0"
+        HorizontalAlignment="Left"
+        Cursor="Hand">
+
+                                <TextBlock
+            Text="{Binding Workspace.SelectedRecommendation.ActionText}"
+            FontWeight="SemiBold"
+            FontSize="14"
+            Foreground="#245A35"
+            TextWrapping="Wrap"/>
+
+                            </Button>
 
                         </StackPanel>
 

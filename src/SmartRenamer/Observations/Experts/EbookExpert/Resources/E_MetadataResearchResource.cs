@@ -84,6 +84,28 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         $"Description={cachedOpenLibraryCandidates.Any(c => string.Equals(c.Field, "Description", StringComparison.OrdinalIgnoreCase))} | " +
                         $"Publisher={cachedOpenLibraryCandidates.Any(c => string.Equals(c.Field, "Publisher", StringComparison.OrdinalIgnoreCase))}");
 
+                    bool cachedDescriptionIsFull =
+                        candidates.Any(candidate =>
+                            string.Equals(
+                                candidate.Field,
+                                "Description",
+                                StringComparison.OrdinalIgnoreCase) &&
+                            !candidate.Details.Any(detail =>
+                                detail.Contains(
+                                    "first-sentence summary rather than a full synopsis",
+                                    StringComparison.OrdinalIgnoreCase)));
+
+                    bool cachedDescriptionIsFirstSentenceOnly =
+                        candidates.Any(candidate =>
+                            string.Equals(
+                                candidate.Field,
+                                "Description",
+                                StringComparison.OrdinalIgnoreCase) &&
+                            candidate.Details.Any(detail =>
+                                detail.Contains(
+                                    "first-sentence summary rather than a full synopsis",
+                                    StringComparison.OrdinalIgnoreCase)));
+
                     openLibraryEvidenceSatisfiesRequest =
                         (!string.IsNullOrWhiteSpace(metadata.Publisher) ||
                          candidates.Any(candidate =>
@@ -92,11 +114,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                                  "Publisher",
                                  StringComparison.OrdinalIgnoreCase))) &&
                         (!string.IsNullOrWhiteSpace(metadata.Description) ||
-                         candidates.Any(candidate =>
-                             string.Equals(
-                                 candidate.Field,
-                                 "Description",
-                                 StringComparison.OrdinalIgnoreCase)));
+                         cachedDescriptionIsFull);
+
+                    Debug.WriteLine(
+                        $"[METADATA SUFFICIENCY TRACE] Open Library cache | " +
+                        $"Title='{title}' | FullDescription={cachedDescriptionIsFull} | " +
+                        $"FirstSentenceOnly={cachedDescriptionIsFirstSentenceOnly} | " +
+                        $"SatisfiesRequest={openLibraryEvidenceSatisfiesRequest}");
 
                     diagnostics.Add(
                         openLibraryEvidenceSatisfiesRequest
@@ -187,13 +211,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                             $"Description={cachedGoogleCandidates.Any(c => string.Equals(c.Field, "Description", StringComparison.OrdinalIgnoreCase))} | " +
                             $"Publisher={cachedGoogleCandidates.Any(c => string.Equals(c.Field, "Publisher", StringComparison.OrdinalIgnoreCase))}");
 
+                        // The combined list may already contain an Open
+                        // Library first-sentence summary. That is useful
+                        // evidence, but it must not count as a full synopsis
+                        // and suppress Google's ISBN-aware lookup. A full
+                        // description from either source is sufficient.
                         googleCacheSatisfiedRequest =
                             (!string.IsNullOrWhiteSpace(metadata.Description) ||
-                             candidates.Any(candidate =>
-                                 string.Equals(
-                                     candidate.Field,
-                                     "Description",
-                                     StringComparison.OrdinalIgnoreCase))) &&
+                             candidates.Any(IsFullDescriptionCandidate)) &&
                             (!string.IsNullOrWhiteSpace(metadata.Publisher) ||
                              candidates.Any(candidate =>
                                  string.Equals(
@@ -280,13 +305,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         $"Value='{traceCandidate.Value}' | Source='{traceCandidate.Source}'");
                 }
 
+                // A first-sentence-only Open Library result is useful
+                // evidence, but it does not satisfy the request for a book
+                // synopsis. Keep that distinction when deciding whether a
+                // rate-limited provider left requested metadata unresolved.
                 bool requestedMetadataStillMissing =
                     (string.IsNullOrWhiteSpace(metadata.Description) &&
-                     !merged.Any(candidate =>
-                         string.Equals(
-                             candidate.Field,
-                             "Description",
-                             StringComparison.OrdinalIgnoreCase))) ||
+                     !merged.Any(IsFullDescriptionCandidate)) ||
                     (string.IsNullOrWhiteSpace(metadata.Publisher) &&
                      !merged.Any(candidate =>
                          string.Equals(
@@ -496,6 +521,28 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
         {
             if (!string.IsNullOrWhiteSpace(diagnostic))
                 diagnostics.Add(diagnostic);
+        }
+
+        private static bool IsFullDescriptionCandidate(
+            MetadataResearchCandidate candidate)
+        {
+            if (!string.Equals(
+                    candidate.Field,
+                    "Description",
+                    StringComparison.OrdinalIgnoreCase) ||
+                string.IsNullOrWhiteSpace(candidate.Value))
+            {
+                return false;
+            }
+
+            // Open Library's first_sentence field is intentionally surfaced as
+            // a lower-confidence candidate, but it is not a full synopsis.
+            // Other providers' non-empty description fields count as full
+            // descriptions unless their parser explicitly marks them partial.
+            return !candidate.Details.Any(detail =>
+                detail.Contains(
+                    "first-sentence summary rather than a full synopsis",
+                    StringComparison.OrdinalIgnoreCase));
         }
 
         private static List<MetadataResearchCandidate> ParseOpenLibraryCandidates(

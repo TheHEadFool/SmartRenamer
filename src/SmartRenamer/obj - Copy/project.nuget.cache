@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "e1XLPdMTal4=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\TheHe\\source\\repos\\SmartRenamer\\src\\SmartRenamer\\Scout.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\TheHe\\.nuget\\packages\\metadataextractor\\2.9.3\\metadataextractor.2.9.3.nupkg.sha512",
+    "C:\\Users\\TheHe\\.nuget\\packages\\taglibsharp\\2.3.0\\taglibsharp.2.3.0.nupkg.sha512",
+    "C:\\Users\\TheHe\\.nuget\\packages\\xamlanimatedgif\\2.3.2\\xamlanimatedgif.2.3.2.nupkg.sha512",
+    "C:\\Users\\TheHe\\.nuget\\packages\\xmpcore\\6.1.10.1\\xmpcore.6.1.10.1.nupkg.sha512"
+  ],
+  "logs": []
+}

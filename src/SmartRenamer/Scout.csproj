@@ -7,7 +7,15 @@
 		<UseWPF>true</UseWPF>
 		<UseWindowsForms>true</UseWindowsForms>
 	</PropertyGroup>
-
+	<ItemGroup>
+		<!-- Exclude copied build output from SDK source discovery. -->
+		<Compile Remove="obj - Copy\**\*.cs" />
+		<Page Remove="obj - Copy\**\*.xaml" />
+		<ApplicationDefinition Remove="obj - Copy\**\*.xaml" />
+		<EmbeddedResource Remove="obj - Copy\**\*" />
+		<Content Remove="obj - Copy\**\*" />
+		<None Remove="obj - Copy\**\*" />
+	</ItemGroup>
 	<!--
       Everything under Expeditions is copied EXCEPT
       WPF XAML files and C# source files, which are

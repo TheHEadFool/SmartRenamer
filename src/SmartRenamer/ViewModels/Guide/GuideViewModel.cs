@@ -1705,22 +1705,14 @@ namespace SmartRenamer.ViewModels.Guide
                 ContextId = action.ContextId
             };
 
-            if (currentActionDecision != null &&
-                string.Equals(
-                    currentActionDecision.ContextId,
-                    action.ContextId,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                ConsumeCurrentActionDecision();
-            }
-            else
-            {
-                ParkCurrentActionDecision();
-                RemovePendingActionDecision(action.ContextId);
-                workspace.ConversationEngine.ClearActionOptions();
-                ActionOptions.Clear();
-                NotifyScoutControlsChanged();
-            }
+            // A Live Report action may address only one field on a book.
+            // Preserve any other decision already queued for that same book;
+            // the domain action will re-observe and reconciliation will retire
+            // the decision only when the book is actually finished.
+            ParkCurrentActionDecision();
+            workspace.ConversationEngine.ClearActionOptions();
+            ActionOptions.Clear();
+            NotifyScoutControlsChanged();
 
             operation.State = ScoutOperationState.Running;
             operation.Status = "Working...";
@@ -2278,7 +2270,11 @@ namespace SmartRenamer.ViewModels.Guide
                             decision.ContextId,
                             StringComparison.OrdinalIgnoreCase));
 
-                return item != null && !item.NeedsUserAttention;
+                // A book can temporarily have no visible actions while a
+                // field repair/re-observation is in flight. Do not discard a
+                // queued decision merely because NeedsUserAttention is false.
+                // Only terminal items are safe to remove from the decision queue.
+                return item != null && item.IsCompleted;
             });
 
             if (currentActionDecision != null)
@@ -2291,7 +2287,7 @@ namespace SmartRenamer.ViewModels.Guide
                             StringComparison.OrdinalIgnoreCase));
 
                 if (currentItem != null &&
-                    !currentItem.NeedsUserAttention)
+                    currentItem.IsCompleted)
                 {
                     System.Diagnostics.Debug.WriteLine(
                         $"[ACTION QUEUE] RESOLVED {currentActionDecision.DisplayName}");

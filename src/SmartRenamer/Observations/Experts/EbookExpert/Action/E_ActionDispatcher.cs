@@ -1281,111 +1281,178 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                                     : $"Scout researched {fileName}, but could not establish a safe Publisher or Summary candidate."
                                 : $"Scout found additional Publisher/Summary evidence for {fileName}.";
 
-                foreach (MetadataResearchCandidate candidate in
+                // Evaluate all distinct candidates for each field together.
+                // The previous implementation selected only the highest-
+                // confidence candidate before the decision engine ever saw
+                // the alternatives. That discarded useful research results
+                // before Scout could present them to the user.
+                foreach (IGrouping<string, MetadataResearchCandidate> fieldGroup in
                          research.Candidates
+                             .Where(candidate =>
+                                 !string.IsNullOrWhiteSpace(candidate.Field) &&
+                                 !string.IsNullOrWhiteSpace(candidate.Value))
                              .GroupBy(
-                                 item => item.Field,
-                                 StringComparer.OrdinalIgnoreCase)
-                             .Select(group =>
-                                 group.OrderByDescending(
-                                     item => item.Confidence)
-                                     .First()))
+                                 candidate => candidate.Field,
+                                 StringComparer.OrdinalIgnoreCase))
                 {
+                    List<MetadataResearchCandidate> fieldCandidates =
+                        fieldGroup
+                            .OrderByDescending(candidate => candidate.Confidence)
+                            .ToList();
+
                     if (currentMetadata != null &&
                         !string.IsNullOrWhiteSpace(
                             GetCurrentMetadataValue(
                                 currentMetadata,
-                                candidate.Field)))
+                                fieldGroup.Key)))
                     {
                         resultEvidence.Add(
-                            $"{fileName}: Scout ignored the researched {candidate.Field} because the protected working copy already contains a value for that field.");
+                            $"{fileName}: Scout ignored the researched {fieldGroup.Key} because the protected working copy already contains a value for that field.");
                         continue;
                     }
 
-                    resultEvidence.Add(candidate.Evidence);
+                    List<RepairDecisionCandidate> decisionCandidates = new();
 
-                    RepairDecisionCandidate metadataDecisionCandidate = new()
+                    foreach (MetadataResearchCandidate candidate in fieldCandidates)
                     {
-                        Value = candidate.Value,
-                        Source = candidate.Source,
-                        Evidence = candidate.Evidence,
-                        Confidence = candidate.Confidence,
-                        IsPreferred = true
-                    };
+                        resultEvidence.Add(candidate.Evidence);
 
-                    foreach (string detail in candidate.Details)
-                        metadataDecisionCandidate.Details.Add(detail);
+                        RepairDecisionCandidate decisionCandidate = new()
+                        {
+                            Value = candidate.Value,
+                            Source = candidate.Source,
+                            Evidence = candidate.Evidence,
+                            Confidence = candidate.Confidence,
+                            IsPreferred = true
+                        };
+
+                        foreach (string detail in candidate.Details)
+                            decisionCandidate.Details.Add(detail);
+
+                        decisionCandidates.Add(decisionCandidate);
+                    }
 
                     RepairDecisionResult decision =
                         _repairDecisionEngine.Evaluate(
-                            new[] { metadataDecisionCandidate },
+                            decisionCandidates,
                             E_RepairDecisionEngine.MinimumConfidenceThreshold,
                             authorized);
 
                     Debug.WriteLine(
                         $"[METADATA DECISION TRACE] " +
-                        $"Book='{fileName}' | Field={candidate.Field} | " +
-                        $"Confidence={candidate.Confidence:P0} | " +
+                        $"Book='{fileName}' | Field={fieldGroup.Key} | " +
+                        $"Candidates={fieldCandidates.Count} | " +
+                        $"QualifyingCandidates={fieldCandidates.Count(candidate => candidate.Confidence >= E_RepairDecisionEngine.UserDecisionConfidenceThreshold)} | " +
+                        $"TopConfidence={fieldCandidates[0].Confidence:P0} | " +
                         $"State={decision.State} | Authorized={authorized}");
 
                     if (decision.State ==
                             RepairRecommendation.RepairDecisionState.SafeToApply &&
                         decision.SelectedCandidate != null)
                     {
-                        _repairService.AddRepairChange(
-                            originalPath,
-                            new E_RepairChange(
-                                candidate.Field,
-                                GetCurrentMetadataValue(
-                                    opportunity.Record.Metadata,
-                                    candidate.Field),
-                                candidate.Value,
-                                candidate.Source,
-                                candidate.Evidence,
-                                candidate.Confidence,
-                                true));
+                        string selectedValue =
+                            decision.SelectedCandidate.Value?.ToString() ?? string.Empty;
 
-                        repairChangesAdded++;
+                        MetadataResearchCandidate? selectedCandidate =
+                            fieldCandidates.FirstOrDefault(candidate =>
+                                string.Equals(
+                                    candidate.Value,
+                                    selectedValue,
+                                    StringComparison.Ordinal) &&
+                                string.Equals(
+                                    candidate.Source,
+                                    decision.SelectedCandidate.Source,
+                                    StringComparison.OrdinalIgnoreCase) &&
+                                Math.Abs(candidate.Confidence - decision.SelectedCandidate.Confidence) < 0.000001);
+
+                        if (selectedCandidate != null)
+                        {
+                            _repairService.AddRepairChange(
+                                originalPath,
+                                new E_RepairChange(
+                                    selectedCandidate.Field,
+                                    GetCurrentMetadataValue(
+                                        opportunity.Record.Metadata,
+                                        selectedCandidate.Field),
+                                    selectedCandidate.Value,
+                                    selectedCandidate.Source,
+                                    selectedCandidate.Evidence,
+                                    selectedCandidate.Confidence,
+                                    true));
+
+                            repairChangesAdded++;
+                        }
+                        else
+                        {
+                            Debug.WriteLine(
+                                $"[METADATA DECISION WARNING] Book='{fileName}' | " +
+                                $"Field={fieldGroup.Key} | Engine-selected candidate could not be matched to the original research candidate; no automatic repair was queued.");
+                        }
                     }
                     else if (decision.State ==
                              RepairRecommendation.RepairDecisionState.UserDecisionRequired)
                     {
-                        // The user must be able to see the researched value
-                        // before choosing what Scout should do with it. Guide
-                        // already presents action-result evidence when choices
-                        // are present, so keep this as result evidence rather
-                        // than creating a second UI path.
-                        resultEvidence.Add(
-                            $"{fileName}: Researched {candidate.Field}: " +
-                            $"{candidate.Value} ({candidate.Confidence:P0} confidence).");
+                        // Present every distinct candidate that meets the
+                        // established 70% user-decision threshold. Keep one
+                        // edit option per field, not one duplicate edit option
+                        // for every researched candidate.
+                        List<MetadataResearchCandidate> visibleCandidates =
+                            fieldCandidates
+                                .Where(candidate =>
+                                    candidate.Confidence >=
+                                        E_RepairDecisionEngine.UserDecisionConfidenceThreshold)
+                                .ToList();
 
-                        resultOptions.Add(
-                            new CV_ActionOption
-                            {
-                                Id = candidate.Field + "|" + candidate.Value,
-                                ActionId = "SelectMetadataCandidate",
-                                ContextId = originalPath,
-                                Label = $"Use researched {candidate.Field}: {candidate.Value}",
-                                Confidence = candidate.Confidence,
-                                Source = candidate.Source,
-                                Evidence = { candidate.Evidence }
-                            });
+                        foreach (MetadataResearchCandidate candidate in visibleCandidates)
+                        {
+                            // Keep provider URLs in the structured Source field and
+                            // diagnostic trace, not in the user-facing conversation.
+                            resultEvidence.Add(
+                                $"{fileName}: Researched {candidate.Field}: " +
+                                $"{candidate.Value} ({candidate.Confidence:P0} confidence).");
 
-                        resultOptions.Add(
-                            new CV_ActionOption
-                            {
-                                Id = $"AddRepairInformation:{candidate.Field}:{originalPath}",
-                                ActionId = "AddRepairInformation",
-                                ContextId = originalPath,
-                                Label = $"Edit researched {candidate.Field}",
-                                Confidence = 1.0,
-                                Source = "Ebook Expert"
-                            });
+                            resultOptions.Add(
+                                new CV_ActionOption
+                                {
+                                    Id = candidate.Field + "|" + candidate.Value,
+                                    ActionId = "SelectMetadataCandidate",
+                                    ContextId = originalPath,
+                                    // Keep the persistent Scout Controls choice concise.
+                                    // The provider URL remains available through Source and
+                                    // the diagnostic trace, but must not dominate the button.
+                                    Label =
+                                        $"Use researched {candidate.Field} " +
+                                        $"({candidate.Confidence:P0}): {candidate.Value}",
+                                    Confidence = candidate.Confidence,
+                                    Source = candidate.Source,
+                                    Evidence = { candidate.Evidence }
+                                });
 
-                        Debug.WriteLine(
-                            $"[METADATA OPTION TRACE] " +
-                            $"Book='{fileName}' | Field={candidate.Field} | " +
-                            $"Created=True | Confidence={candidate.Confidence:P0}");
+                            Debug.WriteLine(
+                                $"[METADATA OPTION TRACE] " +
+                                $"Book='{fileName}' | Field={candidate.Field} | " +
+                                $"CandidateConfidence={candidate.Confidence:P0} | " +
+                                $"Source='{candidate.Source}' | OptionId='{candidate.Field}|{candidate.Value}' | Created=True");
+                        }
+
+                        if (visibleCandidates.Count > 0)
+                        {
+                            resultOptions.Add(
+                                new CV_ActionOption
+                                {
+                                    Id = $"AddRepairInformation:{fieldGroup.Key}:{originalPath}",
+                                    ActionId = "AddRepairInformation",
+                                    ContextId = originalPath,
+                                    Label = $"Edit researched {fieldGroup.Key}",
+                                    Confidence = 1.0,
+                                    Source = "Ebook Expert"
+                                });
+
+                            Debug.WriteLine(
+                                $"[METADATA OPTION TRACE] " +
+                                $"Book='{fileName}' | Field={fieldGroup.Key} | " +
+                                $"Created=True | Type=Edit | CandidateOptions={visibleCandidates.Count}");
+                        }
                     }
                 }
 
@@ -3118,7 +3185,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 if (!opportunity.MissingIsbn)
                     continue;
 
-                MetadataRecord record = opportunity.Record;
+                MetadataRecord? record = opportunity.Record;
                 ArgumentNullException.ThrowIfNull(record);
 
                 string originalPath =

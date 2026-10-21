@@ -1,4 +1,4 @@
-using Scout.Observations.Experts.EbookExpert.Data;
+﻿using Scout.Observations.Experts.EbookExpert.Data;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using System;
 using System.Collections.Generic;
@@ -278,11 +278,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             if (allCandidates.Count == 0 &&
                 (primaryReturnedDocuments || primary.Succeeded))
             {
+                // Keep the first fallback deliberately narrow. The live proof
+                // of concept showed title+author succeeds where ISBN-only and
+                // compound queries can return no candidates. Series labels and
+                // arbitrary user evidence can overconstrain or misdirect this
+                // query, so they are not appended to this recovery attempt.
                 string fallbackIdentity = BuildOpenLibraryIdentityQuery(
                     title,
-                    author,
-                    series,
-                    userEvidence);
+                    author);
 
                 if (!string.IsNullOrWhiteSpace(fallbackIdentity))
                 {
@@ -358,9 +361,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
         private static string BuildOpenLibraryIdentityQuery(
             string title,
-            string author,
-            string series,
-            string? userEvidence)
+            string author)
         {
             List<string> terms = new();
 
@@ -369,12 +370,6 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
             if (!string.IsNullOrWhiteSpace(author))
                 terms.Add(author.Trim());
-
-            if (!string.IsNullOrWhiteSpace(series))
-                terms.Add(series.Trim());
-
-            if (!string.IsNullOrWhiteSpace(userEvidence))
-                terms.Add(userEvidence.Trim());
 
             return string.Join(" ", terms.Distinct(StringComparer.OrdinalIgnoreCase));
         }

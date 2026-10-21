@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace Scout.Observations.Conversation
 {
@@ -70,5 +70,8 @@ namespace Scout.Observations.Conversation
         /// External source associated with the option, when available.
         /// </summary>
         public string Source { get; init; } = string.Empty;
+
+        /// <summary>Optional text to place in the conversation input when this option opens an edit flow.</summary>
+        public string SuggestedUserInput { get; init; } = string.Empty;
     }
 }

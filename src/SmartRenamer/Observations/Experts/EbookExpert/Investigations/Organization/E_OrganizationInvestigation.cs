@@ -1,4 +1,4 @@
-using Scout.Observations.Experts.EbookExpert.Data;
+﻿using Scout.Observations.Experts.EbookExpert.Data;
 using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
@@ -368,6 +368,69 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
                     });
             }
 
+            // Canonicalize only demonstrably equivalent series labels for
+            // organization routing. This is a folder-planning decision only:
+            // it does not write or alter embedded EPUB metadata. NormalizeKey
+            // removes harmless punctuation, whitespace, a trailing "series",
+            // and a leading "The"; it does not collapse distinct groupings such
+            // as "Dresden Short Story" and "Stories From the Dresden Files".
+            Dictionary<string, string> canonicalSeriesByKey = books
+                .Where(book => !string.IsNullOrWhiteSpace(book.Series))
+                .GroupBy(book => NormalizeSeriesKey(book.Series), StringComparer.OrdinalIgnoreCase)
+                .Where(group => !string.IsNullOrWhiteSpace(group.Key))
+                .ToDictionary(
+                    group => group.Key,
+                    group => ChooseCanonicalSeriesLabel(group.Select(book => book.Series)),
+                    StringComparer.OrdinalIgnoreCase);
+
+            for (int index = 0; index < books.Count; index++)
+            {
+                OrganizationBook book = books[index];
+                string key = NormalizeSeriesKey(book.Series);
+                if (string.IsNullOrWhiteSpace(key) ||
+                    !canonicalSeriesByKey.TryGetValue(key, out string? canonical) ||
+                    string.Equals(book.Series, canonical, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                books[index] = new OrganizationBook
+                {
+                    OriginalPath = book.OriginalPath,
+                    WorkingPath = book.WorkingPath,
+                    EligibleForOrganization = book.EligibleForOrganization,
+                    Title = book.Title,
+                    Author = book.Author,
+                    Series = canonical,
+                    SeriesNumber = book.SeriesNumber,
+                    Publisher = book.Publisher,
+                    Isbn = book.Isbn,
+                    Language = book.Language
+                };
+            }
+
+            // Re-key author evidence using the same canonical organization
+            // identity, so harmless label variants don't split author scoring.
+            Dictionary<string, Dictionary<string, int>> canonicalAuthorScores =
+                new(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, Dictionary<string, int>> entry in seriesAuthorScores)
+            {
+                string key = NormalizeSeriesKey(entry.Key);
+                string canonical = canonicalSeriesByKey.TryGetValue(key, out string? label)
+                    ? label
+                    : entry.Key;
+                if (!canonicalAuthorScores.TryGetValue(canonical, out Dictionary<string, int>? merged))
+                {
+                    merged = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    canonicalAuthorScores[canonical] = merged;
+                }
+                foreach (KeyValuePair<string, int> score in entry.Value)
+                    merged[score.Key] = merged.TryGetValue(score.Key, out int current)
+                        ? current + score.Value
+                        : score.Value;
+            }
+            seriesAuthorScores = canonicalAuthorScores;
+
             // Apply the collection-level primary author only where the
             // evidence produces a clear winner. A tie is deliberately left
             // alone rather than inventing an author assignment.
@@ -427,6 +490,42 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             }
 
             return books;
+        }
+
+
+        private static string NormalizeSeriesKey(string value)
+        {
+            string normalized = (value ?? string.Empty).Trim();
+            normalized = System.Text.RegularExpressions.Regex.Replace(
+                normalized, @"\s+series$", string.Empty,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+            normalized = System.Text.RegularExpressions.Regex.Replace(
+                normalized, @"^the\s+", string.Empty,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+            normalized = new string(normalized
+                .ToLowerInvariant()
+                .Where(char.IsLetterOrDigit)
+                .ToArray());
+            return normalized;
+        }
+
+        private static string ChooseCanonicalSeriesLabel(IEnumerable<string> labels)
+        {
+            return labels
+                .Where(label => !string.IsNullOrWhiteSpace(label))
+                .GroupBy(label => label.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(group => new
+                {
+                    Label = group.Key,
+                    Count = group.Count(),
+                    HasLeadingArticle = group.Key.StartsWith("The ", StringComparison.OrdinalIgnoreCase)
+                })
+                .OrderByDescending(item => item.Count)
+                .ThenBy(item => item.HasLeadingArticle ? 1 : 0)
+                .ThenBy(item => item.Label.Length)
+                .ThenBy(item => item.Label, StringComparer.OrdinalIgnoreCase)
+                .Select(item => item.Label)
+                .FirstOrDefault() ?? string.Empty;
         }
 
         private static void AddSeriesAuthorEvidence(

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.Linq;
 using Scout.Observations.Experts.EbookExpert.Data;
@@ -333,11 +334,27 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             if (string.IsNullOrWhiteSpace(originalFullPath))
                 return Array.Empty<RepairOpportunity>();
 
-            return _reportsByOriginalPath.TryGetValue(
+            if (_reportsByOriginalPath.TryGetValue(
                     originalFullPath,
-                    out RepairReport? report)
-                ? report.Opportunities
-                : Array.Empty<RepairOpportunity>();
+                    out RepairReport? report))
+            {
+                // An existing branch report is the latest observation for this
+                // EPUB, including an intentionally empty report after successful
+                // repair. Do not mix it with stale collection-level opportunities.
+                return report.Opportunities;
+            }
+
+            // A branch not yet re-observed (or one whose record was absent from
+            // a branch refresh) still uses the collection report as its fallback.
+            if (_collectionReport == null)
+                return Array.Empty<RepairOpportunity>();
+
+            return _collectionReport.Opportunities
+                .Where(opportunity => string.Equals(
+                    opportunity.Record?.File?.OriginalFullPath,
+                    originalFullPath,
+                    StringComparison.OrdinalIgnoreCase))
+                .ToList();
         }
 
         /// <summary>
@@ -352,58 +369,67 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         {
             get
             {
-                List<string> paths = new();
+                // The latest per-book report is authoritative for a branch.
+                // The collection report is a fallback for books not yet
+                // re-observed individually. A union would preserve stale missing
+                // fields from the collection report after a branch was repaired.
+                IReadOnlyList<RepairOpportunity> collectionOpportunities =
+                    _collectionReport?.Opportunities ?? new List<RepairOpportunity>();
 
-                //-----------------------------------------------------
-                // Eligibility must be collection-wide.
-                //
-                // The repair expedition deliberately investigates one EPUB
-                // at a time and therefore _reportsByOriginalPath only contains
-                // books that the expedition has reached. Organization cannot
-                // use that dictionary to decide whether an unreached book is
-                // eligible.
-                //
-                // _collectionReport, however, was analyzed from the complete
-                // metadata collection and has already had identity evaluation
-                // applied. Its opportunities therefore represent every book
-                // currently known to require repair.
-                //-----------------------------------------------------
+                HashSet<string> candidatePaths =
+                    new(StringComparer.OrdinalIgnoreCase);
 
-                if (_collectionReport == null)
-                    return paths;
-
-                foreach (RepairOpportunity opportunity in
-                         _collectionReport.Opportunities)
+                foreach (RepairOpportunity opportunity in collectionOpportunities)
                 {
-                    string? originalPath =
-                        opportunity.Record?.File?.OriginalFullPath;
-
-                    if (string.IsNullOrWhiteSpace(originalPath))
-                        continue;
-
-                    //-------------------------------------------------
-                    // A terminal handoff means the book has reached an
-                    // explicit organization outcome even if the original
-                    // RepairOpportunity still appears in the collection
-                    // report (for example, after AcceptAsIs).
-                    //-------------------------------------------------
-
-                    bool hasTerminalHandoff =
-                        _repairHandoffs.Any(
-                            handoff =>
-                                string.Equals(
-                                    handoff.OriginalPath,
-                                    originalPath,
-                                    StringComparison.OrdinalIgnoreCase) &&
-                                (handoff.Status == E_RepairHandoffStatus.RepairCompleted ||
-                                 handoff.Status == E_RepairHandoffStatus.AcceptedAsIs ||
-                                 handoff.Status == E_RepairHandoffStatus.Omitted));
-
-                    if (!hasTerminalHandoff)
-                        paths.Add(originalPath);
+                    string? path = opportunity.Record?.File?.OriginalFullPath;
+                    if (!string.IsNullOrWhiteSpace(path))
+                        candidatePaths.Add(path);
                 }
 
-                return paths;
+                foreach (KeyValuePair<string, RepairReport> branch in _reportsByOriginalPath)
+                    candidatePaths.Add(branch.Key);
+
+                HashSet<string> unresolved =
+                    new(StringComparer.OrdinalIgnoreCase);
+
+                foreach (string originalPath in candidatePaths)
+                {
+                    bool hasUserTerminalHandoff =
+                        _repairHandoffs.Any(handoff =>
+                            string.Equals(
+                                handoff.OriginalPath,
+                                originalPath,
+                                StringComparison.OrdinalIgnoreCase) &&
+                            (handoff.Status == E_RepairHandoffStatus.AcceptedAsIs ||
+                             handoff.Status == E_RepairHandoffStatus.Omitted));
+
+                    if (hasUserTerminalHandoff)
+                        continue;
+
+                    IEnumerable<RepairOpportunity> currentOpportunities;
+                    if (_reportsByOriginalPath.TryGetValue(
+                            originalPath,
+                            out RepairReport? branchReport))
+                    {
+                        // Even an empty branch report supersedes the older
+                        // collection view: it means the latest observation did
+                        // not find an active repair opportunity for this book.
+                        currentOpportunities = branchReport.Opportunities;
+                    }
+                    else
+                    {
+                        currentOpportunities = collectionOpportunities.Where(
+                            opportunity => string.Equals(
+                                opportunity.Record?.File?.OriginalFullPath,
+                                originalPath,
+                                StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    if (currentOpportunities.Any(opportunity => !opportunity.IsComplete))
+                        unresolved.Add(originalPath);
+                }
+
+                return unresolved.ToList();
             }
         }
 
@@ -471,9 +497,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
             if (record == null)
             {
-                _reportsByOriginalPath[originalFullPath] =
-                    new RepairReport();
-
+                // Missing from this branch snapshot is not proof that the ebook
+                // has no repair opportunity. Remove any stale branch report so
+                // the collection-level report remains the fallback authority.
+                _reportsByOriginalPath.Remove(originalFullPath);
                 return new List<ExpertFinding>();
             }
 
@@ -746,30 +773,15 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
 
                 foreach (MetadataEvidence evidence in retainedEvidence)
                 {
-                    bool alreadyAttached =
-                        record.Evidence.Any(
-                            existing =>
-                                string.Equals(
-                                    existing.Source,
-                                    evidence.Source,
-                                    StringComparison.OrdinalIgnoreCase) &&
-                                string.Equals(
-                                    existing.Value,
-                                    evidence.Value,
-                                    StringComparison.OrdinalIgnoreCase));
-
-                    if (!alreadyAttached)
-                    {
-                        record.Evidence.Add(
-                            new MetadataEvidence
-                            {
-                                Source = evidence.Source,
-                                Field = evidence.Field,
-                                Value = evidence.Value,
-                                Location = evidence.Location,
-                                Notes = evidence.Notes
-                            });
-                    }
+                    record.AddEvidence(
+                        new MetadataEvidence
+                        {
+                            Source = evidence.Source,
+                            Field = evidence.Field,
+                            Value = evidence.Value,
+                            Location = evidence.Location,
+                            Notes = evidence.Notes
+                        });
                 }
             }
         }
@@ -786,8 +798,13 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             E_RepairHandoffStatus status,
             string reason)
         {
+            Debug.WriteLine(
+                $"[REPAIR HANDOFF] ResolveUserDecision ENTER | Path='{originalFullPath}' | Status={status}");
             if (string.IsNullOrWhiteSpace(originalFullPath))
+            {
+                Debug.WriteLine("[REPAIR HANDOFF] REJECT | empty original path");
                 return false;
+            }
 
             if (status != E_RepairHandoffStatus.AcceptedAsIs &&
                 status != E_RepairHandoffStatus.Omitted)
@@ -813,7 +830,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             // click, so a repeated Accept-as-is/Omit must not turn into a
             // mysterious "no branch" failure.
             if (_repairExpedition.CompletedFiles.Contains(originalFullPath))
+            {
+                Debug.WriteLine($"[REPAIR HANDOFF] IDEMPOTENT SUCCESS | Path='{originalFullPath}' already terminal");
                 return true;
+            }
 
             if (file == null)
             {
@@ -823,12 +843,16 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             }
 
             if (file == null)
+            {
+                Debug.WriteLine($"[REPAIR HANDOFF] REJECT | Path='{originalFullPath}' not found in active branch or collection index");
                 return false;
+            }
 
             CreateHandoff(file, status, reason);
-
-            return _repairExpedition.ResolveTerminal(
-                originalFullPath);
+            bool terminal = _repairExpedition.ResolveTerminal(originalFullPath);
+            Debug.WriteLine(
+                $"[REPAIR HANDOFF] EXIT | Path='{originalFullPath}' | Handoff={status} | ResolveTerminal={terminal}");
+            return terminal;
         }
 
         /// <summary>

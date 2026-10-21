@@ -1,6 +1,7 @@
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using System.Collections.Generic;
+using System;
 
 namespace Scout.Observations.Experts.EbookExpert.Data
 {
@@ -19,6 +20,36 @@ namespace Scout.Observations.Experts.EbookExpert.Data
         /// already gathered about this particular book.
         /// </summary>
         public List<MetadataEvidence> Evidence { get; } = new();
+
+        /// <summary>
+        /// Adds evidence through the shared per-book contribution contract.
+        /// Repeated publication of the same source/field/value/location is
+        /// idempotent, while genuinely distinct evidence remains preserved.
+        /// </summary>
+        public MetadataEvidence AddEvidence(MetadataEvidence evidence)
+        {
+            if (evidence == null) throw new ArgumentNullException(nameof(evidence));
+
+            MetadataEvidence? existing = Evidence.Find(item =>
+                string.Equals(item.Source, evidence.Source, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.Field, evidence.Field, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.Value?.Trim(), evidence.Value?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.Location, evidence.Location, StringComparison.OrdinalIgnoreCase));
+
+            if (existing == null)
+            {
+                Evidence.Add(evidence);
+                return evidence;
+            }
+
+            foreach (string file in evidence.Files)
+            {
+                if (!existing.Files.Exists(item => string.Equals(item, file, StringComparison.OrdinalIgnoreCase)))
+                    existing.Files.Add(file);
+            }
+
+            return existing;
+        }
 
         /// <summary>
         /// Phase 1 metadata reconciliation for this ebook. This records what

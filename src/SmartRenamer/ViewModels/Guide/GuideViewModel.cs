@@ -10,6 +10,7 @@ using SmartRenamer.Observations;
 using SmartRenamer.Services;
 using SmartRenamer.ViewModels.Workspace;
 using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.IO;
 using System.Collections.ObjectModel;
@@ -211,6 +212,12 @@ namespace SmartRenamer.ViewModels.Guide
         private readonly List<PendingActionDecision> pendingActionDecisions =
             new();
 
+        // A terminal user decision must win over late background research.
+        // Without this guard, a result already in flight can recreate a per-book
+        // decision after Accept All / Accept as-is / Omit has resolved that book.
+        private readonly HashSet<string> terminalActionDecisionContexts =
+            new(StringComparer.OrdinalIgnoreCase);
+
         private PendingActionDecision? currentActionDecision;
 
         // True while a foreground user action is executing. Background research
@@ -333,6 +340,20 @@ namespace SmartRenamer.ViewModels.Guide
                     operation.CollectionWaiting = p.CollectionWaiting;
                     operation.CollectionPending = p.CollectionPending;
                     operation.ApplyItems(p.Items);
+                    SyncResearchActionsToLiveReport();
+
+                    // Terminal repair decisions publish an explicit full
+                    // reconciliation snapshot without re-observing the books.
+                    // Re-evaluate the next collection decision only after that
+                    // snapshot has reached the UI-bound Live Report; HandleActionResult
+                    // can run before Progress<T>'s dispatcher callback does.
+                    if (string.Equals(
+                            p.Stage,
+                            "Reconciliation",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        RefreshCollectionDecisionAfterReconciliation();
+                    }
 
                     operation.CurrentTask =
                         p.CollectionTotal > 0
@@ -990,6 +1011,7 @@ namespace SmartRenamer.ViewModels.Guide
             decisionHistory.Clear();
 
             pendingActionDecisions.Clear();
+            terminalActionDecisionContexts.Clear();
             currentActionDecision = null;
 
             ActionOptions.Clear();
@@ -1648,14 +1670,18 @@ namespace SmartRenamer.ViewModels.Guide
         /// </summary>
         private async void AcceptAllAsIs()
         {
-            if (!operation.HasNeedsItems)
-                return;
+            // The Live Report can still display Needs items while the operation
+            // summary has already advanced or become stale. Never silently
+            // discard a visible command based only on that summary flag.
+            Debug.WriteLine(
+                $"[DECISION UI] AcceptAllAsIs CLICKED | HasNeedsItems={operation.HasNeedsItems} | " +
+                $"NeedsCount={operation.NeedsItems.Count()} | State={operation.State} | Status='{operation.Status}'");
 
             MessageBoxResult confirmation =
                 MessageBox.Show(
-                    $"Accept all {operation.NeedsItems.Count():N0} items as-is?\n\n" +
-                    "Scout will stop asking for missing or unresolved information " +
-                    "for these books and continue toward Organization.",
+                    $"Accept all currently unresolved books as-is?\n\n" +
+                    $"The Live Report currently lists {operation.NeedsItems.Count():N0} items needing attention. " +
+                    "Scout will resolve every repair path that is still eligible for a user decision and continue toward Organization.",
                     "Accept all items as-is",
                     MessageBoxButton.OKCancel,
                     MessageBoxImage.Question);
@@ -1670,16 +1696,40 @@ namespace SmartRenamer.ViewModels.Guide
                 ContextId = ""
             };
 
-            ParkCurrentActionDecision();
-            workspace.ConversationEngine.ClearActionOptions();
-            ActionOptions.Clear();
-            NotifyScoutControlsChanged();
+            ClearActionDecisionQueueForBulkResolution();
 
             operation.State = ScoutOperationState.Running;
             operation.Status = "Accepting books as-is...";
 
+            Debug.WriteLine("[DECISION UI] AcceptAllAsIs DISPATCH | ActionId=AcceptAllAsIs");
             CV_ActionResult actionResult =
                 await ExecuteActionAsync(actionRequest);
+            if (actionResult == null)
+            {
+                foreach (ExecutionProgressItem item in operation.Items)
+                {
+                    if (item.NeedsUserAttention)
+                        terminalActionDecisionContexts.Remove(item.Key);
+                }
+
+                Debug.WriteLine(
+                    "[DECISION UI] AcceptAllAsIs RESULT | actionResult was null.");
+
+                return;
+            }
+
+            if (!actionResult.Success)
+            {
+                foreach (ExecutionProgressItem item in operation.Items)
+                {
+                    if (item.NeedsUserAttention)
+                        terminalActionDecisionContexts.Remove(item.Key);
+                }
+            }
+
+            Debug.WriteLine(
+                $"[DECISION UI] AcceptAllAsIs RESULT | Success={actionResult.Success} | " +
+                $"RequiresReobservation={actionResult.RequiresReobservation} | Message='{actionResult.Message}'");
 
             HandleActionResult(actionResult);
         }
@@ -1698,21 +1748,42 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
             }
 
+            if (action.IsResearchOption &&
+                !ActivateActionDecisionForContext(action.ContextId))
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[LIVE REPORT ACTION] No queued decision for {action.ContextId} / {action.Id}");
+                return;
+            }
+
+            bool terminalBookDecision = IsLiveReportOnlyDecision(action.ActionId);
+            if (terminalBookDecision)
+                terminalActionDecisionContexts.Add(action.ContextId);
+
             CV_ActionRequest actionRequest = new()
             {
                 ActionId = action.ActionId,
                 OptionId = action.Id,
-                ContextId = action.ContextId
+                ContextId = action.ContextId,
+                SuggestedUserInput = action.SuggestedUserInput
             };
 
-            // A Live Report action may address only one field on a book.
-            // Preserve any other decision already queued for that same book;
-            // the domain action will re-observe and reconciliation will retire
-            // the decision only when the book is actually finished.
-            ParkCurrentActionDecision();
-            workspace.ConversationEngine.ClearActionOptions();
-            ActionOptions.Clear();
-            NotifyScoutControlsChanged();
+            if (currentActionDecision != null &&
+                string.Equals(
+                    currentActionDecision.ContextId,
+                    action.ContextId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                ConsumeCurrentActionDecision();
+            }
+            else
+            {
+                ParkCurrentActionDecision();
+                RemovePendingActionDecision(action.ContextId);
+                workspace.ConversationEngine.ClearActionOptions();
+                ActionOptions.Clear();
+                NotifyScoutControlsChanged();
+            }
 
             operation.State = ScoutOperationState.Running;
             operation.Status = "Working...";
@@ -1722,6 +1793,9 @@ namespace SmartRenamer.ViewModels.Guide
 
             CV_ActionResult actionResult =
                 await ExecuteActionAsync(actionRequest);
+
+            if (terminalBookDecision && !actionResult.Success)
+                terminalActionDecisionContexts.Remove(action.ContextId);
 
             HandleActionResult(actionResult);
         }
@@ -2088,7 +2162,7 @@ namespace SmartRenamer.ViewModels.Guide
         {
             workspace.ConversationEngine.ClearActionOptions();
             ActionOptions.Clear();
-            NotifyScoutControlsChanged();
+            SyncResearchActionsToLiveReport();
         }
 
         private void ConsumeCurrentActionDecision()
@@ -2104,6 +2178,7 @@ namespace SmartRenamer.ViewModels.Guide
             {
                 workspace.ConversationEngine.ClearActionOptions();
                 ActionOptions.Clear();
+                SyncResearchActionsToLiveReport();
                 NotifyScoutControlsChanged();
                 return;
             }
@@ -2116,10 +2191,18 @@ namespace SmartRenamer.ViewModels.Guide
             foreach (CV_ActionOption option
                 in currentActionDecision.Options)
             {
-                if (!option.AcceptsUserInput)
+                // Accept-as-is and Omit are decisions about a specific ebook.
+                // Their authoritative controls live beside that ebook in the
+                // Live Report. Repeating them in the generic control panel makes
+                // them context-free and can compete with collection decisions.
+                if (!option.AcceptsUserInput &&
+                    !IsLiveReportOnlyActionSurface(option.ActionId))
+                {
                     ActionOptions.Add(option);
+                }
             }
 
+            SyncResearchActionsToLiveReport();
             NotifyScoutControlsChanged();
 
             if (!includeNarrative)
@@ -2141,14 +2224,148 @@ namespace SmartRenamer.ViewModels.Guide
             if (currentActionDecision.IsBackgroundResearch &&
                 currentActionDecision.Options.Count > 0)
             {
-                Conversation.AddGuideMessage(
-                    "I need your decision on this result. The available choices are shown in Scout Controls on the left.");
+                bool hasControlChoice = currentActionDecision.Options.Any(option =>
+                    !option.AcceptsUserInput &&
+                    !IsLiveReportOnlyActionSurface(option.ActionId));
+
+                // Never tell the user a decision is needed unless the matching
+                // choice is actually available on a visible UI surface. During
+                // collection research, Accept-as-is/Omit may be intentionally
+                // withheld until every external research task settles. In that
+                // interval the row can have no actionable links, so prompting
+                // here creates a dead end and trains users to ignore the Guide.
+                bool hasVisibleLiveReportDecision =
+                    operation.Items.Any(item =>
+                        string.Equals(
+                            item.Key,
+                            currentActionDecision.ContextId,
+                            StringComparison.OrdinalIgnoreCase) &&
+                        item.ResearchActions.Any(action =>
+                            IsLiveReportOnlyDecision(action.ActionId)));
+
+                if (hasControlChoice)
+                {
+                    Conversation.AddGuideMessage(
+                        "I need your decision on this research result. The available choices are shown in Scout Controls on the left.");
+                }
+                else if (hasVisibleLiveReportDecision)
+                {
+                    Conversation.AddGuideMessage(
+                        "A decision is available for this ebook in the Live Report.");
+                }
             }
 
             System.Diagnostics.Debug.WriteLine(
                 $"[ACTION QUEUE] CURRENT {currentActionDecision.DisplayName} " +
                 $"| Context={currentActionDecision.ContextId} " +
                 $"| Options={currentActionDecision.Options.Count}");
+        }
+
+        // These are actions whose UI belongs beside the relevant book in the
+        // Live Report. Only Accept-as-is and Omit are terminal book decisions;
+        // AddRepairInformation must never fence the book or end its investigation.
+        private static bool IsLiveReportOnlyActionSurface(string actionId) =>
+            IsLiveReportOnlyDecision(actionId) ||
+            string.Equals(actionId, "AddRepairInformation", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsLiveReportOnlyDecision(string actionId) =>
+            string.Equals(actionId, "AcceptAsIs", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(actionId, "OmitEbook", StringComparison.OrdinalIgnoreCase);
+
+        private void ClearActionDecisionQueueForBulkResolution()
+        {
+            // Accept All is a collection-level terminal decision. Record every
+            // currently visible context before clearing the queue so late research
+            // completions cannot put the same books back into the decision flow.
+            foreach (ExecutionProgressItem item in operation.Items)
+            {
+                if (!string.IsNullOrWhiteSpace(item.Key) &&
+                    !item.IsCompleted)
+                {
+                    terminalActionDecisionContexts.Add(item.Key);
+                }
+            }
+
+            if (currentActionDecision != null &&
+                !string.IsNullOrWhiteSpace(currentActionDecision.ContextId))
+            {
+                terminalActionDecisionContexts.Add(currentActionDecision.ContextId);
+            }
+
+            foreach (PendingActionDecision decision in pendingActionDecisions)
+            {
+                if (!string.IsNullOrWhiteSpace(decision.ContextId))
+                    terminalActionDecisionContexts.Add(decision.ContextId);
+            }
+
+            currentActionDecision = null;
+            pendingActionDecisions.Clear();
+            workspace.ConversationEngine.ClearActionOptions();
+            ActionOptions.Clear();
+            SyncResearchActionsToLiveReport();
+            NotifyScoutControlsChanged();
+        }
+
+        /// <summary>
+        /// Projects the queued EbookExpert decisions onto their matching Live
+        /// Report rows. This is presentation-only: the queue remains the source
+        /// of truth and clicks are routed back through ExecuteProgressAction.
+        /// </summary>
+        private void SyncResearchActionsToLiveReport()
+        {
+            var decisions = new List<PendingActionDecision>();
+            if (currentActionDecision != null)
+                decisions.Add(currentActionDecision);
+            decisions.AddRange(pendingActionDecisions);
+
+            foreach (ExecutionProgressItem item in operation.Items)
+            {
+                PendingActionDecision? decision = decisions.FirstOrDefault(d =>
+                    string.Equals(d.ContextId, item.Key, StringComparison.OrdinalIgnoreCase));
+
+                if (decision == null)
+                {
+                    item.ResearchActions = Array.Empty<ExecutionProgressAction>();
+                    continue;
+                }
+
+                item.ResearchActions = decision.Options
+                    .Where(option => !option.AcceptsUserInput &&
+                                     !string.IsNullOrWhiteSpace(option.Id))
+                    .Select(option => new ExecutionProgressAction
+                    {
+                        Id = option.Id,
+                        Label = option.Label,
+                        ActionId = option.ActionId,
+                        ContextId = option.ContextId,
+                        IsResearchOption = true,
+                        Confidence = option.Confidence,
+                        Source = option.Source,
+                        SuggestedUserInput = option.SuggestedUserInput,
+                        Evidence = option.Evidence.ToArray()
+                    })
+                    .ToArray();
+            }
+
+            NotifyScoutControlsChanged();
+        }
+
+        private bool ActivateActionDecisionForContext(string contextId)
+        {
+            if (currentActionDecision != null &&
+                string.Equals(currentActionDecision.ContextId, contextId,
+                    StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            PendingActionDecision? selected = FindPendingActionDecision(contextId);
+            if (selected == null)
+                return false;
+
+            ParkCurrentActionDecision();
+            RemovePendingActionDecision(contextId);
+            currentActionDecision = selected;
+            PresentCurrentActionDecision(false);
+            return true;
         }
 
         private void ActivateNextActionDecision()
@@ -2200,6 +2417,13 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
             }
 
+            if (terminalActionDecisionContexts.Contains(contextId))
+            {
+                Debug.WriteLine(
+                    $"[ACTION QUEUE] IGNORE terminal context {contextId}; late result cannot reopen a resolved book.");
+                return;
+            }
+
             if (currentActionDecision != null &&
                 string.Equals(
                     currentActionDecision.ContextId,
@@ -2227,6 +2451,7 @@ namespace SmartRenamer.ViewModels.Guide
             }
 
             SortPendingActionDecisions();
+            SyncResearchActionsToLiveReport();
 
             System.Diagnostics.Debug.WriteLine(
                 $"[ACTION QUEUE] QUEUED {existing.DisplayName} " +
@@ -2249,6 +2474,7 @@ namespace SmartRenamer.ViewModels.Guide
                 currentActionDecision = null;
                 workspace.ConversationEngine.ClearActionOptions();
                 ActionOptions.Clear();
+                SyncResearchActionsToLiveReport();
                 NotifyScoutControlsChanged();
                 return;
             }
@@ -2270,11 +2496,7 @@ namespace SmartRenamer.ViewModels.Guide
                             decision.ContextId,
                             StringComparison.OrdinalIgnoreCase));
 
-                // A book can temporarily have no visible actions while a
-                // field repair/re-observation is in flight. Do not discard a
-                // queued decision merely because NeedsUserAttention is false.
-                // Only terminal items are safe to remove from the decision queue.
-                return item != null && item.IsCompleted;
+                return item != null && !item.NeedsUserAttention;
             });
 
             if (currentActionDecision != null)
@@ -2287,7 +2509,7 @@ namespace SmartRenamer.ViewModels.Guide
                             StringComparison.OrdinalIgnoreCase));
 
                 if (currentItem != null &&
-                    currentItem.IsCompleted)
+                    !currentItem.NeedsUserAttention)
                 {
                     System.Diagnostics.Debug.WriteLine(
                         $"[ACTION QUEUE] RESOLVED {currentActionDecision.DisplayName}");
@@ -2300,6 +2522,7 @@ namespace SmartRenamer.ViewModels.Guide
             }
 
             SortPendingActionDecisions();
+            SyncResearchActionsToLiveReport();
         }
 
         private void AdvanceActionDecision()
@@ -2338,6 +2561,57 @@ namespace SmartRenamer.ViewModels.Guide
             {
                 foregroundActionInProgress = false;
             }
+        }
+
+        /// <summary>
+        /// Re-checks the collection-level next step after an EbookExpert
+        /// reconciliation snapshot has been applied to the Live Report. This
+        /// closes the timing gap where HandleActionResult sees the old WORKING
+        /// rows before the queued progress callback updates them. It does not
+        /// commit Organization or execute any domain operation.
+        /// </summary>
+        private void RefreshCollectionDecisionAfterReconciliation()
+        {
+            pendingDecisionBindings.Clear();
+            pendingDecisionBindings.AddRange(
+                guideInvestigator.DecisionBindings
+                    .Where(binding => binding.Request.Options.Count > 0));
+
+            if (awaitingDecisionChoice ||
+                currentActionDecision != null ||
+                pendingActionDecisions.Count > 0 ||
+                foregroundActionInProgress ||
+                operation.HasWorkingItems ||
+                operation.HasNeedsItems)
+            {
+                return;
+            }
+
+            if (pendingDecisionBindings.Count > 0)
+            {
+                pendingDecisionIndex = 0;
+                awaitingDecisionChoice = true;
+                operation.State = ScoutOperationState.WaitingForUser;
+                operation.Status =
+                    "Repair decisions reconciled; ready for the next collection decision.";
+                PresentDecisionQuestion();
+                return;
+            }
+
+            if (operation.HasReadyItems)
+            {
+                operation.State = ScoutOperationState.WaitingForUser;
+                operation.Status =
+                    "Repair decisions reconciled; books are ready for Organization review.";
+                return;
+            }
+
+            operation.State = operation.HasCompleteItems
+                ? ScoutOperationState.Completed
+                : ScoutOperationState.WaitingForUser;
+            operation.Status = operation.HasCompleteItems
+                ? "Collection work complete."
+                : "Reconciliation complete; review the Live Report for remaining decisions.";
         }
 
         // =====================================================================
@@ -2410,6 +2684,13 @@ namespace SmartRenamer.ViewModels.Guide
                 return;
             }
 
+            if (!string.IsNullOrWhiteSpace(actionResult.PrefillUserInput))
+            {
+                UserInput = actionResult.PrefillUserInput;
+                System.Diagnostics.Debug.WriteLine(
+                    $"[CONVERSATION INPUT] Prefilled editable input from action result | Characters={UserInput.Length}");
+            }
+
             if (isBackgroundResearch &&
                 actionResult.Options.Count > 0)
             {
@@ -2420,19 +2701,38 @@ namespace SmartRenamer.ViewModels.Guide
             }
             else
             {
-                if (!string.IsNullOrWhiteSpace(actionResult.Message))
-                    Conversation.AddGuideMessage(actionResult.Message);
-
-                foreach (string evidence in actionResult.Evidence)
+                if (actionResult.Options.Count == 0)
                 {
-                    if (!string.IsNullOrWhiteSpace(evidence))
-                        Conversation.AddGuideMessage(evidence);
+                    // Successful background research often contains provider-by-
+                    // provider diagnostics. Repeating every such result in the
+                    // conversation makes the useful decisions easy to miss.
+                    // Keep detailed diagnostics in Debug Output and use the Live
+                    // Report/progress status for collection activity. Foreground
+                    // actions and background results that need a user decision
+                    // still present their narrative and evidence normally.
+                    bool suppressBackgroundChatter = isBackgroundResearch;
+
+                    if (!suppressBackgroundChatter &&
+                        !string.IsNullOrWhiteSpace(actionResult.Message))
+                    {
+                        Conversation.AddGuideMessage(actionResult.Message);
+                    }
+
+                    if (!suppressBackgroundChatter)
+                    {
+                        foreach (string evidence in actionResult.Evidence)
+                        {
+                            if (!string.IsNullOrWhiteSpace(evidence))
+                                Conversation.AddGuideMessage(evidence);
+                        }
+                    }
                 }
 
                 if (actionResult.Options.Count > 0)
                 {
                     // This is the continuation of the foreground action the
-                    // user just initiated. It becomes the one active decision.
+                    // user just initiated. It becomes the one active decision,
+                    // and its narrative is displayed exactly once there.
                     SetForegroundActionDecision(actionResult);
                 }
             }

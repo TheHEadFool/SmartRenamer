@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace Scout.Observations.Conversation
 {
@@ -51,6 +51,9 @@ namespace Scout.Observations.Conversation
         /// diagnostics, and future intent analysis.
         /// </summary>
         public string UserInput { get; init; } = string.Empty;
+
+        /// <summary>Optional candidate text associated with an edit action; carried without treating it as user-approved metadata.</summary>
+        public string SuggestedUserInput { get; init; } = string.Empty;
 
         /// <summary>
         /// Identifier of a specific result selected by the user.

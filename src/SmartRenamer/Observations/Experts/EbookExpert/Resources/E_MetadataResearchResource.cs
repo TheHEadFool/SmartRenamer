@@ -1,4 +1,4 @@
-using Scout.Observations.Experts.EbookExpert.Data;
+﻿using Scout.Observations.Experts.EbookExpert.Data;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using System;
 using System.Collections.Generic;
@@ -29,7 +29,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
             string title = GetValue(metadata.Title, evidence, "Title");
             string author = GetValue(metadata.Author, evidence, "Author");
+            string publisher = GetValue(metadata.Publisher, evidence, "Publisher");
             string isbn = GetValue(metadata.Isbn, evidence, "ISBN");
+            string openingContent = string.Join("\n", evidence
+                .Where(item => string.Equals(item.Source, "Opening Content", StringComparison.OrdinalIgnoreCase) &&
+                               string.Equals(item.Field, "Content", StringComparison.OrdinalIgnoreCase))
+                .Select(item => item.Value)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Take(10));
 
             if (string.IsNullOrWhiteSpace(title) &&
                 string.IsNullOrWhiteSpace(author) &&
@@ -57,12 +64,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     BuildOpenLibraryIdentitySearchUrl(title, author);
 
                 bool openLibraryEvidenceSatisfiesRequest = false;
+                string? openLibrarySearchJson = null;
 
                 if (E_ExternalProviderGateway.TryGetCachedJson(
                         identityOpenLibraryUrl,
                         out string? cachedOpenLibraryJson) &&
                     !string.IsNullOrWhiteSpace(cachedOpenLibraryJson))
                 {
+                    openLibrarySearchJson = cachedOpenLibraryJson;
                     List<MetadataResearchCandidate> cachedOpenLibraryCandidates =
                         ParseOpenLibraryCandidates(
                             cachedOpenLibraryJson!,
@@ -135,6 +144,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
                     E_ExternalProviderFetchResult openLibrary =
                         TryFetchJson(openLibraryUrl, "Open Library");
+                    TraceProviderFetch("Open Library search", openLibraryUrl, openLibrary);
 
                     providerResponded |= openLibrary.Responded;
                     providerSucceeded |= openLibrary.Succeeded;
@@ -148,6 +158,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     if (openLibrary.Succeeded &&
                         !string.IsNullOrWhiteSpace(openLibrary.Json))
                     {
+                        openLibrarySearchJson = openLibrary.Json;
                         List<MetadataResearchCandidate> fetchedOpenLibraryCandidates =
                             ParseOpenLibraryCandidates(
                                 openLibrary.Json!,
@@ -159,20 +170,124 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         Debug.WriteLine(
                             $"[METADATA CANDIDATE TRACE] Open Library | " +
                             $"Title='{title}' | Candidates={fetchedOpenLibraryCandidates.Count}");
+
+                        // An ISBN lookup is edition-specific. If it produces no
+                        // usable metadata candidates, retry once using the
+                        // canonical title+author identity query. Do not append
+                        // the failed ISBN or noisy series/user clues to this
+                        // fallback: alternate editions legitimately have other
+                        // ISBNs, and the work may still have useful metadata.
+                        if (fetchedOpenLibraryCandidates.Count == 0 &&
+                            !string.IsNullOrWhiteSpace(isbn) &&
+                            !string.IsNullOrWhiteSpace(title) &&
+                            !string.IsNullOrWhiteSpace(author))
+                        {
+                            E_ExternalProviderFetchResult identityFallback =
+                                TryFetchJson(identityOpenLibraryUrl, "Open Library");
+                            TraceProviderFetch(
+                                "Open Library title-author fallback",
+                                identityOpenLibraryUrl,
+                                identityFallback);
+
+                            providerResponded |= identityFallback.Responded;
+                            providerSucceeded |= identityFallback.Succeeded;
+                            anyRateLimited |= identityFallback.RateLimited;
+                            anyTimedOut |= identityFallback.TimedOut;
+                            retryAfterSeconds = Math.Max(
+                                retryAfterSeconds,
+                                identityFallback.RetryAfterSeconds);
+                            AddDiagnostic(diagnostics, identityFallback.Diagnostic);
+                            diagnostics.Add(
+                                "Open Library ISBN search produced no usable metadata candidates; Scout retried once using title plus author to find alternate editions of the same work.");
+
+                            if (identityFallback.Succeeded &&
+                                !string.IsNullOrWhiteSpace(identityFallback.Json))
+                            {
+                                openLibrarySearchJson = identityFallback.Json;
+                                List<MetadataResearchCandidate> identityCandidates =
+                                    ParseOpenLibraryCandidates(
+                                        identityFallback.Json!,
+                                        metadata,
+                                        identityOpenLibraryUrl);
+                                candidates.AddRange(identityCandidates);
+
+                                Debug.WriteLine(
+                                    $"[METADATA CANDIDATE TRACE] Open Library title-author fallback | " +
+                                    $"Title='{title}' | Candidates={identityCandidates.Count}");
+                            }
+                        }
                     }
                 }
 
-                // Google Books is a second, independent provider. It is used
-                // only when the requested metadata is still missing. A Google
-                // rate limit therefore does not cause Scout to hammer Google
-                // again; the gateway cools Google independently.
+                // If Open Library search returned only a first sentence, follow
+                // the best matching Work record once. Search results often expose
+                // first_sentence even when the Work endpoint has a richer
+                // description. Keep this bounded to one additional request and
+                // use the same gateway for caching/throttling.
+                bool hasFullDescription = candidates.Any(candidate =>
+                    string.Equals(candidate.Field, "Description", StringComparison.OrdinalIgnoreCase) &&
+                    !candidate.Details.Any(detail => detail.Contains(
+                        "first-sentence summary rather than a full synopsis",
+                        StringComparison.OrdinalIgnoreCase)));
+
+                if (string.IsNullOrWhiteSpace(metadata.Description) &&
+                    !hasFullDescription &&
+                    !string.IsNullOrWhiteSpace(title) &&
+                    !string.IsNullOrWhiteSpace(author))
+                {
+                    string? workUrl = BuildBestOpenLibraryWorkUrl(
+                        openLibrarySearchJson,
+                        title,
+                        author);
+
+                    Debug.WriteLine(
+                        $"[METADATA WORK LOOKUP TRACE] Title='{title}' | " +
+                        $"SelectedWorkUrl='{workUrl ?? "(no sufficiently matching Work key)"}'");
+
+                    if (!string.IsNullOrWhiteSpace(workUrl))
+                    {
+                        E_ExternalProviderFetchResult workResult =
+                            TryFetchJson(workUrl, "Open Library");
+                        TraceProviderFetch("Open Library Work", workUrl, workResult);
+
+                        providerResponded |= workResult.Responded;
+                        providerSucceeded |= workResult.Succeeded;
+                        anyRateLimited |= workResult.RateLimited;
+                        anyTimedOut |= workResult.TimedOut;
+                        retryAfterSeconds = Math.Max(
+                            retryAfterSeconds,
+                            workResult.RetryAfterSeconds);
+                        AddDiagnostic(diagnostics, workResult.Diagnostic);
+
+                        if (workResult.Succeeded &&
+                            !string.IsNullOrWhiteSpace(workResult.Json))
+                        {
+                            MetadataResearchCandidate? workDescription =
+                                ParseOpenLibraryWorkDescription(
+                                    workResult.Json!, metadata, workUrl);
+
+                            if (workDescription != null)
+                            {
+                                candidates.Add(workDescription);
+                                hasFullDescription = true;
+                                Debug.WriteLine(
+                                    $"[METADATA CANDIDATE TRACE] Open Library Work | " +
+                                    $"Title='{title}' | DescriptionLength={workDescription.Value.Length} | " +
+                                    $"Confidence={workDescription.Confidence:P0}");
+                            }
+                        }
+                    }
+                }
+
+                // Google Books remains the final fallback. It is used only
+                // when requested metadata is still missing. Each provider is
+                // throttled independently by the gateway.
                 bool needGoogle =
-                    string.IsNullOrWhiteSpace(metadata.Description) ||
-                    !candidates.Any(candidate =>
-                        string.Equals(
-                            candidate.Field,
-                            "Publisher",
-                            StringComparison.OrdinalIgnoreCase));
+                    (string.IsNullOrWhiteSpace(metadata.Description) &&
+                     !HasFullDescriptionCandidate(candidates)) ||
+                    (string.IsNullOrWhiteSpace(metadata.Publisher) &&
+                     !candidates.Any(candidate =>
+                         string.Equals(candidate.Field, "Publisher", StringComparison.OrdinalIgnoreCase)));
 
                 if (needGoogle)
                 {
@@ -211,14 +326,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                             $"Description={cachedGoogleCandidates.Any(c => string.Equals(c.Field, "Description", StringComparison.OrdinalIgnoreCase))} | " +
                             $"Publisher={cachedGoogleCandidates.Any(c => string.Equals(c.Field, "Publisher", StringComparison.OrdinalIgnoreCase))}");
 
-                        // The combined list may already contain an Open
-                        // Library first-sentence summary. That is useful
-                        // evidence, but it must not count as a full synopsis
-                        // and suppress Google's ISBN-aware lookup. A full
-                        // description from either source is sufficient.
                         googleCacheSatisfiedRequest =
                             (!string.IsNullOrWhiteSpace(metadata.Description) ||
-                             candidates.Any(IsFullDescriptionCandidate)) &&
+                             HasFullDescriptionCandidate(candidates)) &&
                             (!string.IsNullOrWhiteSpace(metadata.Publisher) ||
                              candidates.Any(candidate =>
                                  string.Equals(
@@ -239,6 +349,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
                         E_ExternalProviderFetchResult google =
                             TryFetchJson(googleUrl, "Google Books");
+                        TraceProviderFetch("Google Books primary", googleUrl, google);
 
                         providerResponded |= google.Responded;
                         providerSucceeded |= google.Succeeded;
@@ -264,14 +375,127 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                                 $"[METADATA CANDIDATE TRACE] Google Books | " +
                                 $"Title='{title}' | Candidates={fetchedGoogleCandidates.Count}");
                         }
-                    }
 
-                    // Do not immediately issue a second Google request just
-                    // because the first search produced no description. That
-                    // pattern was one of the request multipliers that could
-                    // turn a 10-book expedition into a much larger provider
-                    // burst. A later expedition/research attempt can use the
-                    // cached/cooldown-aware provider again.
+                        // An ISBN-only search can miss a useful synopsis even
+                        // when Google Books has a matching title/author volume.
+                        // Permit one broader query only for that case, only if
+                        // the first request was successful, and only while the
+                        // description is still missing. Never double-query an
+                        // already broad title/author search.
+                        bool googleHasDescription = HasFullDescriptionCandidate(candidates);
+
+                        if (string.IsNullOrWhiteSpace(metadata.Description) &&
+                            !googleHasDescription &&
+                            !string.IsNullOrWhiteSpace(isbn) &&
+                            google.Succeeded &&
+                            !google.RateLimited &&
+                            !google.TimedOut &&
+                            !string.IsNullOrWhiteSpace(title))
+                        {
+                            string broadGoogleUrl =
+                                BuildGoogleBooksBroadSearchUrl(title, author);
+                            E_ExternalProviderFetchResult broadGoogle =
+                                TryFetchJson(broadGoogleUrl, "Google Books");
+                            TraceProviderFetch("Google Books broad search", broadGoogleUrl, broadGoogle);
+
+                            providerResponded |= broadGoogle.Responded;
+                            providerSucceeded |= broadGoogle.Succeeded;
+                            anyRateLimited |= broadGoogle.RateLimited;
+                            anyTimedOut |= broadGoogle.TimedOut;
+                            retryAfterSeconds = Math.Max(
+                                retryAfterSeconds,
+                                broadGoogle.RetryAfterSeconds);
+                            AddDiagnostic(diagnostics, broadGoogle.Diagnostic);
+
+                            if (broadGoogle.Succeeded &&
+                                !string.IsNullOrWhiteSpace(broadGoogle.Json))
+                            {
+                                List<MetadataResearchCandidate> broadCandidates =
+                                    ParseGoogleBooksCandidates(
+                                        broadGoogle.Json!, metadata, broadGoogleUrl);
+                                candidates.AddRange(broadCandidates);
+                                Debug.WriteLine(
+                                    $"[METADATA CANDIDATE TRACE] Google Books Broad Search | " +
+                                    $"Title='{title}' | Candidates={broadCandidates.Count}");
+                            }
+                        }
+                    }
+                }
+
+                // Internet Archive is retained only as a last-resort catalog
+                // source. Catalog descriptions are not treated as synopsis
+                // candidates; they may describe a scan/upload rather than the
+                // book itself. Google Books and its broader identity query run
+                // before this source for missing descriptions.
+                bool needInternetArchive =
+                    (string.IsNullOrWhiteSpace(metadata.Description) &&
+                     !HasFullDescriptionCandidate(candidates)) ||
+                    (string.IsNullOrWhiteSpace(metadata.Publisher) &&
+                     !candidates.Any(candidate =>
+                         string.Equals(candidate.Field, "Publisher", StringComparison.OrdinalIgnoreCase)));
+
+                if (needInternetArchive &&
+                    !string.IsNullOrWhiteSpace(title))
+                {
+                    string internetArchiveUrl =
+                        BuildInternetArchiveSearchUrl(title, author);
+
+                    E_ExternalProviderFetchResult internetArchive =
+                        TryFetchJson(internetArchiveUrl, "Internet Archive");
+                    TraceProviderFetch("Internet Archive catalog", internetArchiveUrl, internetArchive);
+
+                    providerResponded |= internetArchive.Responded;
+                    providerSucceeded |= internetArchive.Succeeded;
+                    anyRateLimited |= internetArchive.RateLimited;
+                    anyTimedOut |= internetArchive.TimedOut;
+                    retryAfterSeconds = Math.Max(
+                        retryAfterSeconds,
+                        internetArchive.RetryAfterSeconds);
+                    AddDiagnostic(diagnostics, internetArchive.Diagnostic);
+
+                    if (internetArchive.Succeeded &&
+                        !string.IsNullOrWhiteSpace(internetArchive.Json))
+                    {
+                        List<MetadataResearchCandidate> fetchedInternetArchiveCandidates =
+                            ParseInternetArchiveCandidates(
+                                internetArchive.Json!,
+                                metadata,
+                                internetArchiveUrl);
+
+                        candidates.AddRange(fetchedInternetArchiveCandidates);
+
+                        Debug.WriteLine(
+                            $"[METADATA CANDIDATE TRACE] Internet Archive | " +
+                            $"Title='{title}' | Candidates={fetchedInternetArchiveCandidates.Count}");
+                    }
+                }
+
+
+                // Web discovery is the bounded fallback after structured catalogs.
+                // It consumes the same local evidence and returns candidates only;
+                // authorization and EPUB modification remain in E_ActionDispatcher.
+                if (string.IsNullOrWhiteSpace(metadata.Description) &&
+                    !HasFullDescriptionCandidate(candidates) &&
+                    !string.IsNullOrWhiteSpace(title))
+                {
+                    try
+                    {
+                        List<MetadataResearchCandidate> webCandidates =
+                            new E_WebConsultant().ResearchDescription(
+                                title, author, publisher, isbn, openingContent);
+                        candidates.AddRange(webCandidates);
+                        if (webCandidates.Count > 0)
+                        {
+                            providerResponded = true;
+                            providerSucceeded = true;
+                        }
+                        diagnostics.Add($"Web Consultant completed bounded discovery for '{title}' and returned {webCandidates.Count} description candidate(s).");
+                    }
+                    catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException || ex is InvalidOperationException)
+                    {
+                        diagnostics.Add("Web Consultant could not complete discovery: " + ex.Message);
+                        Debug.WriteLine($"[WEB CONSULTANT INTEGRATION] Failed | Title='{title}' | {ex.Message}");
+                    }
                 }
 
                 // Deduplicate identical values from different providers while
@@ -305,13 +529,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         $"Value='{traceCandidate.Value}' | Source='{traceCandidate.Source}'");
                 }
 
-                // A first-sentence-only Open Library result is useful
-                // evidence, but it does not satisfy the request for a book
-                // synopsis. Keep that distinction when deciding whether a
-                // rate-limited provider left requested metadata unresolved.
                 bool requestedMetadataStillMissing =
                     (string.IsNullOrWhiteSpace(metadata.Description) &&
-                     !merged.Any(IsFullDescriptionCandidate)) ||
+                     !HasFullDescriptionCandidate(merged)) ||
                     (string.IsNullOrWhiteSpace(metadata.Publisher) &&
                      !merged.Any(candidate =>
                          string.Equals(
@@ -401,6 +621,141 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             parameters.Add("limit=10");
 
             return "https://openlibrary.org/search.json?" +
+                   string.Join("&", parameters);
+        }
+
+        private static bool HasFullDescriptionCandidate(
+            IEnumerable<MetadataResearchCandidate> candidates)
+        {
+            return candidates.Any(candidate =>
+                string.Equals(
+                    candidate.Field,
+                    "Description",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !candidate.Details.Any(detail => detail.Contains(
+                    "first-sentence summary rather than a full synopsis",
+                    StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private static string? BuildBestOpenLibraryWorkUrl(
+            string? searchJson,
+            string requestedTitle,
+            string requestedAuthor)
+        {
+            if (string.IsNullOrWhiteSpace(searchJson))
+                return null;
+
+            using JsonDocument document = JsonDocument.Parse(searchJson);
+            if (!document.RootElement.TryGetProperty("docs", out JsonElement docs) ||
+                docs.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            E_EbookMetadata identity = new()
+            {
+                Title = requestedTitle,
+                Author = requestedAuthor
+            };
+
+            string? bestWorkKey = null;
+            double bestScore = 0.0;
+
+            foreach (JsonElement doc in docs.EnumerateArray())
+            {
+                string key = GetString(doc, "key");
+                if (!key.StartsWith("/works/", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                double score = CalculateMatchConfidence(
+                    identity,
+                    GetString(doc, "title"),
+                    GetStringArray(doc, "author_name"),
+                    GetStringArray(doc, "isbn"));
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestWorkKey = key;
+                }
+            }
+
+            if (bestScore < 0.75 || string.IsNullOrWhiteSpace(bestWorkKey))
+                return null;
+
+            return "https://openlibrary.org" + bestWorkKey + ".json";
+        }
+
+        private static MetadataResearchCandidate? ParseOpenLibraryWorkDescription(
+            string json,
+            E_EbookMetadata metadata,
+            string sourceUrl)
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement root = document.RootElement;
+            string title = GetString(root, "title");
+            string description = StripSimpleHtml(
+                GetDescriptionString(root, "description")).Trim();
+
+            if (string.IsNullOrWhiteSpace(description) ||
+                description.Length < 100)
+            {
+                return null;
+            }
+
+            // The work endpoint has a matching work key selected from the
+            // title/author search results. Use conservative confidence; the
+            // edition can still differ and the decision engine remains in charge.
+            return new MetadataResearchCandidate
+            {
+                Field = "Description",
+                Value = description,
+                Source = sourceUrl,
+                Confidence = 0.88,
+                Evidence = BuildEvidence(title, SplitAuthors(metadata.Author), string.Empty),
+                Details =
+                {
+                    "Open Library Work record supplied a fuller description than the search result's first sentence; verify edition relevance."
+                }
+            };
+        }
+
+        private static string BuildInternetArchiveSearchUrl(
+            string title,
+            string author)
+        {
+            List<string> terms = new();
+
+            terms.Add("title:\"" + title.Trim().Replace("\"", "") + "\"");
+
+            if (!string.IsNullOrWhiteSpace(author))
+            {
+                // EPUB author metadata may contain multiple authors separated
+                // by semicolons. Search using the first normalized author name
+                // rather than a combined string that catalog records rarely use.
+                string primaryAuthor = SplitAuthors(author).FirstOrDefault() ?? author;
+                terms.Add("creator:\"" + primaryAuthor.Trim().Replace("\"", "") + "\"");
+            }
+
+            string query = string.Join(" AND ", terms);
+            string[] fields =
+            {
+                "identifier", "title", "creator", "description",
+                "publisher", "isbn", "date", "mediatype"
+            };
+
+            List<string> parameters = new()
+            {
+                "q=" + Uri.EscapeDataString(query)
+            };
+
+            parameters.AddRange(fields.Select(field =>
+                "fl[]=" + Uri.EscapeDataString(field)));
+            parameters.Add("rows=10");
+            parameters.Add("page=1");
+            parameters.Add("output=json");
+
+            return "https://archive.org/advancedsearch.php?" +
                    string.Join("&", parameters);
         }
 
@@ -515,34 +870,25 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 url);
         }
 
+        private static void TraceProviderFetch(
+            string stage,
+            string url,
+            E_ExternalProviderFetchResult result)
+        {
+            Debug.WriteLine(
+                $"[METADATA PROVIDER STATUS] Stage='{stage}' | " +
+                $"Status={result.Status} | Responded={result.Responded} | " +
+                $"Succeeded={result.Succeeded} | RateLimited={result.RateLimited} | " +
+                $"TimedOut={result.TimedOut} | RetryAfterSeconds={result.RetryAfterSeconds} | " +
+                $"Url='{url}' | Diagnostic='{result.Diagnostic}'");
+        }
+
         private static void AddDiagnostic(
             List<string> diagnostics,
             string diagnostic)
         {
             if (!string.IsNullOrWhiteSpace(diagnostic))
                 diagnostics.Add(diagnostic);
-        }
-
-        private static bool IsFullDescriptionCandidate(
-            MetadataResearchCandidate candidate)
-        {
-            if (!string.Equals(
-                    candidate.Field,
-                    "Description",
-                    StringComparison.OrdinalIgnoreCase) ||
-                string.IsNullOrWhiteSpace(candidate.Value))
-            {
-                return false;
-            }
-
-            // Open Library's first_sentence field is intentionally surfaced as
-            // a lower-confidence candidate, but it is not a full synopsis.
-            // Other providers' non-empty description fields count as full
-            // descriptions unless their parser explicitly marks them partial.
-            return !candidate.Details.Any(detail =>
-                detail.Contains(
-                    "first-sentence summary rather than a full synopsis",
-                    StringComparison.OrdinalIgnoreCase));
         }
 
         private static List<MetadataResearchCandidate> ParseOpenLibraryCandidates(
@@ -622,6 +968,66 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         }
                     });
                 }
+            }
+
+            return candidates;
+        }
+
+        private static List<MetadataResearchCandidate> ParseInternetArchiveCandidates(
+            string json,
+            E_EbookMetadata metadata,
+            string sourceUrl)
+        {
+            List<MetadataResearchCandidate> candidates = new();
+
+            using JsonDocument document = JsonDocument.Parse(json);
+
+            if (!document.RootElement.TryGetProperty("response", out JsonElement response) ||
+                !response.TryGetProperty("docs", out JsonElement docs) ||
+                docs.ValueKind != JsonValueKind.Array)
+            {
+                return candidates;
+            }
+
+            foreach (JsonElement doc in docs.EnumerateArray())
+            {
+                string resultTitle = GetStringOrArray(doc, "title");
+                List<string> authors = GetStringOrArrayValues(doc, "creator");
+                List<string> isbns = GetStringOrArrayValues(doc, "isbn");
+                string publisher = GetStringOrArray(doc, "publisher");
+                string description = StripSimpleHtml(
+                    GetStringOrArray(doc, "description")).Trim();
+
+                // Do not offer weakly identified archive uploads as metadata
+                // for a user's book. Title and author evidence must be strong.
+                double match = CalculateMatchConfidence(
+                    metadata,
+                    resultTitle,
+                    authors,
+                    isbns);
+
+                if (match < 0.65)
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(publisher))
+                {
+                    candidates.Add(new MetadataResearchCandidate
+                    {
+                        Field = "Publisher",
+                        Value = publisher.Trim(),
+                        Source = sourceUrl,
+                        Confidence = Math.Min(match + 0.15, 0.95),
+                        Evidence = BuildEvidence(resultTitle, authors, publisher),
+                        Details =
+                        {
+                            "Publisher metadata found in an Internet Archive catalog record; verify it matches this edition."
+                        }
+                    });
+                }
+
+                // Deliberately do not offer Internet Archive item descriptions
+                // as book synopses. They can describe a scan, upload, or record.
+                // This provider remains useful for corroborating publisher data.
             }
 
             return candidates;
@@ -878,6 +1284,45 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                    value.ValueKind == JsonValueKind.String
                 ? value.GetString() ?? string.Empty
                 : string.Empty;
+        }
+
+        private static string GetStringOrArray(
+            JsonElement element,
+            string property)
+        {
+            List<string> values = GetStringOrArrayValues(element, property);
+            return string.Join("; ", values);
+        }
+
+        private static List<string> GetStringOrArrayValues(
+            JsonElement element,
+            string property)
+        {
+            List<string> values = new();
+
+            if (!element.TryGetProperty(property, out JsonElement value))
+                return values;
+
+            if (value.ValueKind == JsonValueKind.String)
+            {
+                string text = value.GetString() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(text))
+                    values.Add(text.Trim());
+            }
+            else if (value.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement item in value.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.String)
+                        continue;
+
+                    string text = item.GetString() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(text))
+                        values.Add(text.Trim());
+                }
+            }
+
+            return values;
         }
 
         private static List<string> GetStringArray(JsonElement element, string property)

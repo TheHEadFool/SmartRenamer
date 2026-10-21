@@ -1,10 +1,13 @@
-using SmartRenamer.Models;
+﻿using SmartRenamer.Models;
 using Scout.Observations.Experts.EbookExpert.Data;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Resources;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
 using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
 {
@@ -208,8 +211,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                 };
 
                 evidence.Files.AddRange(supportingFiles);
-                record.Evidence.Add(evidence);
-                report.Evidence.Add(evidence);
+                report.AddEvidence(record, evidence);
             }
         }
 
@@ -481,11 +483,15 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                         document);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Metadata reading remains tolerant of malformed EPUBs.
-                // Content evidence is supplemental and must not make the
-                // metadata investigation fail.
+                // Metadata reading remains tolerant of malformed EPUBs, but
+                // failures must be diagnosable. The resource isolates individual
+                // XHTML failures; this catch now primarily records package-level,
+                // archive, access, or unexpected extraction failures.
+                Debug.WriteLine(
+                    $"[EPUB CONTENT] EXTRACTION FAILED | Epub='{file.CurrentFullPath}' | " +
+                    $"Exception='{ex.GetType().FullName}' | Message='{ex.Message}'");
             }
         }
 
@@ -499,8 +505,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
             if (string.IsNullOrWhiteSpace(value))
                 return;
 
-            if (value.Length > 500)
-                value = value[..500];
+            // Preserve a useful bounded portion of each opening document.
+            // The old 500-character limit cut off identifiers printed later
+            // on copyright pages (including the ISBN in Free Stories 2020).
+            // This is evidence only: it must never overwrite observed OPF
+            // metadata or authorize a repair by itself.
+            const int maxOpeningEvidenceCharacters = 12000;
+            if (value.Length > maxOpeningEvidenceCharacters)
+                value = value[..maxOpeningEvidenceCharacters];
 
             MetadataEvidence evidence = new()
             {
@@ -508,11 +520,112 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
                 Field = "Content",
                 Value = value,
                 Location = document.Path,
-                Notes = "Observed opening-content evidence; not interpreted here."
+                Notes = value.Length == maxOpeningEvidenceCharacters
+                    ? "Observed opening-content evidence; bounded at 12,000 characters. Not interpreted here."
+                    : "Observed opening-content evidence; not interpreted here."
             };
 
-            record.Evidence.Add(evidence);
-            report.Evidence.Add(evidence);
+            report.AddEvidence(record, evidence);
+
+            // Interpret explicit bibliographic fields once at ingestion and publish
+            // them into the shared evidence pool. Downstream consultants/evaluators
+            // consume these records instead of each reparsing the same raw text.
+            new E_FrontMatterConsultant().Contribute(
+                report, record, value, document.Path);
+
+            // Extract only explicitly labelled ISBN/eISBN values here. This
+            // keeps the first patch conservative: arbitrary numbers in story
+            // text are not promoted to identifiers. The checksum is validated
+            // before a separate evidence record is created.
+            AddEmbeddedIsbnEvidence(record, report, value, document.Path);
+        }
+
+
+        private static void AddEmbeddedIsbnEvidence(
+            MetadataRecord record,
+            MetadataReport report,
+            string content,
+            string documentPath)
+        {
+            if (string.IsNullOrWhiteSpace(content))
+                return;
+
+            const string labelledIsbnPattern =
+                @"(?i)\b(?:e?isbn(?:-1[03])?)\s*[:#]?\s*([0-9X][0-9X\s-]{8,20}[0-9X])";
+
+            HashSet<string> alreadyAdded = new(StringComparer.OrdinalIgnoreCase);
+
+            foreach (Match match in Regex.Matches(content, labelledIsbnPattern))
+            {
+                if (!match.Success || match.Groups.Count < 2)
+                    continue;
+
+                string candidate = match.Groups[1].Value;
+                string normalized = new string(candidate
+                    .Where(character => char.IsDigit(character) || character == 'X' || character == 'x')
+                    .ToArray())
+                    .ToUpperInvariant();
+
+                if (!IsValidIsbn(normalized) || !alreadyAdded.Add(normalized))
+                    continue;
+
+                MetadataEvidence evidence = new()
+                {
+                    Source = "Opening Content",
+                    Field = "ISBN",
+                    Value = normalized,
+                    Location = documentPath,
+                    Notes = "Explicitly labelled ISBN/eISBN found in opening content and checksum-validated. Candidate evidence only; it does not overwrite EPUB metadata or authorize a repair."
+                };
+
+                evidence.Files.Add(documentPath);
+                report.AddEvidence(record, evidence);
+            }
+        }
+
+        private static bool IsValidIsbn(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            if (value.Length == 13 && value.All(char.IsDigit))
+            {
+                int sum = 0;
+                for (int index = 0; index < 12; index++)
+                {
+                    int digit = value[index] - '0';
+                    sum += digit * (index % 2 == 0 ? 1 : 3);
+                }
+
+                int checkDigit = (10 - (sum % 10)) % 10;
+                return checkDigit == value[12] - '0';
+            }
+
+            if (value.Length == 10)
+            {
+                int sum = 0;
+                for (int index = 0; index < 9; index++)
+                {
+                    if (!char.IsDigit(value[index]))
+                        return false;
+
+                    sum += (value[index] - '0') * (10 - index);
+                }
+
+                char finalCharacter = value[9];
+                int finalDigit;
+                if (finalCharacter == 'X')
+                    finalDigit = 10;
+                else if (char.IsDigit(finalCharacter))
+                    finalDigit = finalCharacter - '0';
+                else
+                    return false;
+
+                sum += finalDigit;
+                return sum % 11 == 0;
+            }
+
+            return false;
         }
 
         private static void AddObservedEvidence(
@@ -537,8 +650,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Blocks
             };
 
             evidence.Files.Add(location);
-            record.Evidence.Add(evidence);
-            report.Evidence.Add(evidence);
+            report.AddEvidence(record, evidence);
         }
 
         //---------------------------------------------------------

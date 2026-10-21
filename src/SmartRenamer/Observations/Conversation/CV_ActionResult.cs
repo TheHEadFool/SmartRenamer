@@ -77,6 +77,9 @@ namespace Scout.Observations.Conversation
         /// </summary>
         public string Message { get; init; } = string.Empty;
 
+        /// <summary>When set, the Guide pre-fills its editable input; this does not apply the value.</summary>
+        public string PrefillUserInput { get; init; } = string.Empty;
+
         /// <summary>
         /// General supporting evidence produced by the action.
         /// </summary>

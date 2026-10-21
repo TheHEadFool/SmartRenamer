@@ -20,6 +20,8 @@ namespace SmartRenamer.Models
         private int total;
         private IReadOnlyList<ExecutionProgressAction> actions =
             Array.Empty<ExecutionProgressAction>();
+        private IReadOnlyList<ExecutionProgressAction> researchActions =
+            Array.Empty<ExecutionProgressAction>();
         private bool isPinned;
 
         public string Key
@@ -79,6 +81,21 @@ namespace SmartRenamer.Models
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(NeedsUserAttention));
                 OnPropertyChanged(nameof(DisplayPriority));
+            }
+        }
+
+        /// <summary>
+        /// Per-book researched decisions waiting for the user. These are
+        /// maintained by GuideViewModel and deliberately survive progress
+        /// snapshots/re-observation updates to the ordinary Actions list.
+        /// </summary>
+        public IReadOnlyList<ExecutionProgressAction> ResearchActions
+        {
+            get => researchActions;
+            internal set
+            {
+                researchActions = value ?? Array.Empty<ExecutionProgressAction>();
+                OnPropertyChanged();
             }
         }
 

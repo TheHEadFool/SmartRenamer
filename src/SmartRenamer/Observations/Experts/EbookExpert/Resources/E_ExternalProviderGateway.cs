@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -36,6 +36,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
         private static readonly object StateLock = new();
 
+        // A provider gate covers the full fetch operation, not just the delay
+        // calculation. This prevents concurrent books from sharing one throttle
+        // slot and reaching the same provider together.
+        private static readonly Dictionary<string, SemaphoreSlim> ProviderGates =
+            new(StringComparer.OrdinalIgnoreCase);
+
         private static readonly Dictionary<string, ProviderState> States =
             new(StringComparer.OrdinalIgnoreCase);
 
@@ -55,8 +61,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
         private const int IdentifiedOpenLibraryMinimumIntervalMilliseconds = 1000;
 
-        private const int Maximum429WaitMilliseconds = 10000;
-
+        // A provider-wide 429 is a circuit-breaker signal, not a reason to
+        // retry every book after a short fixed delay. Google Books in
+        // particular may enforce per-minute or daily quotas.
+        private const int InitialRateLimitCooldownSeconds = 60;
+        private const int MaximumRateLimitCooldownSeconds = 1800;
         private const int FinalRateLimitCooldownMilliseconds = 15000;
 
         /// <summary>
@@ -93,6 +102,32 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     "A provider URL is required.",
                     nameof(url));
 
+            SemaphoreSlim providerGate = GetProviderGate(provider);
+            providerGate.Wait();
+            try
+            {
+                return FetchJsonCore(provider, url);
+            }
+            finally
+            {
+                providerGate.Release();
+            }
+        }
+
+        private static E_ExternalProviderFetchResult FetchJsonCore(
+            string provider,
+            string url)
+        {
+            if (string.IsNullOrWhiteSpace(provider))
+                throw new ArgumentException(
+                    "A provider name is required.",
+                    nameof(provider));
+
+            if (string.IsNullOrWhiteSpace(url))
+                throw new ArgumentException(
+                    "A provider URL is required.",
+                    nameof(url));
+
             if (TryGetCached(url, out string? cachedJson))
             {
                 return new E_ExternalProviderFetchResult
@@ -108,10 +143,31 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 GetMinimumIntervalMilliseconds(provider);
 
             DateTimeOffset? finalRateLimitUntil = null;
-            string? lastRateLimitDiagnostic = null;
 
             for (int attempt = 0; attempt < MaxAttempts; attempt++)
             {
+                DateTimeOffset cooldownUntil = GetCooldownUntilUtc(provider);
+                TimeSpan remainingCooldown = cooldownUntil - DateTimeOffset.UtcNow;
+                // Never wait out an active cooldown inside a research call.
+                // Otherwise each queued book wakes up at the end of the same
+                // cooldown and immediately provokes another 429.
+                if (remainingCooldown > TimeSpan.Zero)
+                {
+                    int retrySeconds = Math.Max(
+                        1,
+                        (int)Math.Ceiling(remainingCooldown.TotalSeconds));
+
+                    return new E_ExternalProviderFetchResult
+                    {
+                        Status = E_ExternalProviderFetchStatus.RateLimited,
+                        RetryAfterSeconds = retrySeconds,
+                        Diagnostic =
+                            $"{provider} is cooling down after rate limiting. " +
+                            $"Scout will defer this provider for about {retrySeconds} second(s) " +
+                            "and continue with other available evidence sources."
+                    };
+                }
+
                 WaitForProvider(
                     provider,
                     minimumIntervalMilliseconds);
@@ -153,6 +209,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                         }
 
                         StoreCache(url, json);
+                        ResetRateLimitCount(provider);
 
                         return new E_ExternalProviderFetchResult
                         {
@@ -166,34 +223,20 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     if ((int)response.StatusCode == 429)
                     {
                         TimeSpan retryDelay =
-                            GetRetryDelay(response, attempt);
+                            GetRateLimitCooldown(provider, response, attempt);
 
-                        DateTimeOffset cooldownUntil =
+                        DateTimeOffset rateLimitCooldownUntil =
                             DateTimeOffset.UtcNow + retryDelay;
 
                         SetCooldown(
                             provider,
-                            cooldownUntil);
+                            rateLimitCooldownUntil);
 
-                        lastRateLimitDiagnostic =
-                            BuildRateLimitDiagnostic(
-                                provider,
-                                response,
-                                retryDelay);
+                        finalRateLimitUntil = rateLimitCooldownUntil;
 
-                        finalRateLimitUntil = cooldownUntil;
-
-                        // A short Retry-After is safe to honor once. A long
-                        // Retry-After is deliberately not waited out on the
-                        // foreground research call; the provider is cooled
-                        // down and another provider can be tried instead.
-                        if (attempt + 1 < MaxAttempts &&
-                            retryDelay.TotalMilliseconds <= Maximum429WaitMilliseconds)
-                        {
-                            Thread.Sleep(retryDelay);
-                            continue;
-                        }
-
+                        // Do not immediately retry a 429. The response has
+                        // already told us the provider is rejecting requests;
+                        // another request only adds pressure and burns quota.
                         break;
                     }
 
@@ -270,8 +313,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 RetryAfterSeconds =
                     Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)),
                 Diagnostic =
-                    lastRateLimitDiagnostic ??
-                    $"{provider} is temporarily rate limited. Scout will not immediately send another request to this provider."
+                    $"{provider} is temporarily rate limited. " +
+                    $"Scout will defer this provider for about " +
+                    $"{Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds))} second(s) " +
+                    "before trying it again."
             };
         }
 
@@ -339,7 +384,40 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 return DefaultGoogleMinimumIntervalMilliseconds;
             }
 
+            if (provider.Equals(
+                    "Internet Archive",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                // Keep archive catalog searches paced independently from the
+                // Open Library and Google Books request schedules.
+                return 1100;
+            }
+
             return DefaultGoogleMinimumIntervalMilliseconds;
+        }
+
+        private static SemaphoreSlim GetProviderGate(string provider)
+        {
+            lock (StateLock)
+            {
+                if (!ProviderGates.TryGetValue(provider, out SemaphoreSlim? gate))
+                {
+                    gate = new SemaphoreSlim(1, 1);
+                    ProviderGates[provider] = gate;
+                }
+
+                return gate;
+            }
+        }
+
+        private static DateTimeOffset GetCooldownUntilUtc(string provider)
+        {
+            lock (StateLock)
+            {
+                return States.TryGetValue(provider, out ProviderState? state)
+                    ? state.CooldownUntilUtc
+                    : DateTimeOffset.MinValue;
+            }
         }
 
         private static void WaitForProvider(
@@ -402,34 +480,64 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             }
         }
 
-        private static TimeSpan GetRetryDelay(
+        private static TimeSpan GetRateLimitCooldown(
+            string provider,
             HttpResponseMessage response,
             int attempt)
         {
+            TimeSpan? serverRetryAfter = null;
             if (response.Headers.RetryAfter != null)
             {
                 if (response.Headers.RetryAfter.Delta.HasValue)
                 {
-                    TimeSpan delta =
-                        response.Headers.RetryAfter.Delta.Value;
-
+                    TimeSpan delta = response.Headers.RetryAfter.Delta.Value;
                     if (delta >= TimeSpan.Zero)
-                        return delta;
+                        serverRetryAfter = delta;
                 }
-
-                if (response.Headers.RetryAfter.Date.HasValue)
+                else if (response.Headers.RetryAfter.Date.HasValue)
                 {
                     TimeSpan until =
-                        response.Headers.RetryAfter.Date.Value -
-                        DateTimeOffset.UtcNow;
-
+                        response.Headers.RetryAfter.Date.Value - DateTimeOffset.UtcNow;
                     if (until >= TimeSpan.Zero)
-                        return until;
+                        serverRetryAfter = until;
                 }
             }
 
-            return TimeSpan.FromSeconds(
-                attempt == 0 ? 2 : 4);
+            int rateLimitCount;
+            lock (StateLock)
+            {
+                if (!States.TryGetValue(provider, out ProviderState? state))
+                {
+                    state = new ProviderState();
+                    States[provider] = state;
+                }
+
+                state.ConsecutiveRateLimits = Math.Min(
+                    state.ConsecutiveRateLimits + 1, 10);
+                rateLimitCount = state.ConsecutiveRateLimits;
+            }
+
+            // Exponential provider-wide backoff: 60s, 2m, 4m ... capped at
+            // 30m. If the server explicitly asks for longer, respect it.
+            int exponent = Math.Min(rateLimitCount - 1, 5);
+            TimeSpan backoff = TimeSpan.FromSeconds(
+                Math.Min(
+                    MaximumRateLimitCooldownSeconds,
+                    InitialRateLimitCooldownSeconds * (1 << exponent)));
+
+            if (serverRetryAfter.HasValue && serverRetryAfter.Value > backoff)
+                return serverRetryAfter.Value;
+
+            return backoff;
+        }
+
+        private static void ResetRateLimitCount(string provider)
+        {
+            lock (StateLock)
+            {
+                if (States.TryGetValue(provider, out ProviderState? state))
+                    state.ConsecutiveRateLimits = 0;
+            }
         }
 
         private static TimeSpan GetTransientRetryDelay(int attempt)
@@ -514,6 +622,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             public DateTimeOffset NextAllowedUtc { get; set; }
 
             public DateTimeOffset CooldownUntilUtc { get; set; }
+
+            public int ConsecutiveRateLimits { get; set; }
         }
 
         private sealed class CacheEntry

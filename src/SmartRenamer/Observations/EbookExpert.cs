@@ -4,11 +4,13 @@ using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Action;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations;
+using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Observations.Experts.EbookExpert.Translators;
 using SmartRenamer.Observations.Specialists;
 using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -86,6 +88,11 @@ namespace SmartRenamer.Observations
         // EbookExpert uses it to target the correct repair branch.
         private string? _reobservationTargetOriginalFullPath;
 
+        // True only after the current observation pass has completed evidence
+        // preparation, repair evaluation, and final organization refresh.
+        // An empty research queue during initialization is not readiness.
+        private bool _investigationPreparationComplete;
+
         // Retained for the lifetime of the current expedition so domain
         // actions such as organization can report through the same UI
         // progress channel that carried the investigation.
@@ -114,6 +121,79 @@ namespace SmartRenamer.Observations
             string contextId,
             CV_ActionResult result)
         {
+            // A terminal book's queued job may finish after the user accepted or
+            // omitted it. Such a job must not apply research results or emit chat
+            // noise, but its removal can be the event that drains the final queue
+            // marker. In that case, request one final snapshot refresh.
+            if (string.Equals(
+                    result.ActionId,
+                    "BackgroundResearchTerminalDrain",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                int remaining = _actionDispatcher.ExternalResearchCount;
+                Debug.WriteLine(
+                    $"[EBOOK LIVE REPORT ACTION GATE] TERMINAL RESEARCH DRAIN | Context='{contextId}' | Remaining={remaining}");
+
+                if (remaining > 0)
+                    return;
+
+                result = new CV_ActionResult
+                {
+                    ActionId = "BackgroundResearchTerminalDrain",
+                    Success = true,
+                    RequiresReobservation = true,
+                    ReobserveCollection = false,
+                    Message = "Background research has settled; refreshing the Live Report decisions."
+                };
+            }
+
+            // The last queued/running research result must refresh the collection
+            // snapshot even when the provider found no candidate and therefore
+            // has no metadata change to request re-observation. Otherwise the
+            // Live Report could keep terminal choices hidden after the queue
+            // reaches zero. Do not force a refresh for every intermediate job.
+            if (_actionDispatcher.ExternalResearchCount == 0 &&
+                !result.RequiresReobservation)
+            {
+                // CV_ActionResult uses init-only properties. Create a refreshed
+                // result rather than mutating the completed result after creation.
+                // Preserve the original result and all evidence/options while
+                // requesting one final collection snapshot refresh.
+                var refreshedResult = new CV_ActionResult
+                {
+                    ActionId = result.ActionId,
+                    Success = result.Success,
+                    RequiresReobservation = true,
+                    ReobserveCollection = result.ReobserveCollection,
+                    RetrySuggested = result.RetrySuggested,
+                    RetryAfterSeconds = result.RetryAfterSeconds,
+                    Message = result.Message
+                };
+
+                refreshedResult.Evidence.AddRange(result.Evidence);
+                foreach (var option in result.Options)
+                {
+                    var copiedOption = new CV_ActionOption
+                    {
+                        Id = option.Id,
+                        ActionId = option.ActionId,
+                        ContextId = option.ContextId,
+                        Label = option.Label,
+                        AcceptsUserInput = option.AcceptsUserInput,
+                        Confidence = option.Confidence,
+                        Source = option.Source,
+                        SuggestedUserInput = option.SuggestedUserInput
+                    };
+                    copiedOption.Evidence.AddRange(option.Evidence);
+                    refreshedResult.Options.Add(copiedOption);
+                }
+
+                result = refreshedResult;
+                Debug.WriteLine(
+                    $"[EBOOK LIVE REPORT ACTION GATE] FINAL RESEARCH RESULT | Context='{contextId}' | " +
+                    "ForcedSnapshotRefresh=True");
+            }
+
             ReportBackgroundActionCompleted(
                 contextId,
                 result);
@@ -771,6 +851,10 @@ namespace SmartRenamer.Observations
             // Repair Expedition
             //---------------------------------------------------------
 
+            // Terminal decisions are scoped to one expedition. A later
+            // expedition may legitimately research the same source paths.
+            _actionDispatcher.ResetTerminalDecisions();
+
             _repairInvestigation.BeginExpedition(
                 sourceFolderPath,
                 _ebookFiles);
@@ -812,6 +896,7 @@ namespace SmartRenamer.Observations
         {
             _reobservationTargetOriginalFullPath = originalFullPath;
             _activeProgress = progress;
+            _investigationPreparationComplete = false;
 
             List<ExpertFinding> findings = new();
 
@@ -862,6 +947,16 @@ namespace SmartRenamer.Observations
                 2,
                 "Contents",
                 "Table of contents analysis complete.");
+
+            // Prepare collection-wide series evidence before any dependent
+            // organization or repair evaluation. Evidence is contributed to the
+            // same per-book store consumed by the evaluators.
+            E_SeriesConsultant seriesConsultant = new();
+            int seriesEvidenceAdded =
+                seriesConsultant.ContributeCorroboratedEvidence(metadataReport);
+            Debug.WriteLine(
+                $"[SERIES CONSULTANT] REPAIR QUEUE INPUT | EvidenceAdded={seriesEvidenceAdded} | " +
+                $"Records={metadataReport.Records.Count} | BeforeOrganizationAndRepair=True");
 
             findings.AddRange(
                 _organizationInvestigation.Investigate(
@@ -975,6 +1070,15 @@ namespace SmartRenamer.Observations
                         _ebookFiles,
                         _sourceFolderPath);
 
+                // Re-observation creates fresh records. Recompute consultant
+                // evidence from the new observations instead of copying stale
+                // conclusions from the previous report.
+                int refreshedSeriesEvidence =
+                    seriesConsultant.ContributeCorroboratedEvidence(metadataReport);
+                Debug.WriteLine(
+                    $"[SERIES CONSULTANT] POST-REOBSERVATION | EvidenceAdded={refreshedSeriesEvidence} | " +
+                    $"Records={metadataReport.Records.Count} | Pass={automaticRepairPass}");
+
                 if (string.IsNullOrWhiteSpace(
                         _reobservationTargetOriginalFullPath))
                 {
@@ -1009,6 +1113,12 @@ namespace SmartRenamer.Observations
                     _organizationPathBuilder.Build(
                         refreshedOrganizationReport);
             }
+
+            // Review series evidence only after the final repair pass, using
+            // the collection-wide metadata report. This consultant produces
+            // evidence-backed recommendations; it does not mutate metadata,
+            // invent series numbers, or authorize organization by itself.
+            findings.AddRange(seriesConsultant.Review(metadataReport));
 
             bool repairWaiting =
                 _repairInvestigation.UnresolvedRepairPaths.Count > 0;
@@ -1081,6 +1191,24 @@ namespace SmartRenamer.Observations
                 ExecuteOrganizationAll(_activeProgress);
             }
 
+            _investigationPreparationComplete = true;
+            Debug.WriteLine(
+                $"[EBOOK LIVE REPORT ACTION GATE] INVESTIGATION PREPARATION COMPLETE | " +
+                $"Targeted={(!string.IsNullOrWhiteSpace(_reobservationTargetOriginalFullPath))} | " +
+                $"ResearchOutstanding={_actionDispatcher.ExternalResearchCount}");
+
+            // Publish a final authoritative snapshot AFTER the terminal-choice
+            // gate changes. The earlier stage reports were necessarily built
+            // while preparation was false, so without this publication the UI
+            // could retain a snapshot with Accept-as-is/Omit hidden indefinitely.
+            ReportProgress(
+                progress,
+                ProgressStageCount,
+                "Reconciliation",
+                _actionDispatcher.ExternalResearchCount > 0
+                    ? "Investigation preparation complete; waiting for outstanding metadata research."
+                    : "Investigation preparation complete; repair decisions are ready for review.");
+
             return findings;
 
         } // End Investigate()
@@ -1112,6 +1240,27 @@ namespace SmartRenamer.Observations
 
             IReadOnlyList<string> unresolvedPaths =
                 _repairInvestigation.UnresolvedRepairPaths;
+
+            // Field-specific repair actions may be shown as they become available,
+            // but terminal choices are collection-gated below so the user cannot
+            // accept or omit a book before queued research has settled.
+            int outstandingExternalResearch =
+                _actionDispatcher.ExternalResearchCount;
+
+            // Terminal decisions must not appear while any collection research
+            // remains queued or running. Field-specific repair actions may be
+            // shown as they become available, but Accept-as-is/Omit must wait
+            // until the full research choice set has settled. This prevents a
+            // user from accepting or omitting a book before later evidence and
+            // repair choices have been surfaced.
+            bool terminalChoicesReady =
+                _investigationPreparationComplete &&
+                outstandingExternalResearch == 0;
+
+            Debug.WriteLine(
+                $"[EBOOK LIVE REPORT ACTION GATE] PreparationComplete={_investigationPreparationComplete} | " +
+                $"ResearchOutstanding={outstandingExternalResearch} | " +
+                $"TerminalChoicesVisible={terminalChoicesReady}");
 
             return _ebookFiles
                 .Select(file =>
@@ -1151,10 +1300,14 @@ namespace SmartRenamer.Observations
                         {
                             Key = originalPath,
                             DisplayName = file.CurrentName,
-                            State = accepted ? "Accepted" : "Omitted",
+                            // Accepted-as-is is a terminal repair decision, not
+                            // physical organization completion. The Live Report's
+                            // Ready view is the correct place for this book until
+                            // the user commits Organization and the copy is verified.
+                            State = accepted ? "Ready" : "Omitted",
                             Status = accepted
-                                ? "Accepted as-is. Ready for Organization."
-                                : "Omitted from Organization.",
+                                ? "Accepted as-is. Ready for Organization; no further repair will be attempted."
+                                : "Omitted from Organization by user decision.",
                             Completed = 1,
                             Total = 1,
                             Actions = Array.Empty<ExecutionProgressAction>()
@@ -1169,7 +1322,16 @@ namespace SmartRenamer.Observations
                                     originalPath,
                                     StringComparison.OrdinalIgnoreCase));
 
-                    if (repairHandoff?.Status == E_RepairHandoffStatus.RepairCompleted)
+                    RepairOpportunity? opportunity =
+                        _repairInvestigation.GetRepairOpportunitiesFor(originalPath)
+                            .FirstOrDefault();
+
+                    // RepairCompleted describes the last observation only. If a
+                    // later branch observation exposes a new incomplete field or
+                    // identity conflict, that newer opportunity takes precedence
+                    // over the older handoff and must remain actionable.
+                    if (repairHandoff?.Status == E_RepairHandoffStatus.RepairCompleted &&
+                        (opportunity == null || opportunity.IsComplete))
                     {
                         return new ExecutionProgressItem
                         {
@@ -1183,24 +1345,64 @@ namespace SmartRenamer.Observations
                         };
                     }
 
-                    bool waiting =
+                    bool indexedAsUnresolved =
                         unresolvedPaths.Any(
                             path => string.Equals(
                                 path,
                                 originalPath,
                                 StringComparison.OrdinalIgnoreCase));
 
+                    // The current opportunity is authoritative for this row.
+                    // If it is incomplete but the unresolved-path index has
+                    // drifted, do not strand the book as non-actionable WORKING.
+                    bool incompleteOpportunity =
+                        opportunity != null && !opportunity.IsComplete;
+                    bool waiting = indexedAsUnresolved || incompleteOpportunity;
+
                     bool researching =
                         _actionDispatcher.IsExternalResearching(originalPath);
 
-                    RepairOpportunity? opportunity =
-                        _repairInvestigation.GetRepairOpportunitiesFor(originalPath)
-                            .FirstOrDefault();
+                    // A book does not need a RepairCompleted handoff to be
+                    // organization-ready. Books with no repair opportunity are
+                    // valid organization candidates, but the old fallback put
+                    // them in Unorganized/WORKING forever. That left the Live
+                    // Report showing active work after every repair decision had
+                    // been resolved and prevented the Organization decision.
+                    // Research that is actually running remains visible as
+                    // Researching; an incomplete opportunity that is not indexed
+                    // as unresolved remains visible as a diagnostic WORKING row.
+                    if (!researching && !waiting &&
+                        (opportunity == null || opportunity.IsComplete))
+                    {
+                        return new ExecutionProgressItem
+                        {
+                            Key = originalPath,
+                            DisplayName = file.CurrentName,
+                            State = "Ready",
+                            Status = opportunity == null
+                                ? "No repair is required; ready for Organization."
+                                : "Repair review is complete; ready for Organization.",
+                            Completed = 1,
+                            Total = 1,
+                            Actions = Array.Empty<ExecutionProgressAction>()
+                        };
+                    }
+
+                    if (incompleteOpportunity && !indexedAsUnresolved)
+                    {
+                        Debug.WriteLine(
+                            $"[EBOOK RECONCILIATION] STATE MISMATCH RECOVERED | Path='{originalPath}' | " +
+                            "Incomplete repair opportunity was absent from UnresolvedRepairPaths; " +
+                            "the current opportunity is retained as actionable.");
+                    }
 
                     IReadOnlyList<ExecutionProgressAction> actions =
                         researching || !waiting || opportunity == null
                             ? Array.Empty<ExecutionProgressAction>()
-                            : BuildNeedsActions(opportunity, originalPath);
+                            : BuildNeedsActions(
+                                opportunity,
+                                originalPath,
+                                includeTerminalDecisions: terminalChoicesReady);
 
                     return new ExecutionProgressItem
                     {
@@ -1216,8 +1418,8 @@ namespace SmartRenamer.Observations
                         Status = researching
                             ? "Scout is researching missing metadata in the background."
                             : waiting
-                                ? "Waiting for repair or decision."
-                                : "Not yet organized.",
+                                    ? "Waiting for repair or decision; unresolved repair information remains."
+                                    : "An incomplete repair opportunity remains; checking repair-state reconciliation.",
                         Completed = 0,
                         Total = 1,
                         Actions = actions
@@ -1235,7 +1437,8 @@ namespace SmartRenamer.Observations
 
         private static IReadOnlyList<ExecutionProgressAction> BuildNeedsActions(
             RepairOpportunity opportunity,
-            string originalPath)
+            string originalPath,
+            bool includeTerminalDecisions)
         {
             List<ExecutionProgressAction> actions = new();
 
@@ -1293,23 +1496,26 @@ namespace SmartRenamer.Observations
 
             AddField("Cover", opportunity.MissingCover);
 
-            actions.Add(
-                new ExecutionProgressAction
-                {
-                    Id = $"AcceptAsIs:{originalPath}",
-                    Label = "Accept as-is",
-                    ActionId = "AcceptAsIs",
-                    ContextId = originalPath
-                });
+            if (includeTerminalDecisions)
+            {
+                actions.Add(
+                    new ExecutionProgressAction
+                    {
+                        Id = $"AcceptAsIs:{originalPath}",
+                        Label = "Accept as-is",
+                        ActionId = "AcceptAsIs",
+                        ContextId = originalPath
+                    });
 
-            actions.Add(
-                new ExecutionProgressAction
-                {
-                    Id = $"OmitEbook:{originalPath}",
-                    Label = "Omit",
-                    ActionId = "OmitEbook",
-                    ContextId = originalPath
-                });
+                actions.Add(
+                    new ExecutionProgressAction
+                    {
+                        Id = $"OmitEbook:{originalPath}",
+                        Label = "Omit",
+                        ActionId = "OmitEbook",
+                        ContextId = originalPath
+                    });
+            }
 
             return actions;
         }
@@ -1387,6 +1593,12 @@ namespace SmartRenamer.Observations
                     _organizationInvestigation.ProgressItems);
             }
 
+            int outstandingExternalResearch =
+                _actionDispatcher.ExternalResearchCount;
+            string userFacingStatus = outstandingExternalResearch > 0
+                ? $"{status} Metadata research: {outstandingExternalResearch} task(s) queued/running. Accept as-is / Omit appear when research settles."
+                : status;
+
             progress.Report(
                 new ExecutionProgress
                 {
@@ -1394,7 +1606,7 @@ namespace SmartRenamer.Observations
                     Total = ProgressStageCount,
                     CurrentFile =
                         _repairInvestigation.CurrentFile?.CurrentName ?? "",
-                    Status = status,
+                    Status = userFacingStatus,
                     Stage = stage,
                     StageCompleted = stageCompleted,
                     StageTotal = ProgressStageCount,
@@ -1652,10 +1864,15 @@ namespace SmartRenamer.Observations
         private static CV_ActionResult BuildUserRepairInformationPrompt(
             CV_ActionRequest request,
             string field,
-            string? leadingMessage)
+            string? leadingMessage,
+            string? suggestedUserInput = null)
         {
-            string prompt =
-                field.Equals("Description", StringComparison.OrdinalIgnoreCase)
+            bool hasSuggestedInput =
+                !string.IsNullOrWhiteSpace(suggestedUserInput);
+
+            string prompt = hasSuggestedInput
+                ? $"I copied Scout's researched {field} into the chat box. Edit it as needed, then press Send. Nothing will be applied until you send it."
+                : field.Equals("Description", StringComparison.OrdinalIgnoreCase)
                     ? "Scout found that Description is missing. If you want Scout to use a description, type it in the chat box below and press Send."
                     : $"Scout found that {field} is missing. If you have a {field} you want Scout to use, type it in the chat box below and press Send.";
 
@@ -1663,6 +1880,7 @@ namespace SmartRenamer.Observations
             {
                 ActionId = request.ActionId,
                 Success = true,
+                PrefillUserInput = hasSuggestedInput ? suggestedUserInput! : string.Empty,
                 Message = string.IsNullOrWhiteSpace(leadingMessage)
                     ? prompt
                     : leadingMessage + Environment.NewLine + Environment.NewLine + prompt
@@ -1760,12 +1978,99 @@ namespace SmartRenamer.Observations
 
         private void RefreshOrganizationAfterRepairDecision()
         {
-            _organizationInvestigation.AcceptRepairHandoffs(
-                _repairInvestigation.RepairHandoffs,
-                _repairInvestigation.UnresolvedRepairPaths);
+            ReconcileCollectionAfterRepairDecision();
 
             if (_organizationCommitted)
+            {
+                Debug.WriteLine("[EBOOK ORGANIZATION GATE] EXECUTE ORGANIZATION | committed=true");
                 ExecuteOrganizationAll(_activeProgress);
+            }
+            else
+            {
+                Debug.WriteLine("[EBOOK ORGANIZATION GATE] NOT EXECUTED | Organization has not been committed by the user");
+            }
+        }
+
+        /// <summary>
+        /// Reconciles the repair decision, organization handoff/plan, and Live
+        /// Report projection as one idempotent operation. This is deliberately
+        /// not a consultant: it performs no research and makes no judgment.
+        /// It publishes a complete collection snapshot through the existing
+        /// progress channel so the UI updates on its owning dispatcher.
+        /// It never commits or executes Organization on the user's behalf.
+        /// </summary>
+        private void ReconcileCollectionAfterRepairDecision()
+        {
+            IReadOnlyList<string> unresolved =
+                _repairInvestigation.UnresolvedRepairPaths;
+
+            Debug.WriteLine(
+                $"[EBOOK RECONCILIATION] START | Books={_ebookFiles.Count} | " +
+                $"Handoffs={_repairInvestigation.RepairHandoffs.Count} | " +
+                $"Unresolved={unresolved.Count} | OrganizationCommitted={_organizationCommitted}");
+
+            // First synchronize the semantic handoff and rebuild the passive
+            // Organization plan. AcceptRepairHandoffs does not touch files.
+            _organizationInvestigation.AcceptRepairHandoffs(
+                _repairInvestigation.RepairHandoffs,
+                unresolved);
+
+            // Then derive the Live Report from the same authoritative repair
+            // state. Keep all discovered ebooks in the snapshot, including
+            // unresolved and explicitly omitted books.
+            IReadOnlyList<ExecutionProgressItem> collectionSnapshot =
+                BuildCollectionProgressItems();
+
+            int collectionCompleted = collectionSnapshot.Count(item =>
+                item.Total > 0 && item.Completed >= item.Total);
+            int collectionWaiting = unresolved.Count;
+            int collectionTotal = _repairInvestigation.ExpeditionTotal;
+            int collectionProcessing = _repairInvestigation.ExpeditionProcessing;
+            int collectionPending = _repairInvestigation.ExpeditionPending;
+            int collectionActive = Math.Max(0, collectionProcessing - collectionWaiting);
+
+            IReadOnlyList<ExecutionProgressItem> publishedItems = collectionSnapshot;
+            if (_organizationCommitted && _organizationInvestigation.ProgressItems.Count > 0)
+            {
+                publishedItems = MergeOrganizationProgressIntoCollection(
+                    collectionSnapshot,
+                    _organizationInvestigation.ProgressItems);
+            }
+
+            Debug.WriteLine(
+                $"[EBOOK RECONCILIATION] SNAPSHOT | Items={publishedItems.Count} | " +
+                $"Needs={publishedItems.Count(item => item.NeedsUserAttention)} | " +
+                $"Ready={publishedItems.Count(item => string.Equals(item.State, "Ready", StringComparison.OrdinalIgnoreCase))} | " +
+                $"Omitted={publishedItems.Count(item => string.Equals(item.State, "Omitted", StringComparison.OrdinalIgnoreCase))} | " +
+                $"Organized={publishedItems.Count(item => string.Equals(item.State, "Organized", StringComparison.OrdinalIgnoreCase))}");
+
+            // Progress<T> routes this immutable snapshot to GuideViewModel's
+            // existing UI-thread callback. No ObservableCollection is mutated
+            // here, avoiding the VisualTreeChanged regression.
+            _activeProgress?.Report(new ExecutionProgress
+            {
+                Completed = ProgressStageCount,
+                Total = ProgressStageCount,
+                CurrentFile = _repairInvestigation.CurrentFile?.CurrentName ?? string.Empty,
+                Status = unresolved.Count == 0
+                    ? (_organizationCommitted
+                        ? "Repair decisions reconciled; Organization is authorized and its execution state is being refreshed."
+                        : "Repair decisions reconciled; ready to review and commit Organization.")
+                    : $"Repair decisions reconciled; {unresolved.Count} book(s) still need a decision.",
+                Stage = "Reconciliation",
+                StageCompleted = ProgressStageCount,
+                StageTotal = ProgressStageCount,
+                CollectionTotal = collectionTotal,
+                CollectionCompleted = collectionCompleted,
+                CollectionProcessing = collectionActive,
+                CollectionWaiting = collectionWaiting,
+                CollectionPending = collectionPending,
+                Items = publishedItems
+            });
+
+            Debug.WriteLine(
+                $"[EBOOK RECONCILIATION] PUBLISHED | Items={publishedItems.Count} | " +
+                $"Unresolved={unresolved.Count} | OrganizationCommitted={_organizationCommitted}");
         }
 
         /// <summary>
@@ -1794,6 +2099,12 @@ namespace SmartRenamer.Observations
         {
             if (request == null)
                 throw new ArgumentNullException(nameof(request));
+
+            Debug.WriteLine(
+                $"[EBOOK DECISION] ExecuteAction ENTER | ActionId='{request.ActionId}' | " +
+                $"ContextId='{request.ContextId}' | OptionId='{request.OptionId}' | " +
+                $"UnresolvedCount={_repairInvestigation.UnresolvedRepairPaths.Count} | " +
+                $"OrganizationCommitted={_organizationCommitted}");
 
             //---------------------------------------------------------
             // User-level authorization
@@ -1866,14 +2177,60 @@ namespace SmartRenamer.Observations
 
             if (string.Equals(request.ActionId, "AcceptAllAsIs", StringComparison.OrdinalIgnoreCase))
             {
-                IReadOnlyList<string> needsDecision =
-                    _repairInvestigation.UnresolvedRepairPaths
-                        .Where(originalPath =>
-                            !_actionDispatcher.IsExternalResearching(originalPath) &&
-                            _repairInvestigation.GetRepairOpportunitiesFor(originalPath).Count > 0)
-                        .ToList();
+                // Accept All means all books that are still WORKING in this
+                // expedition, not merely paths listed in UnresolvedRepairPaths.
+                // The latter contains only books with known repair opportunities;
+                // it omits books whose optional enrichment/research is still in
+                // flight. Those rows otherwise keep Scout in WORKING forever even
+                // though the user's explicit decision is to proceed as-is.
+                // Keep already terminal/organized books untouched, and include a
+                // path when it is unresolved, being researched, or has an
+                // incomplete repair opportunity.
+                HashSet<string> unresolvedSet = new(
+                    _repairInvestigation.UnresolvedRepairPaths,
+                    StringComparer.OrdinalIgnoreCase);
+
+                IReadOnlyList<string> needsDecision = _ebookFiles
+                    .Select(file => file.OriginalFullPath)
+                    .Where(originalPath => !string.IsNullOrWhiteSpace(originalPath))
+                    .Where(originalPath => !_organizationInvestigation.IsOrganized(originalPath))
+                    .Where(originalPath =>
+                    {
+                        E_RepairHandoff? existingHandoff =
+                            _repairInvestigation.RepairHandoffs.FirstOrDefault(handoff =>
+                                string.Equals(
+                                    handoff.OriginalPath,
+                                    originalPath,
+                                    StringComparison.OrdinalIgnoreCase));
+
+                        if (existingHandoff != null &&
+                            (existingHandoff.Status == E_RepairHandoffStatus.AcceptedAsIs ||
+                             existingHandoff.Status == E_RepairHandoffStatus.Omitted ||
+                             existingHandoff.Status == E_RepairHandoffStatus.RepairCompleted))
+                        {
+                            return false;
+                        }
+
+                        bool researching =
+                            _actionDispatcher.IsExternalResearching(originalPath);
+                        bool hasIncompleteOpportunity =
+                            _repairInvestigation.GetRepairOpportunitiesFor(originalPath)
+                                .Any(opportunity => !opportunity.IsComplete);
+
+                        return unresolvedSet.Contains(originalPath) ||
+                               researching ||
+                               hasIncompleteOpportunity;
+                    })
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                Debug.WriteLine(
+                    $"[EBOOK DECISION] AcceptAllAsIs ENTER | WorkingPaths={needsDecision.Count} | " +
+                    $"UnresolvedPaths={unresolvedSet.Count} | ResearchingPaths=" +
+                    $"{_ebookFiles.Count(file => _actionDispatcher.IsExternalResearching(file.OriginalFullPath))}");
 
                 int accepted = 0;
+                int failed = 0;
 
                 foreach (string originalPath in needsDecision)
                 {
@@ -1883,45 +2240,65 @@ namespace SmartRenamer.Observations
                             E_RepairHandoffStatus.AcceptedAsIs,
                             "The user accepted all books currently requiring attention as-is.");
 
+                    Debug.WriteLine(
+                        $"[EBOOK DECISION] AcceptAllAsIs ITEM | Path='{originalPath}' | ResolveUserDecision={resolved}");
                     if (resolved)
                     {
+                        _actionDispatcher.MarkTerminalDecision(originalPath);
                         accepted++;
                         _awaitingRepairInformationField.Remove(originalPath);
                     }
+                    else
+                    {
+                        failed++;
+                    }
                 }
 
-                if (accepted > 0)
-                    RefreshOrganizationAfterRepairDecision();
+                // Reconcile even when every item was already terminal. A repeated
+                // action is idempotent, but it must still repair a stale Live Report.
+                RefreshOrganizationAfterRepairDecision();
+
+                Debug.WriteLine(
+                    $"[EBOOK DECISION] AcceptAllAsIs EXIT | Accepted={accepted} | Failed={failed} | " +
+                    $"RemainingUnresolved={_repairInvestigation.UnresolvedRepairPaths.Count}");
 
                 return new CV_ActionResult
                 {
                     ActionId = request.ActionId,
-                    Success = true,
-                    RequiresReobservation = accepted > 0,
-                    Message = accepted == 0
-                        ? "There are no books currently requiring a user decision."
-                        : $"I accepted {accepted} book{(accepted == 1 ? "" : "s")} as-is. I will continue toward Organization."
+                    Success = accepted > 0 || needsDecision.Count == 0,
+                    RequiresReobservation = false,
+                    Message = accepted == 0 && needsDecision.Count > 0
+                        ? $"Accept All reached EbookExpert, but none of the {needsDecision.Count} working book(s) could be resolved. {failed} decision(s) failed; see [EBOOK DECISION] ITEM entries in the Debug Output."
+                        : accepted == 0
+                            ? "There are no working books left for Accept All. I refreshed the Live Report; ready books remain available for Organization."
+                            : $"I accepted {accepted} book{(accepted == 1 ? "" : "s")} as-is. {failed} could not be resolved. I will continue toward Organization."
                 };
             }
 
             if (string.Equals(request.ActionId, "AcceptAsIs", StringComparison.OrdinalIgnoreCase))
             {
+                Debug.WriteLine($"[EBOOK DECISION] AcceptAsIs ENTER | ContextId='{request.ContextId}'");
                 bool resolved =
                     _repairInvestigation.ResolveUserDecision(
                         request.ContextId,
                         E_RepairHandoffStatus.AcceptedAsIs,
                         "The user explicitly accepted this ebook as-is.");
+                Debug.WriteLine($"[EBOOK DECISION] AcceptAsIs RESOLVED | ContextId='{request.ContextId}' | Result={resolved}");
 
                 _awaitingRepairInformationField.Remove(request.ContextId);
 
                 if (resolved)
-                    RefreshOrganizationAfterRepairDecision();
+                    _actionDispatcher.MarkTerminalDecision(request.ContextId);
+
+                // Also reconcile idempotent repeats; terminal decisions must
+                // never leave the presentation dependent on a future scan.
+                RefreshOrganizationAfterRepairDecision();
 
                 return new CV_ActionResult
                 {
                     ActionId = request.ActionId,
                     Success = resolved,
-                    RequiresReobservation = resolved,
+                    RequiresReobservation = false,
                     Message = resolved
                         ? "This ebook has been accepted as-is. It is no longer blocking repair and is ready for Organization."
                         : "I couldn't match that ebook to an active or pending repair branch."
@@ -1930,22 +2307,26 @@ namespace SmartRenamer.Observations
 
             if (string.Equals(request.ActionId, "OmitEbook", StringComparison.OrdinalIgnoreCase))
             {
+                Debug.WriteLine($"[EBOOK DECISION] OmitEbook ENTER | ContextId='{request.ContextId}'");
                 bool resolved =
                     _repairInvestigation.ResolveUserDecision(
                         request.ContextId,
                         E_RepairHandoffStatus.Omitted,
                         "The user explicitly rejected this ebook for Organization.");
+                Debug.WriteLine($"[EBOOK DECISION] OmitEbook RESOLVED | ContextId='{request.ContextId}' | Result={resolved}");
 
                 _awaitingRepairInformationField.Remove(request.ContextId);
 
                 if (resolved)
-                    RefreshOrganizationAfterRepairDecision();
+                    _actionDispatcher.MarkTerminalDecision(request.ContextId);
+
+                RefreshOrganizationAfterRepairDecision();
 
                 return new CV_ActionResult
                 {
                     ActionId = request.ActionId,
                     Success = resolved,
-                    RequiresReobservation = resolved,
+                    RequiresReobservation = false,
                     Message = resolved
                         ? "This ebook has been omitted from Organization and will no longer block the collection."
                         : "I couldn't match that ebook to an active or pending repair branch."
@@ -2054,7 +2435,8 @@ namespace SmartRenamer.Observations
                     return BuildUserRepairInformationPrompt(
                         request,
                         requestedFieldFromAction,
-                        null);
+                        null,
+                        request.SuggestedUserInput);
                 }
 
                 if (!string.IsNullOrWhiteSpace(request.UserInput) &&

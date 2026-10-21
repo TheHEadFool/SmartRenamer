@@ -1,3 +1,4 @@
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using SmartRenamer.Models;
@@ -46,7 +47,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
 
             List<RepairOpportunity> identityOpportunities =
                 report.Opportunities
-                    .Where(opportunity => opportunity.IdentityEvaluation?.RepairRequired == true)
+                    .Where(opportunity =>
+                        opportunity.IdentityEvaluation?.RepairRequired == true &&
+                        !IsSeriesOnlyUnresolvedAttention(opportunity))
                     .ToList();
 
             foreach (RepairOpportunity opportunity in identityOpportunities)
@@ -163,14 +166,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
                 if (opportunity.MissingAuthor && !identityHandled)
                     unsupportedFields.Add("Author");
 
-                if (opportunity.MissingPublisher)
-                    unsupportedFields.Add("Publisher");
-
                 if (opportunity.MissingLanguage)
                     unsupportedFields.Add("Language");
-
-                if (opportunity.MissingDescription)
-                    unsupportedFields.Add("Description");
 
                 if (opportunity.MissingCover)
                     unsupportedFields.Add("Cover");
@@ -233,6 +230,49 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultan
                     "Scout will still ask you when a repair is ambiguous or does not meet the automatic-repair rules."
                 }
             };
+        }
+
+        private static bool IsSeriesOnlyUnresolvedAttention(
+            RepairOpportunity opportunity)
+        {
+            if (opportunity?.Record?.Metadata == null ||
+                opportunity.MissingTitle || opportunity.MissingAuthor)
+            {
+                return false;
+            }
+
+            if (opportunity.Record.Reconciliation?.HasConflictingFields == true)
+                return false;
+
+            BookIdentityEvaluation? evaluation = opportunity.IdentityEvaluation;
+            if (evaluation == null || evaluation.RequiresClarification ||
+                evaluation.SeriesEvaluation == null ||
+                (evaluation.SeriesEvaluation.State != SeriesEvidenceState.Unresolved &&
+                 evaluation.SeriesEvaluation.State != SeriesEvidenceState.Conflicting))
+            {
+                return false;
+            }
+
+            string title = opportunity.Record.Metadata.Title?.Trim() ?? string.Empty;
+            string author = opportunity.Record.Metadata.Author?.Trim() ?? string.Empty;
+            if (title.Length == 0 || author.Length == 0)
+                return false;
+
+            BookIdentityCandidate? candidate = evaluation.Candidate;
+            if (candidate != null &&
+                ((!string.IsNullOrWhiteSpace(candidate.Title) &&
+                  !string.Equals(title, candidate.Title.Trim(), StringComparison.OrdinalIgnoreCase)) ||
+                 (!string.IsNullOrWhiteSpace(candidate.Authors) &&
+                  !string.Equals(author, candidate.Authors.Trim(), StringComparison.OrdinalIgnoreCase))))
+            {
+                return false;
+            }
+
+            // Keep the unresolved series visible in EbookExpert's repair report,
+            // but don't turn it into a mandatory accept-as-is decision when the
+            // known Title/Author are safe and the organization planner can fall
+            // back to Author/Title without manufacturing a series.
+            return true;
         }
 
     }

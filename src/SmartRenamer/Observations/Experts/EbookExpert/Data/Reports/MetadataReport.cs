@@ -109,5 +109,23 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Data.Reports
         public List<MetadataFinding> Findings { get; } = new();
 
         public List<MetadataEvidence> Evidence { get; } = new();
+
+        /// <summary>
+        /// Publishes evidence for one book through a single contribution path.
+        /// The record is authoritative; the report collection remains a compatible
+        /// aggregate for callers that need collection-wide evidence.
+        /// Duplicate contributions with the same source, field, value and location
+        /// reuse the existing record rather than growing duplicate evidence rows.
+        /// </summary>
+        public MetadataEvidence AddEvidence(MetadataRecord record, MetadataEvidence evidence)
+        {
+            if (record == null) throw new System.ArgumentNullException(nameof(record));
+            if (evidence == null) throw new System.ArgumentNullException(nameof(evidence));
+
+            MetadataEvidence published = record.AddEvidence(evidence);
+            if (!Evidence.Contains(published))
+                Evidence.Add(published);
+            return published;
+        }
     }
 }

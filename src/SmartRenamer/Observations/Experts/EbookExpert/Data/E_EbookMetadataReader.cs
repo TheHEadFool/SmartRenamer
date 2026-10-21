@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using SmartRenamer.Models;
 
@@ -17,6 +18,25 @@ namespace Scout.Observations.Experts.EbookExpert.Data
     /// </summary>
     public static class E_EbookMetadataReader
     {
+        private static bool IsUsableOpfTitle(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            string title = Regex.Replace(value.Trim(), @"\s+", " ");
+            if (title.Length < 2 || title.Length > 300)
+                return false;
+
+            // Some EPUB packages incorrectly put catalog or production-credit
+            // text in dc:title. Reject only recognizable non-title labels; if
+            // every OPF title is rejected, leave Title empty so EbookExpert's
+            // existing original-filename/opening-evidence path can evaluate it.
+            return !Regex.IsMatch(
+                title,
+                @"^(?:available from (?:the )?British Library|cover (?:design|art|illustration)|jacket (?:design|art)|interior (?:design|illustration)|table of contents|copyright page|title page)\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
+
         public static E_EbookMetadata? Read(FileContext file)
         {
             if (!file.Extension.Equals(
@@ -85,8 +105,7 @@ namespace Scout.Observations.Experts.EbookExpert.Data
                 metadata.Title =
                     package.Descendants(dc + "title")
                         .Select(element => element.Value.Trim())
-                        .FirstOrDefault(value =>
-                            !string.IsNullOrWhiteSpace(value)) ?? "";
+                        .FirstOrDefault(IsUsableOpfTitle) ?? "";
 
                 // -----------------------------------------------------------------
                 // Authors
@@ -318,55 +337,172 @@ namespace Scout.Observations.Experts.EbookExpert.Data
                     }
                 }
 
-                if (coverItem == null)
-                    return metadata;
+                string? coverPath = (string?)coverItem?.Attribute("href");
 
-                string? coverPath =
-                    (string?)coverItem.Attribute("href");
+                // Some older/hand-built EPUBs omit both the EPUB 3 property and
+                // EPUB 2 meta declaration, but still give the image a clearly
+                // identifiable cover id or filename. Treat that as a fallback,
+                // not as permission to call an arbitrary illustration a cover.
+                if (string.IsNullOrWhiteSpace(coverPath))
+                {
+                    coverPath = manifest.Elements(opf + "item")
+                        .Where(item =>
+                        {
+                            string mediaType = ((string?)item.Attribute("media-type") ?? "").Trim();
+                            string id = ((string?)item.Attribute("id") ?? "").Trim();
+                            string href = ((string?)item.Attribute("href") ?? "").Trim();
+                            return mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) &&
+                                   (id.Contains("cover", StringComparison.OrdinalIgnoreCase) ||
+                                    Path.GetFileNameWithoutExtension(href).Contains("cover", StringComparison.OrdinalIgnoreCase));
+                        })
+                        .OrderBy(item =>
+                            string.Equals((string?)item.Attribute("id"), "cover", StringComparison.OrdinalIgnoreCase) ? 0 :
+                            string.Equals((string?)item.Attribute("id"), "cover-image", StringComparison.OrdinalIgnoreCase) ? 1 : 2)
+                        .Select(item => (string?)item.Attribute("href"))
+                        .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+                }
+
+                // A common EPUB 2 layout declares a cover XHTML page in the
+                // spine, with the actual image referenced from that page. If
+                // no direct cover manifest item was found, inspect only spine
+                // documents explicitly named/identified as cover pages and map
+                // their image reference back to the package manifest.
+                if (string.IsNullOrWhiteSpace(coverPath))
+                {
+                    coverPath = FindCoverPageImageHref(
+                        archive, package, opf, packagePath, manifest);
+                }
 
                 if (string.IsNullOrWhiteSpace(coverPath))
                     return metadata;
 
-                coverPath =
-                    Uri.UnescapeDataString(coverPath)
-                        .Replace('\\', '/');
-
-                string packageDirectory =
-                    GetZipDirectory(packagePath);
-
-                string fullCoverPath =
-                    string.IsNullOrWhiteSpace(packageDirectory)
-                        ? coverPath
-                        : packageDirectory + "/" + coverPath;
-
-                fullCoverPath =
-                    NormalizeZipPath(fullCoverPath);
-
-                ZipArchiveEntry? coverEntry =
-                    archive.GetEntry(fullCoverPath);
+                coverPath = NormalizeHref(coverPath);
+                string packageDirectory = GetZipDirectory(packagePath);
+                string fullCoverPath = ResolveArchivePath(packageDirectory, coverPath);
+                ZipArchiveEntry? coverEntry = archive.GetEntry(fullCoverPath);
 
                 if (coverEntry == null)
                     return metadata;
 
-                metadata.HasCover = true;
-
-                using Stream coverStream =
-                    coverEntry.Open();
-
-                using MemoryStream memory =
-                    new();
-
+                using Stream coverStream = coverEntry.Open();
+                using MemoryStream memory = new();
                 coverStream.CopyTo(memory);
 
-                metadata.CoverImage =
-                    memory.ToArray();
+                byte[] coverBytes = memory.ToArray();
+                if (coverBytes.Length == 0)
+                    return metadata;
 
+                metadata.CoverImage = coverBytes;
+                metadata.HasCover = true;
                 return metadata;
             }
             catch
             {
                 return null;
             }
+        }
+
+        private static string? FindCoverPageImageHref(
+            ZipArchive archive,
+            XDocument package,
+            XNamespace opf,
+            string packagePath,
+            XElement manifest)
+        {
+            Dictionary<string, XElement> manifestById = manifest.Elements(opf + "item")
+                .Where(item => !string.IsNullOrWhiteSpace((string?)item.Attribute("id")))
+                .GroupBy(item => ((string?)item.Attribute("id"))!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+            XElement? spine = package.Root?.Element(opf + "spine");
+            if (spine == null)
+                return null;
+
+            string packageDirectory = GetZipDirectory(packagePath);
+            foreach (XElement itemRef in spine.Elements(opf + "itemref"))
+            {
+                string idref = ((string?)itemRef.Attribute("idref") ?? "").Trim();
+                if (!manifestById.TryGetValue(idref, out XElement? pageItem))
+                    continue;
+
+                string pageHref = ((string?)pageItem.Attribute("href") ?? "").Trim();
+                string pageId = ((string?)pageItem.Attribute("id") ?? "").Trim();
+                bool looksLikeCoverPage =
+                    pageId.Contains("cover", StringComparison.OrdinalIgnoreCase) ||
+                    Path.GetFileNameWithoutExtension(pageHref).Contains("cover", StringComparison.OrdinalIgnoreCase) ||
+                    ((string?)itemRef.Attribute("properties"))?.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                        .Any(value => value.Equals("cover", StringComparison.OrdinalIgnoreCase)) == true;
+
+                if (!looksLikeCoverPage || string.IsNullOrWhiteSpace(pageHref))
+                    continue;
+
+                string pagePath = ResolveArchivePath(packageDirectory, NormalizeHref(pageHref));
+                ZipArchiveEntry? pageEntry = archive.GetEntry(pagePath);
+                if (pageEntry == null)
+                    continue;
+
+                try
+                {
+                    XDocument page;
+                    using (Stream stream = pageEntry.Open())
+                        page = XDocument.Load(stream);
+
+                    foreach (XElement imageElement in page.Descendants().Where(element =>
+                        element.Name.LocalName.Equals("img", StringComparison.OrdinalIgnoreCase) ||
+                        element.Name.LocalName.Equals("image", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        string? imageHref =
+                            (string?)imageElement.Attribute("src") ??
+                            imageElement.Attributes().FirstOrDefault(attribute =>
+                                attribute.Name.LocalName.Equals("href", StringComparison.OrdinalIgnoreCase))?.Value;
+                        if (string.IsNullOrWhiteSpace(imageHref))
+                            continue;
+
+                        string pageDirectory = GetZipDirectory(pagePath);
+                        string resolvedImagePath = ResolveArchivePath(pageDirectory, NormalizeHref(imageHref));
+                        XElement? imageManifestItem = manifest.Elements(opf + "item").FirstOrDefault(item =>
+                        {
+                            string href = ((string?)item.Attribute("href") ?? "").Trim();
+                            return !string.IsNullOrWhiteSpace(href) &&
+                                string.Equals(
+                                    ResolveArchivePath(packageDirectory, NormalizeHref(href)),
+                                    resolvedImagePath,
+                                    StringComparison.OrdinalIgnoreCase);
+                        });
+
+                        if (imageManifestItem != null &&
+                            ((string?)imageManifestItem.Attribute("media-type") ?? "").StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                            return (string?)imageManifestItem.Attribute("href");
+                    }
+                }
+                catch
+                {
+                    // A malformed cover page must not invalidate the rest of
+                    // the EPUB's metadata. Continue looking at other candidates.
+                }
+            }
+
+            return null;
+        }
+
+        private static string NormalizeHref(string href)
+        {
+            string value = (href ?? string.Empty).Trim().Replace('\\', '/');
+            int fragment = value.IndexOf('#');
+            if (fragment >= 0) value = value[..fragment];
+            int query = value.IndexOf('?');
+            if (query >= 0) value = value[..query];
+            try { value = Uri.UnescapeDataString(value); }
+            catch { /* retain original path if an invalid escape is present */ }
+            return value.TrimStart('/');
+        }
+
+        private static string ResolveArchivePath(string baseDirectory, string relativePath)
+        {
+            string combined = string.IsNullOrWhiteSpace(baseDirectory)
+                ? relativePath
+                : baseDirectory.TrimEnd('/') + "/" + relativePath.TrimStart('/');
+            return NormalizeZipPath(combined);
         }
 
         private static string NormalizeIsbn(string value)

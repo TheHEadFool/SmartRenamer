@@ -182,11 +182,20 @@ namespace SmartRenamer.Services
                 e.Result.RequiresReobservation)
             {
                 lastReobservationRecommendations =
-                    Reobserve(e.ContextId);
+                    e.Result.ReobserveCollection
+                        ? Reobserve()
+                        : Reobserve(e.ContextId);
 
+                // Collection-wide actions (for example Accept All as-is) have
+                // no single branch ContextId. Re-observing the collection must
+                // not then try to complete whichever branch happens to be current
+                // using an empty/stale context; that can advance the wrong item or
+                // leave the queue inconsistent. Only branch-scoped actions may
+                // complete one expedition branch here.
                 bool branchCompleted =
-                    observationEngine.CompleteCurrentIfComplete(
-                        e.ContextId);
+                    !e.Result.ReobserveCollection &&
+                    !string.IsNullOrWhiteSpace(e.ContextId) &&
+                    observationEngine.CompleteCurrentIfComplete(e.ContextId);
 
                 if (branchCompleted)
                 {
@@ -645,7 +654,9 @@ namespace SmartRenamer.Services
                 result.RequiresReobservation)
             {
                 lastReobservationRecommendations =
-                    Reobserve(request.ContextId);
+                    result.ReobserveCollection
+                        ? Reobserve()
+                        : Reobserve(request.ContextId);
 
                 //---------------------------------------------------------
                 // The action request already carries the stable identity of
@@ -659,9 +670,13 @@ namespace SmartRenamer.Services
                 // against the next pending EPUB. A waiting branch must not
                 // advance the expedition.
                 //---------------------------------------------------------
+                // A collection-wide decision has no single EPUB branch to
+                // complete. Re-observation already reconciles the whole set;
+                // do not run branch completion against an empty/stale context.
                 bool branchCompleted =
-                    observationEngine.CompleteCurrentIfComplete(
-                        request.ContextId);
+                    !result.ReobserveCollection &&
+                    !string.IsNullOrWhiteSpace(request.ContextId) &&
+                    observationEngine.CompleteCurrentIfComplete(request.ContextId);
 
                 if (branchCompleted)
                 {

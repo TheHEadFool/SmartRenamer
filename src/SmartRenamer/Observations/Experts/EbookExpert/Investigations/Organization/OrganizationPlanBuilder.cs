@@ -126,16 +126,22 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                     if (string.IsNullOrWhiteSpace(extension))
                         extension = ".epub";
 
+                    // Filename cleanup is deliberately applied only to the
+                    // planned destination name. The source/original EPUB is
+                    // never renamed or edited by this planner.
                     string rawTitle =
                         string.IsNullOrWhiteSpace(item.Book.Title)
                             ? Path.GetFileNameWithoutExtension(item.Book.WorkingPath)
                             : item.Book.Title;
 
-                    string title = SanitizeFileName(
+                    string title = CleanEbookDestinationTitle(
                         NormalizeTitleForOrganizationFileName(
                             rawTitle,
                             item.Book.Series,
-                            item.Book.SeriesNumber));
+                            item.Book.SeriesNumber),
+                        item.Book.Author);
+
+                    title = SanitizeFileName(title);
 
                     string filePrefix =
                         organizeBySeries &&
@@ -287,6 +293,25 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
             if (!establishedNumber.HasValue)
                 return title;
 
+            // If the title already begins with the same verified series
+            // position, remove that physical-name prefix before adding the
+            // canonical prefix below. This prevents "02 - 02 - Title.epub"
+            // while preserving a different number that may be part of a title.
+            Match existingNumberPrefix = Regex.Match(
+                title.Trim(),
+                @"^\s*(?<number>\d+(?:\.\d+)?)\s*[-–—]\s*(?<title>.+)$",
+                RegexOptions.CultureInvariant);
+            if (existingNumberPrefix.Success &&
+                decimal.TryParse(
+                    existingNumberPrefix.Groups["number"].Value,
+                    NumberStyles.Number,
+                    CultureInfo.InvariantCulture,
+                    out decimal existingNumber) &&
+                existingNumber == establishedNumber.Value)
+            {
+                title = existingNumberPrefix.Groups["title"].Value.Trim();
+            }
+
             string pattern =
                 "^\\s*" +
                 Regex.Escape(series.Trim()) +
@@ -319,6 +344,54 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                 : normalizedTitle;
         }
 
+
+        /// <summary>
+        /// Cleans common download-site noise from the proposed organized-copy
+        /// filename. This is intentionally conservative: it does not infer a
+        /// new title or author, and it never changes the source file.
+        /// </summary>
+        private static string CleanEbookDestinationTitle(
+            string title,
+            string author)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return title;
+
+            string cleaned = title.Trim().Replace('_', ' ');
+            cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim();
+
+            // Remove known download-site labels only when they occur as a
+            // leading filename prefix, not when they appear inside a title.
+            cleaned = Regex.Replace(
+                cleaned,
+                @"^\s*[_\- ]*(?:www\.)?(?:OceanofPDF\.com|OceanofPDF|PDFDrive\.com|PDFDrive)(?:[_\- ]+|$)",
+                string.Empty,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Trim();
+
+            // Remove common download attribution suffixes only when they
+            // repeat the author already established by the EPUB metadata.
+            if (!string.IsNullOrWhiteSpace(author))
+            {
+                string escapedAuthor = Regex.Escape(author.Trim());
+                cleaned = Regex.Replace(
+                    cleaned,
+                    @"\s*[-–—]+\s*(?:by\s+)?" + escapedAuthor + @"(?:\s*[-–—]+\s*" + escapedAuthor + @")*\s*$",
+                    string.Empty,
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Trim();
+
+                // Also handle an embedded attribution such as "Title - by
+                // Author" without stripping author text from the real title.
+                cleaned = Regex.Replace(
+                    cleaned,
+                    @"\s+by\s+" + escapedAuthor + @"\s*$",
+                    string.Empty,
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Trim();
+            }
+
+            cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim(' ', '_', '-');
+            return string.IsNullOrWhiteSpace(cleaned) ? title.Replace('_', ' ').Trim() : cleaned;
+        }
+
         private static string SanitizeFolderName(string value)
         {
             return SanitizePathPart(value);
@@ -326,7 +399,22 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
 
         private static string SanitizeFileName(string value)
         {
-            return SanitizePathPart(value);
+            if (string.IsNullOrWhiteSpace(value))
+                return "Unknown";
+
+            // A colon in a title (for example, "Out Law: A Dresden Files Novella")
+            // is illegal in a Windows filename. Replacing it with an underscore
+            // made the final destination contradict the cleanup preview. For file
+            // names, convert invalid characters to spaces and collapse them; keep
+            // folder-name sanitization separate because folder hierarchy labels
+            // have different collision/readability requirements.
+            const string windowsInvalidFileNameCharacters = "<>:\"/\\|?*";
+            string cleaned = new(value.Trim().Select(character =>
+                char.IsControl(character) || windowsInvalidFileNameCharacters.Contains(character)
+                    ? ' '
+                    : character).ToArray());
+            cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim().TrimEnd('.', ' ');
+            return string.IsNullOrWhiteSpace(cleaned) ? "Unknown" : cleaned;
         }
 
         private static string SanitizePathPart(string value)

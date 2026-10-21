@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 namespace SmartRenamer.Models
 {
     /// <summary>
@@ -15,6 +17,18 @@ namespace SmartRenamer.Models
         public string ActionId { get; init; } = "";
 
         public string ContextId { get; init; } = "";
+
+        // True when this action is backed by an EbookExpert research decision
+        // rather than a generic collection-progress action.
+        public bool IsResearchOption { get; init; }
+
+        public double Confidence { get; init; }
+
+        public string Source { get; init; } = "";
+
+        public string SuggestedUserInput { get; init; } = "";
+
+        public IReadOnlyList<string> Evidence { get; init; } = Array.Empty<string>();
     }
 
 }

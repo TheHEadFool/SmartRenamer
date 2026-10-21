@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -174,7 +174,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                         string value =
                             CleanIdentityValue(openingTitle.Groups["value"].Value);
 
-                        if (!string.IsNullOrWhiteSpace(value))
+                        if (!string.IsNullOrWhiteSpace(value) &&
+                            IsPlausibleOpeningTitle(value))
                         {
                             if (!SameValue(metadata.Title, value))
                                 internalTitleCorrectionDetected = true;
@@ -182,6 +183,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                             candidateTitle = value;
                             evidence.Add(
                                 $"Internal opening-content evidence identifies Title='{value}'.");
+                        }
+                        else if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            evidence.Add(
+                                $"Rejected non-title opening-content clue '{value}'. It resembles a library/navigation notice rather than a book title.");
                         }
                     }
                 }
@@ -196,7 +202,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                         string value =
                             CleanIdentityValue(openingAuthor.Groups["value"].Value);
 
-                        if (!string.IsNullOrWhiteSpace(value))
+                        if (!string.IsNullOrWhiteSpace(value) &&
+                            LooksLikePersonName(value) &&
+                            !LooksLikePromotionalOrProseText(value))
                         {
                             if (!SameValue(metadata.Author, value))
                                 internalAuthorCorrectionDetected = true;
@@ -204,6 +212,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                             candidateAuthor = value;
                             evidence.Add(
                                 $"Internal opening-content evidence identifies Author='{value}'.");
+                        }
+                        else if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            evidence.Add(
+                                $"Rejected opening-content Author candidate '{value}'. The extracted value does not satisfy the person-name validation rules.");
                         }
                     }
                 }
@@ -544,6 +557,28 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 .ToList();
         }
 
+        private static bool IsPlausibleOpeningTitle(string value)
+        {
+            string normalized = Regex.Replace(value.Trim(), @"\s+", " ");
+
+            string[] rejectedPhrases =
+            {
+                "available from the british library", "cover design",
+                "cover artwork", "cover illustration", "all rights reserved",
+                "copyright", "published by", "first published",
+                "table of contents", "contents"
+            };
+
+            if (rejectedPhrases.Any(phrase =>
+                    normalized.Contains(phrase, StringComparison.OrdinalIgnoreCase)))
+                return false;
+
+            return normalized.Length <= 180 &&
+                normalized.Count(char.IsLetter) >= 2 &&
+                !normalized.Contains("http://", StringComparison.OrdinalIgnoreCase) &&
+                !normalized.Contains("https://", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string CleanIdentityValue(string value)
         {
             string cleaned = value.Trim();
@@ -590,6 +625,21 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             return match.Success
                 ? match.Groups[1].Value
                 : "";
+        }
+
+        private static bool LooksLikePromotionalOrProseText(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return true;
+
+            string normalized = Regex.Replace(value, @"\s+", " ").Trim();
+            return normalized.Length > 100 ||
+                   normalized.Contains("http://", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Contains("https://", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Contains("www.", StringComparison.OrdinalIgnoreCase) ||
+                   Regex.IsMatch(normalized,
+                       @"\b(?:for sample chapters|downloadable wallpaper|contact the author|also included in|published by|all rights reserved)\b",
+                       RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         }
 
         private static bool LooksLikePersonName(

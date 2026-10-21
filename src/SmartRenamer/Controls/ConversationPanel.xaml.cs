@@ -22,6 +22,8 @@ namespace SmartRenamer.Controls
         private bool _displayPumpRunning;
         private bool _isLoaded;
         private bool _autoScrollPaused;
+        private bool _scrollAnimationRunning;
+        private bool _scrollRequestedWhileAnimating;
         private ScrollViewer? _conversationScrollViewer;
 
         /// <summary>
@@ -146,6 +148,8 @@ namespace SmartRenamer.Controls
         private void PauseAutoScroll()
         {
             _autoScrollPaused = true;
+            _scrollRequestedWhileAnimating = false;
+            _scrollAnimationRunning = false;
             _conversationScrollViewer?.BeginAnimation(
                 VerticalOffsetProperty,
                 null);
@@ -186,6 +190,8 @@ namespace SmartRenamer.Controls
             RoutedEventArgs e)
         {
             _autoScrollPaused = false;
+            _scrollRequestedWhileAnimating = false;
+            _scrollAnimationRunning = false;
             ResumeScrollButton.Visibility = Visibility.Collapsed;
             ScrollConversationToBottom();
         }
@@ -329,26 +335,46 @@ namespace SmartRenamer.Controls
             ScrollViewer scrollViewer,
             double target)
         {
-            scrollViewer.BeginAnimation(VerticalOffsetProperty, null);
+            // Messages can arrive while the previous scroll animation is still
+            // running. Do not cancel/restart it for every message: remember that
+            // a newer bottom position is needed, then animate once more after the
+            // current movement finishes. This removes the repeated snap-back.
+            if (_scrollAnimationRunning)
+            {
+                _scrollRequestedWhileAnimating = true;
+                return;
+            }
 
+            if (_autoScrollPaused || scrollViewer.ScrollableHeight <= 0)
+                return;
+
+            target = scrollViewer.ScrollableHeight;
+            if (Math.Abs(scrollViewer.VerticalOffset - target) < 1.0)
+                return;
+
+            _scrollAnimationRunning = true;
             DoubleAnimation animation = new()
             {
                 From = scrollViewer.VerticalOffset,
                 To = target,
                 Duration = ConversationScrollDuration,
-                EasingFunction = new QuadraticEase
-                {
-                    EasingMode = EasingMode.EaseOut
-                }
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
             };
 
             animation.Completed += (_, _) =>
             {
+                _scrollAnimationRunning = false;
                 if (!_autoScrollPaused)
                     UpdateAutoScrollStateFromOffset();
+
+                bool needsAnotherScroll = _scrollRequestedWhileAnimating;
+                _scrollRequestedWhileAnimating = false;
+                if (needsAnotherScroll && !_autoScrollPaused && _isLoaded)
+                    ScrollConversationToBottom();
             };
 
-            scrollViewer.BeginAnimation(VerticalOffsetProperty, animation);
+            scrollViewer.BeginAnimation(VerticalOffsetProperty, animation,
+                System.Windows.Media.Animation.HandoffBehavior.SnapshotAndReplace);
         }
 
         private static readonly DependencyProperty VerticalOffsetProperty =

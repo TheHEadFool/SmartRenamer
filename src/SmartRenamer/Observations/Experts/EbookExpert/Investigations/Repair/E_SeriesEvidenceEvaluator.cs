@@ -28,6 +28,20 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 @"\b(?:series\s*(?:is|=|:)|part\s+of\s+(?:the\s+)?)\s*(?<series>[^.;,\r\n]+)",
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        // Opening-page text is useful only when it explicitly labels a series.
+        // Anchoring to a line avoids treating ordinary narrative mentions of a
+        // series as metadata. Position evidence is accepted only alongside an
+        // explicit series label in the same opening-content evidence block.
+        private static readonly Regex ExplicitOpeningSeriesPattern =
+            new(
+                @"(?im)(?:^|[|;\r\n])\s*(?:series|series title|book series|belongs to collection)\s*(?:is|=|:)\s*(?<series>[^|;\r\n]{2,100}?)\s*(?=(?:[|;\r\n]|$|\s+(?:identifiers|subjects|notes|edition|other\s+titles|classification)\s*:))",
+                RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        private static readonly Regex ExplicitOpeningSeriesNumberPattern =
+            new(
+                @"(?im)(?:^|[|;\r\n])\s*(?:series number|series position|position in series)\s*(?:is|=|:)\s*(?<number>\d+(?:\.\d+)?)\s*(?=[|;\r\n]|$)",
+                RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
         public SeriesEvidenceEvaluation Evaluate(
             MetadataRecord record)
         {
@@ -58,20 +72,19 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                             "EPUB Metadata"));
                 }
 
-                if (string.Equals(
-                        evidence.Source,
-                        "EPUB Metadata",
-                        StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(
-                        evidence.Field,
-                        "SeriesNumber",
-                        StringComparison.OrdinalIgnoreCase) &&
+                if ((string.Equals(evidence.Source, "EPUB Metadata", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(evidence.Source, "Front Matter Consultant", StringComparison.OrdinalIgnoreCase)) &&
+                    string.Equals(evidence.Field, "SeriesNumber", StringComparison.OrdinalIgnoreCase) &&
                     !string.IsNullOrWhiteSpace(evidence.Value))
                 {
-                    numberSignals.Add(
-                        new SeriesNumberSignal(
-                            evidence.Value.Trim(),
-                            "EPUB Metadata"));
+                    string numberSeries = string.Equals(evidence.Source, "EPUB Metadata", StringComparison.OrdinalIgnoreCase)
+                        ? (record.Metadata.Series ?? string.Empty)
+                        : (record.Evidence.FirstOrDefault(e =>
+                            string.Equals(e.Source, "Front Matter Consultant", StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(e.Field, "Series", StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(e.Location, evidence.Location, StringComparison.OrdinalIgnoreCase))?.Value ?? string.Empty);
+                    if (IsValidSeriesPosition(evidence.Value.Trim()))
+                        numberSignals.Add(new SeriesNumberSignal(evidence.Value.Trim(), evidence.Source, numberSeries));
                 }
 
                 //---------------------------------------------------------
@@ -79,24 +92,46 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 // They are useful corroboration, not automatic truth.
                 //---------------------------------------------------------
 
-                if ((string.Equals(
-                        evidence.Source,
-                        "Collection",
-                        StringComparison.OrdinalIgnoreCase) ||
-                     string.Equals(
-                        evidence.Source,
-                        "Source Folder",
-                        StringComparison.OrdinalIgnoreCase)) &&
-                    string.Equals(
+                if (string.Equals(
                         evidence.Field,
                         "Series",
                         StringComparison.OrdinalIgnoreCase) &&
                     !string.IsNullOrWhiteSpace(evidence.Value))
                 {
-                    signals.Add(
-                        new SeriesSignal(
-                            evidence.Value.Trim(),
-                            evidence.Source));
+                    bool isCollectionEvidence = string.Equals(
+                        evidence.Source,
+                        "Collection",
+                        StringComparison.OrdinalIgnoreCase);
+                    bool isSourceFolderEvidence = string.Equals(
+                        evidence.Source,
+                        "Source Folder",
+                        StringComparison.OrdinalIgnoreCase);
+                    bool isExplicitTitleEvidence = string.Equals(
+                        evidence.Source,
+                        "Title",
+                        StringComparison.OrdinalIgnoreCase);
+                    bool isExplicitOpeningSeriesEvidence =
+                        (string.Equals(evidence.Source, "Opening Content", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(evidence.Source, "Front Matter Consultant", StringComparison.OrdinalIgnoreCase)) &&
+                        string.Equals(evidence.Field, "Series", StringComparison.OrdinalIgnoreCase);
+
+                    // The selected input folder is context, not automatically
+                    // a series name. A generic folder such as "1", "test",
+                    // or an author-named folder must not create an unresolved
+                    // Series repair for every book in the collection. Keep
+                    // meaningful series-named folders available as evidence.
+                    if (isCollectionEvidence ||
+                        isExplicitTitleEvidence ||
+                        isExplicitOpeningSeriesEvidence ||
+                        (isSourceFolderEvidence &&
+                         IsMeaningfulSourceFolderSeriesHint(
+                             evidence.Value.Trim(), record)))
+                    {
+                        signals.Add(
+                            new SeriesSignal(
+                                evidence.Value.Trim(),
+                                evidence.Source));
+                    }
                 }
 
                 //---------------------------------------------------------
@@ -123,7 +158,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                         numberSignals.Add(
                             new SeriesNumberSignal(
                                 match.Groups["number"].Value.Trim(),
-                                "Filename"));
+                                "Filename",
+                                match.Groups["series"].Value.Trim()));
                     }
                 }
 
@@ -155,6 +191,46 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                         }
                     }
                 }
+
+                //---------------------------------------------------------
+                // Opening-content evidence can contribute series identity
+                // and position only through explicit, labelled statements.
+                // We never derive a number from collection order or arbitrary
+                // numbers in prose. A position is retained only when the same
+                // content block explicitly identifies the series.
+                //---------------------------------------------------------
+
+                if (string.Equals(
+                        evidence.Source,
+                        "Opening Content",
+                        StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(
+                        evidence.Field,
+                        "Content",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    string content = evidence.Value ?? string.Empty;
+                    Match seriesMatch = ExplicitOpeningSeriesPattern.Match(content);
+                    Match positionMatch = ExplicitOpeningSeriesNumberPattern.Match(content);
+
+                    if (seriesMatch.Success)
+                    {
+                        string openingSeries = CleanExplicitSeriesValue(
+                            seriesMatch.Groups["series"].Value);
+
+                        if (!string.IsNullOrWhiteSpace(openingSeries))
+                        {
+                            signals.Add(new SeriesSignal(openingSeries, "Opening Content"));
+
+                            if (positionMatch.Success)
+                            {
+                                string openingPosition = positionMatch.Groups["number"].Value.Trim();
+                                if (IsValidSeriesPosition(openingPosition))
+                                    numberSignals.Add(new SeriesNumberSignal(openingPosition, "Opening Content", openingSeries));
+                            }
+                        }
+                    }
+                }
             }
 
             // Some EPUBs encode the series position in dc:title even when
@@ -182,7 +258,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                     numberSignals.Add(
                         new SeriesNumberSignal(
                             titleMatch.Groups["number"].Value.Trim(),
-                            "EPUB Metadata Title"));
+                            "EPUB Metadata Title",
+                            titleMatch.Groups["series"].Value.Trim()));
                 }
             }
 
@@ -192,13 +269,31 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             // explicit EPUB metadata with contextual evidence.
             //---------------------------------------------------------
 
+            // Structured OPF series metadata is direct evidence. A parsed
+            // Library-of-Congress catalog statement inside the EPUB is also an
+            // explicit bibliographic declaration, not a weak contextual clue;
+            // it can establish series identity on its own, but never a series
+            // number. Keep ordinary front-matter clues subject to corroboration.
+            bool IsDirectBibliographicSeriesSignal(SeriesSignal signal) =>
+                string.Equals(
+                    signal.Source,
+                    "EPUB Metadata",
+                    StringComparison.OrdinalIgnoreCase) ||
+                (string.Equals(
+                    signal.Source,
+                    "Front Matter Consultant",
+                    StringComparison.OrdinalIgnoreCase) &&
+                 record.Evidence.Any(evidence =>
+                    string.Equals(evidence.Source, signal.Source, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(evidence.Field, "Series", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(evidence.Value, signal.Value, StringComparison.OrdinalIgnoreCase) &&
+                    evidence.Notes.Contains(
+                        "Library of Congress-style title/creator catalog statement",
+                        StringComparison.OrdinalIgnoreCase)));
+
             List<SeriesSignal> directSignals =
                 signals
-                    .Where(signal =>
-                        string.Equals(
-                            signal.Source,
-                            "EPUB Metadata",
-                            StringComparison.OrdinalIgnoreCase))
+                    .Where(IsDirectBibliographicSeriesSignal)
                     .ToList();
 
             List<string> directValues =
@@ -220,10 +315,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
                 SeriesSignal? contextualCandidate =
                     signals
                         .Where(signal =>
-                            !string.Equals(
-                                signal.Source,
-                                "EPUB Metadata",
-                                StringComparison.OrdinalIgnoreCase) &&
+                            !IsDirectBibliographicSeriesSignal(signal) &&
                             string.Equals(
                                 NormalizeSeriesKey(signal.Value),
                                 NormalizeSeriesKey(observedSeries),
@@ -256,7 +348,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
                 return BuildResolved(
                     canonicalSeries,
-                    ResolveSeriesNumber(numberSignals, record.Metadata.SeriesNumber),
+                    ResolveSeriesNumber(numberSignals, record.Metadata.SeriesNumber, canonicalSeries),
                     signals,
                     numberSignals,
                     reason);
@@ -334,7 +426,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
                 return BuildResolved(
                     candidate,
-                    ResolveSeriesNumber(numberSignals, record.Metadata.SeriesNumber),
+                    ResolveSeriesNumber(numberSignals, record.Metadata.SeriesNumber, candidate),
                     signals,
                     numberSignals,
                     "Independent local evidence sources converge on the same Series candidate.");
@@ -404,13 +496,24 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
         private static string ResolveSeriesNumber(
             IReadOnlyList<SeriesNumberSignal> signals,
-            string observed)
+            string observed,
+            string resolvedSeries)
         {
+            // Preserve an existing embedded position as observed data. For a
+            // new candidate, however, require the number clue to be tied to the
+            // same resolved series identity. This prevents a number extracted
+            // from one title/series from leaking into another candidate.
             if (!string.IsNullOrWhiteSpace(observed))
                 return observed.Trim();
 
             List<string> values =
                 signals
+                    .Where(signal =>
+                        !string.IsNullOrWhiteSpace(signal.SeriesKey) &&
+                        string.Equals(
+                            NormalizeSeriesKey(signal.SeriesKey),
+                            NormalizeSeriesKey(resolvedSeries),
+                            StringComparison.OrdinalIgnoreCase))
                     .Select(signal => signal.Value)
                     .Where(value => !string.IsNullOrWhiteSpace(value))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -520,6 +623,85 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
             };
         }
 
+        private static string CleanExplicitSeriesValue(string value)
+        {
+            string cleaned = Regex.Replace(value ?? string.Empty, @"\s+", " ").Trim();
+            cleaned = cleaned.Trim(' ', '\t', '.', ':', ';', '-', '–', '—', '"', '\'');
+            if (cleaned.Length < 3 || cleaned.Length > 100)
+                return string.Empty;
+
+            // Avoid accepting page furniture or production credits as a series.
+            if (Regex.IsMatch(cleaned,
+                @"^(?:cover|jacket|interior|copyright|title page|table of contents|publisher|isbn|written by|by)\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+                return string.Empty;
+
+            return cleaned;
+        }
+
+        private static bool IsValidSeriesPosition(string value)
+        {
+            if (!Regex.IsMatch(value ?? string.Empty, @"^\d+(?:\.\d+)?$"))
+                return false;
+
+            return decimal.TryParse(
+                value,
+                System.Globalization.NumberStyles.AllowDecimalPoint,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out decimal position) && position >= 0;
+        }
+
+        private static bool IsMeaningfulSourceFolderSeriesHint(
+            string folderName,
+            MetadataRecord record)
+        {
+            if (string.IsNullOrWhiteSpace(folderName))
+                return false;
+
+            string trimmed = folderName.Trim();
+            string normalized = NormalizeSeriesKey(trimmed);
+
+            if (string.IsNullOrWhiteSpace(normalized) ||
+                normalized.All(char.IsDigit))
+            {
+                return false;
+            }
+
+            // These are common container/source-folder labels, not useful
+            // evidence that a book belongs to a series.
+            string[] genericFolderNames =
+            {
+                "test", "tests", "books", "ebooks", "e books", "library",
+                "downloads", "download", "documents", "desktop", "new folder",
+                "untitled", "collection", "misc", "miscellaneous", "unsorted",
+                "to sort", "to organize", "organized", "output", "input"
+            };
+
+            if (genericFolderNames.Any(name =>
+                    string.Equals(
+                        normalized,
+                        NormalizeSeriesKey(name),
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                return false;
+            }
+
+            // Author folders are useful organization labels, but are not
+            // series names. Compare the folder against the observed author
+            // value without changing the metadata or guessing at a series.
+            string observedAuthor = record.Metadata?.Author?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(observedAuthor) &&
+                string.Equals(
+                    normalized,
+                    NormalizeSeriesKey(observedAuthor),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         private static string NormalizeSeriesKey(string value)
         {
             string normalized =
@@ -545,7 +727,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair
 
         private sealed record SeriesNumberSignal(
             string Value,
-            string Source);
+            string Source,
+            string SeriesKey = "");
     }
 
 }

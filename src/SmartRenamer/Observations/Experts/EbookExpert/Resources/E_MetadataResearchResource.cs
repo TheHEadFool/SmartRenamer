@@ -27,7 +27,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             ArgumentNullException.ThrowIfNull(metadata);
             ArgumentNullException.ThrowIfNull(evidence);
 
-            string title = GetValue(metadata.Title, evidence, "Title");
+            string title = NormalizeResearchTitle(
+                GetValue(metadata.Title, evidence, "Title"));
             string author = GetValue(metadata.Author, evidence, "Author");
             string publisher = GetValue(metadata.Publisher, evidence, "Publisher");
             string isbn = GetValue(metadata.Isbn, evidence, "ISBN");
@@ -1120,7 +1121,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                     return 0.95;
             }
 
-            string sourceTitle = Normalize(metadata.Title);
+            string sourceTitle = Normalize(NormalizeResearchTitle(metadata.Title));
             string foundTitle = Normalize(resultTitle);
 
             if (!string.IsNullOrWhiteSpace(sourceTitle) &&
@@ -1358,6 +1359,21 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             return
                 $"Book metadata match: \"{title}\" by {authorText}. " +
                 $"Publisher: {publisher}.";
+        }
+
+        // Search-only cleanup for catalog/download suffixes such as "(ca-1)".
+        // The observed EPUB title remains unchanged and is never rewritten by this helper.
+        private static string NormalizeResearchTitle(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            string title = value.Trim();
+            return System.Text.RegularExpressions.Regex.Replace(
+                title,
+                @"\s*\([a-z]{1,5}-\d+\)\s*$",
+                string.Empty,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
         }
 
         private static string Normalize(string value)

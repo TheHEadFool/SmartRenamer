@@ -1,4 +1,4 @@
-using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
+﻿using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using System;
 using System.IO;
 using System.IO.Compression;
@@ -67,6 +67,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                     $"The organization destination already exists: {destinationPath}");
             }
 
+            System.Diagnostics.Debug.WriteLine(
+                $"[EBOOK ORGANIZATION COPY] PRECHECK | Source={workingPath} | " +
+                $"Destination={destinationPath} | SourceLength={new FileInfo(workingPath).Length}");
+
             try
             {
                 Directory.CreateDirectory(destinationFolder);
@@ -101,6 +105,10 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                         "The organization copy failed EPUB verification.");
                 }
 
+                System.Diagnostics.Debug.WriteLine(
+                    $"[EBOOK ORGANIZATION COPY] VERIFIED | Source={workingPath} | " +
+                    $"Destination={destinationPath} | Length={destinationInfo.Length} | " +
+                    $"ZipEntries={GetEpubEntryCount(destinationPath)}");
                 return OrganizationCopyResult.Success(destinationPath);
             }
             catch (Exception ex) when (
@@ -108,10 +116,20 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                 ex is UnauthorizedAccessException ||
                 ex is InvalidDataException)
             {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[EBOOK ORGANIZATION COPY] FAILED | Source={workingPath} | " +
+                    $"Destination={destinationPath} | Type={ex.GetType().FullName} | " +
+                    $"Message={ex.Message} | Stack={ex}");
                 TryDelete(destinationPath);
 
                 return OrganizationCopyResult.Failed(ex.Message);
             }
+        }
+
+        private static int GetEpubEntryCount(string path)
+        {
+            using ZipArchive archive = ZipFile.OpenRead(path);
+            return archive.Entries.Count;
         }
 
         private static bool IsReadableEpub(string path)

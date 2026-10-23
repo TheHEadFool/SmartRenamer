@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -58,6 +58,12 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
             bool organizeBySeries =
                 context.Options.FolderLevels.Contains(
                     OrganizationDimension.Series);
+
+            // Destination names must be unique within the same destination folder.
+            // Use the full relative destination path as the key, not the filename
+            // alone, because identical names in different folders are valid.
+            HashSet<string> usedDestinationPaths =
+                new(StringComparer.OrdinalIgnoreCase);
 
             foreach (IGrouping<string, PlannedBook> group in groups)
             {
@@ -129,17 +135,33 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                     // Filename cleanup is deliberately applied only to the
                     // planned destination name. The source/original EPUB is
                     // never renamed or edited by this planner.
+                    string sourceBaseName =
+                        Path.GetFileNameWithoutExtension(item.Book.WorkingPath);
+
+                    string observedTitle = item.Book.Title?.Trim() ?? string.Empty;
+                    string observedAuthor = item.Book.Author?.Trim() ?? string.Empty;
+
+                    // A known data-corruption pattern swaps Title and Author,
+                    // leaving the title equal to the author (e.g. "Jim Butcher").
+                    // In that specific case use the source filename as the title
+                    // evidence. This only affects the destination copy name; it
+                    // does not write or claim a repaired embedded title.
                     string rawTitle =
-                        string.IsNullOrWhiteSpace(item.Book.Title)
-                            ? Path.GetFileNameWithoutExtension(item.Book.WorkingPath)
-                            : item.Book.Title;
+                        string.IsNullOrWhiteSpace(observedTitle) ||
+                        (!string.IsNullOrWhiteSpace(observedAuthor) &&
+                         string.Equals(
+                             NormalizeComparisonText(observedTitle),
+                             NormalizeComparisonText(observedAuthor),
+                             StringComparison.OrdinalIgnoreCase))
+                            ? sourceBaseName
+                            : observedTitle;
 
                     string title = CleanEbookDestinationTitle(
                         NormalizeTitleForOrganizationFileName(
                             rawTitle,
                             item.Book.Series,
                             item.Book.SeriesNumber),
-                        item.Book.Author);
+                        observedAuthor);
 
                     title = SanitizeFileName(title);
 
@@ -151,18 +173,81 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organizat
                             ? $"{formattedSeriesNumber} - "
                             : string.Empty;
 
+                    string destinationFileName = $"{filePrefix}{title}{extension}";
+                    string destinationKey = BuildDestinationKey(
+                        item.RelativeFolder,
+                        destinationFileName);
+
+                    if (!usedDestinationPaths.Add(destinationKey))
+                    {
+                        // A collision can also arise from otherwise valid titles
+                        // that sanitize to the same Windows filename. Prefer the
+                        // source basename, cleaned using the already-observed
+                        // author, before adding a deterministic disambiguator.
+                        string sourceTitle = CleanEbookDestinationTitle(
+                            NormalizeTitleForOrganizationFileName(
+                                sourceBaseName,
+                                item.Book.Series,
+                                item.Book.SeriesNumber),
+                            observedAuthor);
+                        sourceTitle = SanitizeFileName(sourceTitle);
+                        string fallbackName = $"{filePrefix}{sourceTitle}{extension}";
+                        string fallbackKey = BuildDestinationKey(
+                            item.RelativeFolder,
+                            fallbackName);
+
+                        if (usedDestinationPaths.Add(fallbackKey))
+                        {
+                            destinationFileName = fallbackName;
+                            destinationKey = fallbackKey;
+                        }
+                        else
+                        {
+                            string stem = Path.GetFileNameWithoutExtension(fallbackName);
+                            int suffix = 2;
+                            do
+                            {
+                                destinationFileName = $"{stem} ({suffix++}){extension}";
+                                destinationKey = BuildDestinationKey(
+                                    item.RelativeFolder,
+                                    destinationFileName);
+                            }
+                            while (!usedDestinationPaths.Add(destinationKey));
+                        }
+
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[EBOOK ORGANIZATION PLAN] DESTINATION COLLISION | " +
+                            $"Source={item.Book.OriginalPath} | " +
+                            $"OriginalTitle='{observedTitle}' | Author='{observedAuthor}' | " +
+                            $"ResolvedDestination='{destinationKey}'");
+                    }
+
                     plan.Entries.Add(
                         new OrganizationPlanEntry
                         {
                             OriginalPath = item.Book.OriginalPath,
                             RelativeDestinationFolder = item.RelativeFolder,
-                            DestinationFileName =
-                                $"{filePrefix}{title}{extension}"
+                            DestinationFileName = destinationFileName
                         });
                 }
             }
 
             return plan;
+        }
+
+        private static string NormalizeComparisonText(string value) =>
+            Regex.Replace(value ?? string.Empty, @"[^\p{L}\p{N}]", string.Empty)
+                .ToLowerInvariant();
+
+        private static string BuildDestinationKey(
+            string relativeFolder,
+            string fileName)
+        {
+            string combined = string.IsNullOrWhiteSpace(relativeFolder)
+                ? fileName
+                : Path.Combine(relativeFolder, fileName);
+
+            return combined.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
         }
 
         private static string BuildRelativeFolder(

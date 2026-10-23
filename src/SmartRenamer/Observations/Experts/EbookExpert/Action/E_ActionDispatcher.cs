@@ -1,4 +1,4 @@
-using Scout.Observations.Conversation;
+﻿using Scout.Observations.Conversation;
 using Scout.Observations.Experts.EbookExpert.Data;
 using Scout.Observations.Experts.EbookExpert.Investigations.Repair;
 using SmartRenamer.Models;
@@ -1314,18 +1314,41 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     opportunity.Record.Metadata.CoverImage = currentMetadata.CoverImage;
                 }
 
-                if (research.Candidates.Count > 0)
+                // Research is incremental. A later provider response must not erase
+                // a stronger candidate discovered earlier for this same original file.
+                // Keep provenance and candidate details, merge by field/value, and
+                // prefer substantive descriptions over first-sentence fragments.
+                List<MetadataResearchCandidate> candidatesForDecision;
+                lock (_researchCacheLock)
                 {
-                    lock (_researchCacheLock)
+                    List<MetadataResearchCandidate> previousCandidates =
+                        _researchedMetadataCandidates.TryGetValue(
+                            originalPath,
+                            out List<MetadataResearchCandidate>? cachedCandidates)
+                            ? cachedCandidates
+                            : new List<MetadataResearchCandidate>();
+
+                    candidatesForDecision = MergeResearchCandidates(
+                        previousCandidates,
+                        research.Candidates);
+
+                    if (candidatesForDecision.Count > 0)
                     {
                         _researchedMetadataCandidates[originalPath] =
-                            research.Candidates.ToList();
+                            candidatesForDecision;
                     }
                 }
+
+                Debug.WriteLine(
+                    $"[METADATA CANDIDATE RETENTION] Book='{fileName}' | " +
+                    $"New={research.Candidates.Count} | Retained={candidatesForDecision.Count} | " +
+                    $"Descriptions={candidatesForDecision.Count(candidate => string.Equals(candidate.Field, "Description", StringComparison.OrdinalIgnoreCase))} | " +
+                    $"BestDescriptionChars={candidatesForDecision.Where(candidate => string.Equals(candidate.Field, "Description", StringComparison.OrdinalIgnoreCase)).Select(candidate => candidate.Value.Length).DefaultIfEmpty(0).Max()}");
 
                 List<string> resultEvidence = new();
                 List<CV_ActionOption> resultOptions = new();
                 int repairChangesAdded = 0;
+                List<string> repairChangeFieldsAdded = new();
                 bool repairExecuted = false;
 
                 string resultMessage =
@@ -1333,21 +1356,23 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                         ? $"Publisher/Summary research for {fileName} could not reach the external sources. Scout will keep the book unresolved rather than treating the connection failure as missing information."
                         : research.TimedOut
                             ? $"Publisher/Summary research for {fileName} timed out. Scout will keep the book unresolved rather than treating the timeout as missing information."
-                            : research.Candidates.Count == 0
+                            : candidatesForDecision.Count == 0
                                 ? workingCopyAlreadyResolvedTarget
                                     ? $"Scout re-checked {fileName} and found that its protected working copy already contains the metadata this research was looking for."
                                     : $"Scout researched {fileName}, but could not establish a safe Publisher or Summary candidate."
-                                : $"Scout found additional Publisher/Summary evidence for {fileName}.";
+                                : research.Candidates.Count == 0
+                                    ? $"Scout reused previously researched metadata evidence for {fileName}."
+                                    : $"Scout found additional Publisher/Summary evidence for {fileName}.";
 
                 foreach (MetadataResearchCandidate candidate in
-                         research.Candidates
+                         candidatesForDecision
                              .GroupBy(
                                  item => item.Field,
                                  StringComparer.OrdinalIgnoreCase)
-                             .Select(group =>
-                                 group.OrderByDescending(
-                                     item => item.Confidence)
-                                     .First()))
+                             .Select(group => group
+                                 .OrderByDescending(GetResearchCandidateQuality)
+                                 .ThenByDescending(item => item.Confidence)
+                                 .First()))
                 {
                     if (currentMetadata != null &&
                         !string.IsNullOrWhiteSpace(
@@ -1404,6 +1429,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                                 true));
 
                         repairChangesAdded++;
+                        repairChangeFieldsAdded.Add(candidate.Field);
                     }
                     else if (decision.State ==
                              RepairRecommendation.RepairDecisionState.UserDecisionRequired)
@@ -1461,9 +1487,9 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                     repairExecuted = !string.IsNullOrWhiteSpace(repairedPath);
                 }
 
-                foreach (string detail in research.Candidates.Count == 0
+                foreach (string detail in candidatesForDecision.Count == 0
                     ? Array.Empty<string>()
-                    : research.Candidates
+                    : candidatesForDecision
                         .SelectMany(candidate => candidate.Details)
                         .Where(detail => !string.IsNullOrWhiteSpace(detail))
                         .Distinct(StringComparer.OrdinalIgnoreCase))
@@ -1473,9 +1499,11 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
 
                 Debug.WriteLine(
                     $"[METADATA RESULT TRACE] " +
-                    $"Book='{fileName}' | Candidates={research.Candidates.Count} | " +
+                    $"Book='{fileName}' | NewCandidates={research.Candidates.Count} | " +
+                    $"AvailableCandidates={candidatesForDecision.Count} | " +
                     $"Options={resultOptions.Count} | RepairChanges={repairChangesAdded} | " +
                     $"RepairExecuted={repairExecuted} | " +
+                    $"RepairChangeFieldsAdded={string.Join(",", repairChangeFieldsAdded.Distinct(StringComparer.OrdinalIgnoreCase))} | " +
                     $"RequiresReobservation={repairExecuted || workingCopyAlreadyResolvedTarget} | " +
                     $"ProviderUnavailable={research.ProviderUnavailable} | " +
                     $"TimedOut={research.TimedOut}");
@@ -1679,7 +1707,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
                 {
                     ActionId = request.ActionId,
                     Success = true,
-                    Message = $"I recorded the researched {field} for this ebook. The original EPUB has not been changed yet."
+                    Message = $"I staged the researched {field} as a proposed repair for this ebook. It has not been applied or verified yet; use the repair action to apply it to the protected working copy. The original EPUB remains unchanged."
                 };
                 // The Live Report owns repair execution; do not duplicate its action in Scout Controls.
 
@@ -2715,6 +2743,91 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Action
             }
 
             return result;
+        }
+
+        private static List<MetadataResearchCandidate> MergeResearchCandidates(
+            IEnumerable<MetadataResearchCandidate> existing,
+            IEnumerable<MetadataResearchCandidate> incoming)
+        {
+            List<MetadataResearchCandidate> merged = new();
+
+            foreach (MetadataResearchCandidate candidate in existing.Concat(incoming))
+            {
+                if (candidate == null ||
+                    string.IsNullOrWhiteSpace(candidate.Field) ||
+                    string.IsNullOrWhiteSpace(candidate.Value))
+                    continue;
+
+                MetadataResearchCandidate? duplicate = merged.FirstOrDefault(item =>
+                    string.Equals(item.Field, candidate.Field, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(item.Value.Trim(), candidate.Value.Trim(), StringComparison.OrdinalIgnoreCase));
+
+                if (duplicate == null)
+                {
+                    MetadataResearchCandidate copy = CopyResearchCandidate(candidate);
+                    merged.Add(copy);
+                    continue;
+                }
+
+                // Identical values from multiple sources retain the strongest
+                // confidence while preserving all distinct provenance details.
+                if (candidate.Confidence > duplicate.Confidence)
+                {
+                    int index = merged.IndexOf(duplicate);
+                    MetadataResearchCandidate stronger = CopyResearchCandidate(candidate);
+                    foreach (string detail in duplicate.Details)
+                        if (!stronger.Details.Contains(detail, StringComparer.OrdinalIgnoreCase))
+                            stronger.Details.Add(detail);
+                    merged[index] = stronger;
+                }
+                else
+                {
+                    foreach (string detail in candidate.Details)
+                        if (!duplicate.Details.Contains(detail, StringComparer.OrdinalIgnoreCase))
+                            duplicate.Details.Add(detail);
+                }
+            }
+
+            return merged
+                .OrderByDescending(GetResearchCandidateQuality)
+                .ThenByDescending(candidate => candidate.Confidence)
+                .ToList();
+        }
+
+        private static MetadataResearchCandidate CopyResearchCandidate(
+            MetadataResearchCandidate candidate)
+        {
+            MetadataResearchCandidate copy = new()
+            {
+                Field = candidate.Field,
+                Value = candidate.Value,
+                Source = candidate.Source,
+                Evidence = candidate.Evidence,
+                Confidence = candidate.Confidence
+            };
+            foreach (string detail in candidate.Details)
+                copy.Details.Add(detail);
+            return copy;
+        }
+
+        private static int GetResearchCandidateQuality(
+            MetadataResearchCandidate candidate)
+        {
+            if (!string.Equals(candidate.Field, "Description", StringComparison.OrdinalIgnoreCase))
+                return 1000 + (int)Math.Round(candidate.Confidence * 100.0);
+
+            bool firstSentenceOnly = candidate.Details.Any(detail =>
+                detail.Contains("first-sentence summary rather than a full synopsis", StringComparison.OrdinalIgnoreCase) ||
+                detail.Contains("FirstSentenceOnly=True", StringComparison.OrdinalIgnoreCase));
+            bool officialSource = candidate.Source.Contains("official", StringComparison.OrdinalIgnoreCase) ||
+                                  candidate.Details.Any(detail => detail.Contains("official", StringComparison.OrdinalIgnoreCase));
+
+            // Length is a quality signal, not proof of correctness. Identity and
+            // source checks remain the responsibility of the research resource.
+            int lengthBand = candidate.Value.Trim().Length >= 250 ? 300 :
+                             candidate.Value.Trim().Length >= 120 ? 200 :
+                             candidate.Value.Trim().Length >= 60 ? 100 : 0;
+            return (firstSentenceOnly ? 0 : 100) + lengthBand + (officialSource ? 50 : 0);
         }
 
         private static RepairOpportunity? FindOpportunity(

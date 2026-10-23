@@ -1,4 +1,4 @@
-﻿using Scout.Observations.Experts.EbookExpert.Data;
+using Scout.Observations.Experts.EbookExpert.Data;
 using Scout.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Models;
 using SmartRenamer.Observations.Experts.EbookExpert.Data.Reports;
@@ -6,6 +6,7 @@ using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Consultants;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Organization;
 using SmartRenamer.Observations.Experts.EbookExpert.Investigations.Repair;
 using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -753,10 +754,19 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
         {
             ArgumentNullException.ThrowIfNull(entry);
 
-            if (Job == null)
+            // Capture the nullable property once. The local variable keeps the
+            // null check and execution call tied to the same job instance.
+            OrganizationJob? job = Job;
+            if (job == null)
             {
-                return OrganizationCopyResult.Failed(
-                    "No organization job is available.");
+                const string missingJobMessage =
+                    "No organization job is available.";
+
+                Debug.WriteLine(
+                    $"[EBOOK ORGANIZATION ITEM] FAILED | Source={entry.OriginalPath} | " +
+                    $"DestinationName={entry.DestinationFileName} | Error={missingJobMessage}");
+
+                return OrganizationCopyResult.Failed(missingJobMessage);
             }
 
             //-------------------------------------------------------------
@@ -778,12 +788,31 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Investigations
             // Do not put the old blanket RepairHandoff gate back here.
             //-------------------------------------------------------------
 
-            OrganizationJobExecutor executor = new();
+            Debug.WriteLine(
+                $"[EBOOK ORGANIZATION ITEM] START | Source={entry.OriginalPath} | " +
+                $"DestinationName={entry.DestinationFileName} | JobAvailable=True");
 
-            OrganizationCopyResult result =
-                executor.Execute(
-                    Job,
-                    entry);
+            OrganizationJobExecutor executor = new();
+            OrganizationCopyResult result;
+            try
+            {
+                result = executor.Execute(job, entry);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(
+                    $"[EBOOK ORGANIZATION ITEM] EXCEPTION | Source={entry.OriginalPath} | " +
+                    $"DestinationName={entry.DestinationFileName} | Type={ex.GetType().FullName} | " +
+                    $"Message={ex.Message} | Stack={ex}");
+                throw;
+            }
+
+            Debug.WriteLine(
+                $"[EBOOK ORGANIZATION ITEM] RESULT | Source={entry.OriginalPath} | " +
+                $"Succeeded={result.Succeeded} | IsPending={result.IsPending} | " +
+                $"Destination={result.DestinationPath ?? "<null>"} | " +
+                $"Error={result.Error ?? "<none>"} | " +
+                $"PendingReason={result.PendingReason ?? "<none>"}");
 
             if (result.Succeeded &&
                 !string.IsNullOrWhiteSpace(result.DestinationPath))

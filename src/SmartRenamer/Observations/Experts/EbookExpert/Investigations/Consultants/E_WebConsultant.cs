@@ -52,7 +52,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             List<MetadataResearchCandidate> candidates = new();
             if (string.IsNullOrWhiteSpace(title)) return candidates;
 
-            string cleanTitle = CleanText(title);
+            string cleanTitle = NormalizeResearchTitle(CleanText(title));
             string cleanAuthor = CleanText(author ?? string.Empty);
             string firstAuthor = cleanAuthor.Split(new[] { ';', '|', '&' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(part => CleanText(part))
@@ -61,15 +61,14 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             string cleanIsbn = Regex.Replace(isbn ?? string.Empty, "[^0-9Xx]", string.Empty);
             (string StoryTitle, string StoryAuthors) story = ExtractStoryClue(openingContent ?? string.Empty);
 
-            // Research only the missing field (Description). Each request uses at most three
-            // substantive identity points plus description vocabulary. The four-request budget
-            // is two distinct DuckDuckGo inquiries followed, if necessary, by two distinct Bing
-            // inquiries. No loop generates additional query variants.
+            // Every general inquiry preserves the core identity pair: normalized book title
+            // AND author. ISBN, publisher, official-domain filters, and opening-content clues
+            // refine that pair; none replaces it. This prevents common-title collisions such
+            // as Chrome Circle -> Google Chrome and keeps each of the four inquiries useful.
             string goal = "(synopsis OR blurb OR description)";
             List<string> primaryOne = new() { $"\"{cleanTitle}\"" };
             if (!string.IsNullOrWhiteSpace(firstAuthor)) primaryOne.Add($"\"{firstAuthor}\"");
             if (!string.IsNullOrWhiteSpace(cleanPublisher)) primaryOne.Add($"\"{cleanPublisher}\"");
-            // Prioritize the known publisher's official catalog within the existing inquiry budget.
             if (cleanPublisher.Contains("Baen", StringComparison.OrdinalIgnoreCase))
                 primaryOne.Add("site:baen.com");
             else if (cleanAuthor.Contains("Mercedes Lackey", StringComparison.OrdinalIgnoreCase))
@@ -77,30 +76,31 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             primaryOne.Add(goal);
             string primaryQueryOne = string.Join(" ", primaryOne);
 
-            // Reword primary query using ISBN instead of potentially unreliable author/publisher.
+            // Keep author paired with title even when an ISBN is available; the ISBN is
+            // additional edition evidence, not a replacement for work identity.
             List<string> primaryTwo = new() { $"\"{cleanTitle}\"" };
+            if (!string.IsNullOrWhiteSpace(firstAuthor)) primaryTwo.Add($"\"{firstAuthor}\"");
             if (!string.IsNullOrWhiteSpace(cleanIsbn)) primaryTwo.Add($"\"{cleanIsbn}\"");
+            else if (!string.IsNullOrWhiteSpace(cleanPublisher)) primaryTwo.Add($"\"{cleanPublisher}\"");
             primaryTwo.Add("book plot summary");
             string primaryQueryTwo = string.Join(" ", primaryTwo);
 
-            // Only use story clues that pass strict sanity checks. The previous extractor could
-            // capture catalog/copyright text as a fake story title, polluting fallback queries.
+            // Story clues are additive evidence only. They never replace the book identity.
             bool usableStoryClue = IsUsableStoryClue(story.StoryTitle, story.StoryAuthors);
-            List<string> backupOne = new();
-            if (usableStoryClue) backupOne.Add($"\"{story.StoryTitle}\"");
-            else backupOne.Add($"\"{cleanTitle}\"");
+            List<string> backupOne = new() { $"\"{cleanTitle}\"" };
+            if (!string.IsNullOrWhiteSpace(firstAuthor)) backupOne.Add($"\"{firstAuthor}\"");
             if (!string.IsNullOrWhiteSpace(cleanIsbn)) backupOne.Add($"\"{cleanIsbn}\"");
             else if (!string.IsNullOrWhiteSpace(cleanPublisher)) backupOne.Add($"\"{cleanPublisher}\"");
-            backupOne.Add("book synopsis publisher");
+            if (usableStoryClue) backupOne.Add($"\"{story.StoryTitle}\"");
+            backupOne.Add("book synopsis");
             string backupQueryOne = string.Join(" ", backupOne);
 
-            // Final request deliberately changes the angle rather than repeating the prior query.
-            List<string> backupTwo = new();
-            if (usableStoryClue) backupTwo.Add($"\"{story.StoryTitle}\"");
-            else backupTwo.Add($"\"{cleanTitle}\"");
+            // Final inquiry changes the source angle but still includes title + author.
+            List<string> backupTwo = new() { $"\"{cleanTitle}\"" };
+            if (!string.IsNullOrWhiteSpace(firstAuthor)) backupTwo.Add($"\"{firstAuthor}\"");
+            if (!string.IsNullOrWhiteSpace(cleanPublisher)) backupTwo.Add($"\"{cleanPublisher}\"");
             if (usableStoryClue && !string.IsNullOrWhiteSpace(story.StoryAuthors))
                 backupTwo.Add($"\"{story.StoryAuthors}\"");
-            else if (!string.IsNullOrWhiteSpace(cleanPublisher)) backupTwo.Add($"\"{cleanPublisher}\"");
             backupTwo.Add("official book description plot");
             string backupQueryTwo = string.Join(" ", backupTwo);
 
@@ -413,6 +413,25 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
                 !Regex.IsMatch(value,
                     @"\b(story|novel|book|character|characters|reader|readers|adventure|mystery|journey|discovers|must|returns|finds|struggles|quest|world)\b",
                     RegexOptions.IgnoreCase))
+                return false;
+
+            // Reject common non-synopsis text that can be long enough to pass the
+            // length/word-count gate: author biographies, review/rating UI, and
+            // short catalog hooks. Keep this content-level check independent of
+            // source confidence; a high confidence score cannot make page furniture
+            // into a book synopsis.
+            if (Regex.IsMatch(value,
+                @"\b(customer reviews?|including product star ratings|help customers|star ratings|write a review|review this product|rate this book|your recently viewed items|frequently bought together|about the author|author biography|biography of the author|is the acclaimed author|acclaimed author of|author of over \d+|has written over \d+|has published over \d+|was born in \d{4}|grew up in|lives in [A-Z]|was raised in|her first novel|his first novel|first published in \d{4})\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+                return false;
+
+            // A first-sentence hook is not a complete description even when the
+            // source supplies no ellipsis. Require a minimally coherent synopsis
+            // signal for unusually short single-sentence candidates.
+            if (value.Length < 180 &&
+                !Regex.IsMatch(value,
+                    @"\b(when|after|before|as|while|but|however|must|tries to|finds himself|finds herself|discovers|struggles|sets out|is forced to|must face|journey|quest|mystery|adventure|story of|novel about)\b",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
                 return false;
 
             return Regex.Matches(value, @"[A-Za-z]{3,}").Count >= 18;
@@ -732,6 +751,15 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             string withoutScripts = Regex.Replace(html, "<(script|style|noscript)\\b[^>]*>.*?</\\1>", " ", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             return CleanText(WebUtility.HtmlDecode(TagRegex.Replace(withoutScripts, " ")));
         }
+        // Search-only cleanup for catalog/download suffixes such as "(ca-1)".
+        // The EPUB's observed title is never rewritten by this helper.
+        private static string NormalizeResearchTitle(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            return Regex.Replace(value.Trim(), @"\s*\([a-z]{1,5}-\d+\)\s*$", string.Empty,
+                RegexOptions.IgnoreCase).Trim();
+        }
+
         private static string CleanText(string value) => Regex.Replace(value ?? string.Empty, "\\s+", " ").Trim();
         private static bool ContainsPhrase(string text, string phrase) => text.IndexOf(phrase.Trim(), StringComparison.OrdinalIgnoreCase) >= 0;
         private static bool IsSearchOrSocialHost(string host) =>

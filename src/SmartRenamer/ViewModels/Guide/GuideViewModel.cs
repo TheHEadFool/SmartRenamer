@@ -1,4 +1,4 @@
-using Scout.Observations.Conversation;
+﻿using Scout.Observations.Conversation;
 using SmartRenamer.Controls.ConversationCards;
 using SmartRenamer.Guide;
 using SmartRenamer.Guide.Models;
@@ -1118,6 +1118,16 @@ namespace SmartRenamer.ViewModels.Guide
                     ? value!
                     : option.Label);
 
+            Debug.WriteLine(
+                $"[GUIDE DECISION TRACE] APPLIED | Expert='{binding.Expert.Name}' | " +
+                $"OptionId='{option.Id}' | InputKind={option.InputKind} | " +
+                $"StageBeforeRefresh='{operation.Stage}' | " +
+                $"PendingBeforeRefresh={pendingDecisionBindings.Count} | " +
+                $"IndexBeforeRefresh={pendingDecisionIndex}");
+
+            // A decision may change the owning Expert's state machine. Do not
+            // advance through stale bindings created before the decision; ask
+            // the Expert for its current choices after every applied choice.
             AdvanceDecisionSequence();
 
             if (awaitingDecisionChoice)
@@ -1283,23 +1293,23 @@ namespace SmartRenamer.ViewModels.Guide
         /// </summary>
         private void AdvanceDecisionSequence()
         {
-            pendingDecisionIndex++;
+            // Decisions are stateful. Reusing the remainder of an old list
+            // can replay a stale prompt after the Expert has advanced to a
+            // new stage. Refresh from the authoritative Expert state after
+            // every applied decision.
+            Debug.WriteLine(
+                $"[GUIDE DECISION TRACE] REFRESH START | Stage='{operation.Stage}' | " +
+                $"OldCount={pendingDecisionBindings.Count} | OldIndex={pendingDecisionIndex}");
 
-            if (pendingDecisionIndex < pendingDecisionBindings.Count)
-            {
-                PresentDecisionQuestion();
-                return;
-            }
-
-            // The owning Expert may expose a new decision after applying the
-            // previous one. Refresh the bindings before leaving the decision
-            // sequence so a destination confirmation can naturally lead into
-            // the organization-path decision.
             pendingDecisionBindings.Clear();
             pendingDecisionBindings.AddRange(
                 guideInvestigator.DecisionBindings
-                    .Where(binding =>
-                        binding.Request.Options.Count > 0));
+                    .Where(binding => binding.Request.Options.Count > 0));
+
+            Debug.WriteLine(
+                $"[GUIDE DECISION TRACE] REFRESH RESULT | Stage='{operation.Stage}' | " +
+                $"NewCount={pendingDecisionBindings.Count} | " +
+                $"Options='{string.Join(";", pendingDecisionBindings.SelectMany(b => b.Request.Options.Select(o => b.Expert.Name + ":" + o.Id)))}'");
 
             if (pendingDecisionBindings.Count > 0)
             {
@@ -1334,12 +1344,9 @@ namespace SmartRenamer.ViewModels.Guide
                 if (operation.CollectionTotal > 0 &&
                     operation.CollectionCompleted >= operation.CollectionTotal)
                 {
-                    // The Expert has reached the terminal collection outcome.
-                    // Reconcile the generic Live Report rows with that domain
-                    // result instead of leaving previously-processed books in
-                    // WORKING because their last progress snapshot said
-                    // Processing/Waiting.
-                    operation.MarkAllItemsCompleted();
+                    // Collection counters describe the domain outcome, but
+                    // must not be used to overwrite each row's last verified
+                    // state. Keep item-level organization results authoritative.
                     operation.State = ScoutOperationState.Completed;
                     operation.Status = "Organization complete.";
                     operation.CurrentTask =
@@ -1670,24 +1677,41 @@ namespace SmartRenamer.ViewModels.Guide
         /// </summary>
         private async void AcceptAllAsIs()
         {
-            // The Live Report can still display Needs items while the operation
-            // summary has already advanced or become stale. Never silently
-            // discard a visible command based only on that summary flag.
+            // Accept All is a user-authorized terminal override. Keep the queue
+            // intact until EbookExpert confirms that the domain decision succeeded;
+            // otherwise a failed dispatch can erase the only visible path forward.
             Debug.WriteLine(
                 $"[DECISION UI] AcceptAllAsIs CLICKED | HasNeedsItems={operation.HasNeedsItems} | " +
                 $"NeedsCount={operation.NeedsItems.Count()} | State={operation.State} | Status='{operation.Status}'");
 
-            MessageBoxResult confirmation =
-                MessageBox.Show(
+            MessageBoxResult confirmation;
+            try
+            {
+                confirmation = MessageBox.Show(
                     $"Accept all currently unresolved books as-is?\n\n" +
                     $"The Live Report currently lists {operation.NeedsItems.Count():N0} items needing attention. " +
-                    "Scout will resolve every repair path that is still eligible for a user decision and continue toward Organization.",
+                    "Scout will stop pursuing repairs for the books it can resolve and continue toward Organization.",
                     "Accept all items as-is",
                     MessageBoxButton.OKCancel,
                     MessageBoxImage.Question);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(
+                    $"[DECISION UI] AcceptAllAsIs CONFIRMATION ERROR | {ex.GetType().Name}: {ex.Message}");
+                Conversation.AddGuideMessage(
+                    "I couldn't open the confirmation for Accept all as-is. No books were accepted; please try again.");
+                return;
+            }
 
             if (confirmation != MessageBoxResult.OK)
+            {
+                Debug.WriteLine(
+                    $"[DECISION UI] AcceptAllAsIs CANCELLED | Confirmation={confirmation} | No domain decisions dispatched.");
                 return;
+            }
+
+            Debug.WriteLine("[DECISION UI] AcceptAllAsIs CONFIRMED | User approved terminal override.");
 
             CV_ActionRequest actionRequest = new()
             {
@@ -1696,42 +1720,56 @@ namespace SmartRenamer.ViewModels.Guide
                 ContextId = ""
             };
 
-            ClearActionDecisionQueueForBulkResolution();
-
+            ScoutOperationState previousState = operation.State;
+            string previousStatus = operation.Status;
             operation.State = ScoutOperationState.Running;
             operation.Status = "Accepting books as-is...";
 
             Debug.WriteLine("[DECISION UI] AcceptAllAsIs DISPATCH | ActionId=AcceptAllAsIs");
-            CV_ActionResult actionResult =
-                await ExecuteActionAsync(actionRequest);
-            if (actionResult == null)
+            try
             {
-                foreach (ExecutionProgressItem item in operation.Items)
+                CV_ActionResult actionResult = await ExecuteActionAsync(actionRequest);
+                if (actionResult == null)
                 {
-                    if (item.NeedsUserAttention)
-                        terminalActionDecisionContexts.Remove(item.Key);
+                    Debug.WriteLine("[DECISION UI] AcceptAllAsIs RESULT | actionResult was null.");
+                    operation.State = ScoutOperationState.Failed;
+                    operation.Status = "Accept all as-is did not return a result.";
+                    Conversation.AddGuideMessage(
+                        "I couldn't confirm the Accept all as-is decision. The Live Report has been left available so you can retry.");
+                    return;
                 }
 
                 Debug.WriteLine(
-                    "[DECISION UI] AcceptAllAsIs RESULT | actionResult was null.");
+                    $"[DECISION UI] AcceptAllAsIs RESULT | Success={actionResult.Success} | " +
+                    $"RequiresReobservation={actionResult.RequiresReobservation} | Message='{actionResult.Message}'");
 
-                return;
-            }
-
-            if (!actionResult.Success)
-            {
-                foreach (ExecutionProgressItem item in operation.Items)
+                if (actionResult.Success)
                 {
-                    if (item.NeedsUserAttention)
-                        terminalActionDecisionContexts.Remove(item.Key);
+                    // Only now fence/clear the queued per-book prompts. EbookExpert
+                    // has recorded the terminal handoffs and published reconciliation.
+                    ClearActionDecisionQueueForBulkResolution();
                 }
+                else
+                {
+                    Debug.WriteLine(
+                        "[DECISION UI] AcceptAllAsIs NOT CLEARED | Domain decision failed; preserving queued choices.");
+                    operation.State = previousState == ScoutOperationState.Running
+                        ? ScoutOperationState.WaitingForUser
+                        : previousState;
+                    operation.Status = previousStatus;
+                }
+
+                HandleActionResult(actionResult);
             }
-
-            Debug.WriteLine(
-                $"[DECISION UI] AcceptAllAsIs RESULT | Success={actionResult.Success} | " +
-                $"RequiresReobservation={actionResult.RequiresReobservation} | Message='{actionResult.Message}'");
-
-            HandleActionResult(actionResult);
+            catch (Exception ex)
+            {
+                Debug.WriteLine(
+                    $"[DECISION UI] AcceptAllAsIs EXCEPTION | {ex.GetType().FullName}: {ex.Message}\n{ex}");
+                operation.State = ScoutOperationState.Failed;
+                operation.Status = "Accept all as-is failed; no success was confirmed.";
+                Conversation.AddGuideMessage(
+                    "Accept all as-is encountered an error and Scout could not confirm the final result. Please check the Debug Output before retrying; the domain decision may have reached EbookExpert before the error occurred.");
+            }
         }
 
         /// <summary>

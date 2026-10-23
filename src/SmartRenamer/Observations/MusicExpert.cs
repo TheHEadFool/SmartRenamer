@@ -170,7 +170,11 @@ namespace SmartRenamer.Observations
                 ExpertFinding finding =
                     specialist.Observe(files);
 
-                if (finding == null)
+                // Negative specialist results are diagnostic evidence, not
+                // actionable recommendations. In particular, an empty album
+                // detection must not be repeated as a conversation message in
+                // an unrelated workflow.
+                if (finding == null || !finding.FoundSomething)
                     continue;
 
                 findings.Add(finding);
@@ -223,7 +227,11 @@ namespace SmartRenamer.Observations
 
             foreach (ExpertFinding finding in findings)
             {
-                if (finding == null)
+                // Negative specialist results are diagnostic evidence, not
+                // actionable recommendations. In particular, an empty album
+                // detection must not be repeated as a conversation message in
+                // an unrelated workflow.
+                if (finding == null || !finding.FoundSomething)
                     continue;
 
                 //---------------------------------------------------------

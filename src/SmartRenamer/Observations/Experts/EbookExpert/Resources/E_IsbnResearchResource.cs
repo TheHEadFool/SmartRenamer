@@ -45,7 +45,8 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             ArgumentNullException.ThrowIfNull(metadata);
             ArgumentNullException.ThrowIfNull(evidence);
 
-            string searchTitle = GetEvidenceBackedValue(metadata.Title, evidence, "Title");
+            string searchTitle = NormalizeResearchTitle(
+                GetEvidenceBackedValue(metadata.Title, evidence, "Title"));
             string searchAuthor = GetEvidenceBackedValue(metadata.Author, evidence, "Author");
             string searchPublisher = GetEvidenceBackedValue(metadata.Publisher, evidence, "Publisher");
 
@@ -881,7 +882,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
         {
             double score = 0.0;
 
-            string sourceTitle = NormalizeText(metadata.Title);
+            string sourceTitle = NormalizeText(NormalizeResearchTitle(metadata.Title));
             string foundTitle = NormalizeText(resultTitle);
 
             if (!string.IsNullOrWhiteSpace(sourceTitle) &&
@@ -957,7 +958,7 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
 
             double score = searchConfidence;
 
-            string sourceTitle = NormalizeText(metadata.Title);
+            string sourceTitle = NormalizeText(NormalizeResearchTitle(metadata.Title));
             string verifiedTitle = NormalizeText(verification.Title);
 
             if (!string.IsNullOrWhiteSpace(sourceTitle) &&
@@ -1229,6 +1230,21 @@ namespace SmartRenamer.Observations.Experts.EbookExpert.Resources
             }
 
             return false;
+        }
+
+        // Search-only cleanup for catalog/download suffixes such as "(ca-1)".
+        // The observed EPUB title remains unchanged and is never rewritten by this helper.
+        private static string NormalizeResearchTitle(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            string title = value.Trim();
+            return System.Text.RegularExpressions.Regex.Replace(
+                title,
+                @"\s*\([a-z]{1,5}-\d+\)\s*$",
+                string.Empty,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
         }
 
         private static string NormalizeText(string? value)
